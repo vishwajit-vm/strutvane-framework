@@ -1,0 +1,8 @@
+# TEMPORARY (ADR-0016): link to sibling checkouts until @strutvane/contracts and @strutvane/core
+# 0.1.0-next.0 are on npm. Remove the overrides before committing; CI's check-deps guard rejects them.
+overrides:
+  "@strutvane/contracts": link:../contracts
+  "@strutvane/core": link:../core
+# drizzle-kit bundles esbuild; its postinstall downloads the platform binary.
+allowBuilds:
+  esbuild: true

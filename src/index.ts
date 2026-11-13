@@ -1,0 +1,170 @@
+/**
+ * `@strutvane/framework`: the backend and database core of Strutvane.
+ *
+ * Declare models as fields and types; get migrations, a secured CRUD API with OpenAPI docs and
+ * a manifest, tenancy with Postgres row-level security, and storage with safe uploads.
+ *
+ * Depends only on `@strutvane/core` and `@strutvane/contracts`.
+ *
+ * @packageDocumentation
+ */
+
+// Data access and queries
+export {
+  createRepository,
+  type DataRecord,
+  type ListOptions,
+  type ListPage,
+  type PageSpec,
+  type Repository,
+  type RepositoryOptions,
+  type Scope,
+  TenantRequiredError,
+} from './data/repository.ts'
+export {
+  connectDatabase,
+  type DatabaseConfig,
+  NotImplementedError,
+  type PostgresAuth,
+} from './database/connect.ts'
+export {
+  type LibsqlLike,
+  libsqlDatabase,
+  type PgClientLike,
+  type PgliteLike,
+  type PgPoolLike,
+  pgDatabase,
+  pgliteDatabase,
+} from './database/drivers.ts'
+// Database
+export type { Database, Dialect, Row, TransactionOptions } from './database/types.ts'
+// HTTP, OpenAPI and manifest
+export { createHttpApp, type HttpApp, type HttpAppOptions } from './http/create-http-app.ts'
+export { type ListParams, parseListQuery, serializeListParams } from './http/list-query.ts'
+export {
+  allowAllPermissions,
+  denyAllPermissions,
+  MissingPermissionProviderError,
+} from './http/permissions.ts'
+export {
+  defineResource,
+  type ResourceAction,
+  type ResourceConfig,
+  type ResourceContext,
+  type ResourceHooks,
+} from './http/resource.ts'
+export { securityHeaders } from './http/security.ts'
+export { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from './messages.ts'
+export {
+  answersResolver,
+  checksumOf,
+  type MigrationSource,
+  migrationFileName,
+  migrationSource,
+  parseMigration,
+  readMigrations,
+  readSnapshot,
+  renderMigration,
+  type Snapshot,
+  writeMigration,
+} from './migrations/files.ts'
+export {
+  type AppliedMigration,
+  detectSchemaDrift,
+  MIGRATIONS_TABLE,
+  type MigrationDrift,
+  MigrationDriftError,
+  type MigrationStatus,
+  migrate,
+  migrationStatus,
+  type SchemaDrift,
+} from './migrations/migrator.ts'
+export {
+  assertPromptFree,
+  classifyChanges,
+  type DestructiveChange,
+  DestructiveChangeError,
+  type DestructiveKind,
+  describeRename,
+  type MigrationPlan,
+  type PlanInput,
+  planMigration,
+  type RenameCandidate,
+  type RenameDecision,
+  RenameResolutionRequiredError,
+  type RenameResolver,
+} from './migrations/planner.ts'
+export {
+  disableTenantRls,
+  enableTenantRls,
+  type TenancyFinding,
+  tenancyAudit,
+} from './migrations/rls.ts'
+export {
+  type AnyModel,
+  type CreateInput,
+  columnName,
+  defineModel,
+  type FieldMap,
+  type InferModel,
+  type Model,
+  type ModelDefinition,
+  type ModelOptions,
+  type RelationDef,
+  type UpdateInput,
+} from './model/define-model.ts'
+// Models
+export {
+  FieldBuilder,
+  type FieldDef,
+  type FieldKind,
+  field,
+  HasManyBuilder,
+  operatorsFor,
+} from './model/field.ts'
+export {
+  createModelRegistry,
+  dependencyOrder,
+  type ModelRegistry,
+  validateModels,
+} from './model/registry.ts'
+export {
+  issuesFromZod,
+  type ModelSchemas,
+  modelLabels,
+  modelSchemas,
+  valueSchema,
+} from './model/schemas.ts'
+export { buildOpenApiDocument, type OpenApiDocument } from './openapi/document.ts'
+export { buildManifest } from './openapi/manifest.ts'
+// Wiring
+export { type FrameworkProviderOptions, frameworkProvider } from './provider.ts'
+export { andAll, type BoundFilter, bindFilter, FilterError } from './query/bind.ts'
+export { compileFilter } from './query/compile.ts'
+export { evaluateFilter, MissingFieldError } from './query/evaluate.ts'
+export { type QueryField, queryFields } from './query/fields.ts'
+export { CursorError, SortError } from './query/sort.ts'
+// Schema and migrations
+export {
+  compilePg,
+  compileSqlite,
+  defaultNaming,
+  type Naming,
+  shortenIdentifier,
+} from './schema/compile.ts'
+export { FileNotFoundError } from './storage/body.ts'
+export { assertSafeKey, sanitizeFileName, UnsafeKeyError } from './storage/keys.ts'
+export { createLocalDisk, type LocalDiskOptions } from './storage/local-disk.ts'
+// Storage and uploads
+export { createStorageManager, type StorageManager } from './storage/manager.ts'
+export { createMemoryDisk, type MemoryDiskOptions } from './storage/memory-disk.ts'
+export { detectMime, mimeMatches } from './storage/mime.ts'
+export { type MultipartLimits, type MultipartResult, parseMultipart } from './storage/multipart.ts'
+export { signUrl, verifySignedUrl } from './storage/signing.ts'
+export {
+  type FileRules,
+  parseBytes,
+  type StoreOptions,
+  UploadedFile,
+} from './storage/uploaded-file.ts'
+export { DatabaseToken, ModelRegistryToken, StorageManagerToken } from './tokens.ts'

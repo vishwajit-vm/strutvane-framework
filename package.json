@@ -1,0 +1,107 @@
+{
+  "name": "@strutvane/framework",
+  "version": "0.1.0-next.0",
+  "description": "The Strutvane backend and database core: model DSL, migrations, data access with tenant isolation, an automatic CRUD API with OpenAPI, storage and uploads, and testing helpers.",
+  "keywords": [
+    "strutvane",
+    "typescript",
+    "framework",
+    "backend",
+    "orm",
+    "migrations",
+    "crud",
+    "rest-api",
+    "openapi",
+    "multi-tenancy"
+  ],
+  "homepage": "https://github.com/vishwajit-vm/strutvane-framework#readme",
+  "bugs": {
+    "url": "https://github.com/vishwajit-vm/strutvane-framework/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vishwajit-vm/strutvane-framework.git"
+  },
+  "license": "MIT",
+  "author": "The Strutvane Authors",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.mts",
+      "default": "./dist/testing/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@12.18.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsdown",
+    "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "1.6.3",
+    "@strutvane/contracts": "0.1.0-next.0",
+    "@strutvane/core": "0.1.0-next.0",
+    "busboy": "1.6.0",
+    "drizzle-kit": "0.31.11",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.18",
+    "zod": "4.6.7"
+  },
+  "peerDependencies": {
+    "@electric-sql/pglite": ">=0.5.16",
+    "@libsql/client": ">=0.18.0",
+    "pg": ">=8.23.0"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "@libsql/client": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@changesets/cli": "3.0.3",
+    "@electric-sql/pglite": "0.5.16",
+    "@libsql/client": "0.18.0",
+    "@readme/openapi-parser": "10.0.0",
+    "@types/busboy": "1.5.5",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "@vitest/coverage-v8": "5.1.0",
+    "fast-check": "4.10.2",
+    "pg": "8.23.1",
+    "tsdown": "0.23.7",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}
