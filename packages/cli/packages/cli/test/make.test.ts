@@ -393,6 +393,11 @@ describe('other generators', () => {
     expect((sql.json().data as { files: { path: string }[] }).files[0]?.path).toBe(
       'database/migrations/20270102030405_raw_fix.sql',
     )
+    // Regression: stubs match what @strutvane/framework runs (up({ db }); no schema builder, no SQL down section).
+    const ts = read(root, 'database/migrations/20261114093000_backfill_invoice_totals.ts')
+    expect(ts).toContain('async up({ db })')
+    expect(ts).not.toContain('schema')
+    expect(read(root, 'database/migrations/20270102030405_raw_fix.sql')).not.toContain('-- down')
     expect((await cli(['make:migration', 'plain'], { cwd: root })).code).toBe(0)
     const badTable = await cli(['make:migration', 'x', '--table', 'Bad Table', '--json'], {
       cwd: root,

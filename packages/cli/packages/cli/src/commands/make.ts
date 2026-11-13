@@ -375,7 +375,11 @@ export const makeMigrationCommand: AnyCommand = defineCommand({
   },
   flags: {
     sql: { type: 'boolean', description: 'A raw .sql file instead of TypeScript' },
-    table: { type: 'string', valueName: '<table>', description: 'Pre-fill an alterTable() block' },
+    table: {
+      type: 'string',
+      valueName: '<table>',
+      description: 'Pre-fill an ALTER TABLE statement for this table',
+    },
   },
   examples: ['sv make:migration backfill_invoice_totals --table invoices'],
   async run(ctx) {

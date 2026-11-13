@@ -450,41 +450,49 @@ export function testTemplate(n: Names, kind: TestKind, model: Names | undefined)
   ].join('\n')
 }
 
-/** A migration stub (`make:migration`), TypeScript schema builder or raw SQL. */
+/**
+ * A migration stub (`make:migration`): TypeScript (`defineMigration({ up({ db }) })`, run by
+ * `sv migrate` inside its transaction) or raw SQL (statements separated by
+ * `--> statement-breakpoint`). Both match what `@strutvane/framework` executes today: there is no
+ * rollback yet, so `down()` is recorded for later and SQL files have no down section.
+ */
 export function migrationTemplate(
   name: string,
   options: { readonly sql: boolean; readonly table: string | undefined },
 ): string {
+  const table = options.table
   if (options.sql) {
     return [
       `-- ${name}`,
-      '-- Hand-written migration. Keep "up" and "down" sections; run with `sv migrate`.',
+      '-- Hand-written migration, applied by `sv migrate` in timestamp order inside one transaction.',
+      '-- Separate statements with a line containing only: --> statement-breakpoint',
       '',
-      '-- up',
-      options.table === undefined ? '' : `-- ALTER TABLE ${options.table} ...;`,
-      '',
-      '-- down',
+      table === undefined
+        ? '-- UPDATE some_table SET ...;'
+        : `-- ALTER TABLE "${table}" ADD COLUMN ...;`,
       '',
     ].join('\n')
   }
-  const tableLines = (verb: string): string[] =>
-    options.table === undefined
-      ? ['    // await schema.createTable(...)']
-      : [
-          `    await schema.alterTable(${quote(options.table)}, (table) => {`,
-          `      // ${verb}`,
-          '    })',
-        ]
+  const statement = (verb: string): string =>
+    table === undefined
+      ? `    // await db.execute('${verb} ...')`
+      : `    // await db.execute('ALTER TABLE "${table}" ${verb} ...')`
   return [
     "import { defineMigration } from '@strutvane/framework/database'",
     '',
-    `/** ${name}: a hand-written migration (data changes or special DDL). */`,
+    '/**',
+    ` * ${name}: a hand-written migration (data changes or special DDL). \`sv migrate\` runs up()`,
+    ' * in timestamp order inside its transaction; use db.execute(sql, params) with bound parameters.',
+    ' */',
     'export default defineMigration({',
-    '  async up({ schema }) {',
-    ...tableLines('table.string(...)'),
+    '  async up({ db }) {',
+    statement(table === undefined ? 'UPDATE' : 'ADD COLUMN'),
+    '    void db',
     '  },',
-    '  async down({ schema }) {',
-    ...tableLines('undo the changes from up()'),
+    '  // Kept for the planned rollback command; not run yet.',
+    '  async down({ db }) {',
+    statement(table === undefined ? 'UPDATE' : 'DROP COLUMN'),
+    '    void db',
     '  },',
     '})',
     '',

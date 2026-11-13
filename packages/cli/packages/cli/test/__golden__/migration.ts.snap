@@ -1,15 +1,17 @@
 import { defineMigration } from '@strutvane/framework/database'
 
-/** backfill_invoice_totals: a hand-written migration (data changes or special DDL). */
+/**
+ * backfill_invoice_totals: a hand-written migration (data changes or special DDL). `sv migrate` runs up()
+ * in timestamp order inside its transaction; use db.execute(sql, params) with bound parameters.
+ */
 export default defineMigration({
-  async up({ schema }) {
-    await schema.alterTable('invoices', (table) => {
-      // table.string(...)
-    })
+  async up({ db }) {
+    // await db.execute('ALTER TABLE "invoices" ADD COLUMN ...')
+    void db
   },
-  async down({ schema }) {
-    await schema.alterTable('invoices', (table) => {
-      // undo the changes from up()
-    })
+  // Kept for the planned rollback command; not run yet.
+  async down({ db }) {
+    // await db.execute('ALTER TABLE "invoices" DROP COLUMN ...')
+    void db
   },
 })
