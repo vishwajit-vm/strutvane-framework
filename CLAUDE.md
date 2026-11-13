@@ -2,6 +2,12 @@
 
 Project memory for Claude Code in this repository. Keep this file short, accurate and current.
 
+## Ecosystem memory (shared by every Strutvane repo)
+
+The file below is synced from strutvane-tooling and is identical in every repo. It covers how the whole ecosystem fits together: repo map, decisions, connection rules, standards, workflow and current status. Read it before changing anything.
+
+@.claude/ECOSYSTEM.md
+
 ## What this repo is
 
 The backend & database core of Strutvane: declare models as fields and types, get migrations, a secured CRUD API, OpenAPI docs, queues, cache and mail.
@@ -10,7 +16,7 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 
 ## Status
 
-- **Phase: design / pre-implementation.** There is no source code yet. Do not start implementing unless the user explicitly asks.
+- **No code in this repo yet.** It is implemented in its roadmap phase (see ECOSYSTEM.md §7). Design first: read this package's spec and the ADRs, and write or extend an RFC before changing any public API.
 - The source of truth for decisions is `../../docs/00-executive-summary.md` (D1–D20). If anything here conflicts with it, that file wins.
 - The package spec is `../../docs/06-package-framework.md` (online: https://github.com/vishwajit-vm/strutvane/blob/main/docs/06-package-framework.md).
 
