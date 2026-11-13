@@ -6,13 +6,13 @@ Project memory for Claude Code in this repository. Keep this file short, accurat
 
 The unified Strutvane command line (`strutvane`, `pnpm sv`): create projects, add packages, make models and resources, run migrations, list routes and permissions, eject code and upgrade safely.
 
-It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per package; see ADR-0002). The hub with the full blueprint is https://github.com/vishwajitvm/strutvane. Locally it is the umbrella folder two levels up: `../../docs/`.
+It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per package; see ADR-0002). The hub with the full blueprint is https://github.com/vishwajit-vm/strutvane. Locally it is the umbrella folder two levels up: `../../docs/`.
 
 ## Status
 
 - **Phase: design / pre-implementation.** There is no source code yet. Do not start implementing unless the user explicitly asks.
 - The source of truth for decisions is `../../docs/00-executive-summary.md` (D1–D20). If anything here conflicts with it, that file wins.
-- The package spec is `../../docs/09-cli-reference.md` (online: https://github.com/vishwajitvm/strutvane/blob/main/docs/09-cli-reference.md).
+- The package spec is `../../docs/09-cli-reference.md` (online: https://github.com/vishwajit-vm/strutvane/blob/main/docs/09-cli-reference.md).
 
 ## Boundaries (non-negotiable)
 
