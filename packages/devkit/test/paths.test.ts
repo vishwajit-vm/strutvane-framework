@@ -1,11 +1,17 @@
 /** Path safety: every path a package hands to devkit must stay inside the project. */
+import { realpathSync } from 'node:fs'
 import { mkdir, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { DevkitError } from '../src/errors.ts'
-import { normaliseRelativePath, resolveInsideProject, toProjectPath } from '../src/paths.ts'
-import { tempProject } from './helpers.ts'
+import {
+  normaliseRelativePath,
+  recoveryRefusal,
+  resolveInsideProject,
+  toProjectPath,
+} from '../src/paths.ts'
+import { tempProject, trySymlink } from './helpers.ts'
 
 function codeOf(fn: () => unknown): string | undefined {
   try {
@@ -97,5 +103,107 @@ describe('resolveInsideProject', () => {
   test('works when the project root does not exist yet', () => {
     const missing = join(tmpdir(), `sv-missing-${Date.now()}`)
     expect(resolveInsideProject(missing, 'a/b.ts')).toBe(join(missing, 'a', 'b.ts'))
+  })
+})
+
+describe('recoveryRefusal', () => {
+  test.each([
+    ['app/x.ts', false],
+    ['.env', false],
+    ['.strutvane/lock.json', false],
+    ['.strutvane/lock.json.corrupt-12', false],
+    ['.strutvane/base/app/x.ts', false],
+    ['.strutvane/README.md', true],
+    ['.strutvane/registry.gen.ts', true],
+    ['.Strutvane/README.md', true],
+    ['.strutvane/base', true],
+  ])('%s refused: %s', (path, refused) => {
+    expect(recoveryRefusal(path) !== undefined).toBe(refused)
+  })
+})
+
+describe('protected locations', () => {
+  test.each([
+    '.git/config',
+    '.git/hooks/pre-commit',
+    '.GIT/config',
+    '.git./config',
+    '.git /config',
+    '.git::$INDEX_ALLOCATION/config',
+    'sub/.git/config',
+    'node_modules/pkg/index.js',
+    'packages/a/node_modules/pkg/index.js',
+    'Node_Modules/x.js',
+    '.strutvane',
+    '.strutvane/staging',
+    '.strutvane/staging/tx/journal.json',
+    '.strutvane/staging/tx/backup/0',
+    '.Strutvane/Staging/tx/journal.json',
+    '.strutvane./staging./x',
+    'apps/web/.strutvane/staging/x',
+    '.strutvane/base/.git/config',
+    '.strutvane/base/node_modules/x.js',
+    '.strutvane/base/.strutvane/staging/x',
+  ])('refuses %s with INVALID_PATH', (input) => {
+    expect(codeOf(() => normaliseRelativePath(input))).toBe('INVALID_PATH')
+  })
+
+  test.each([
+    '.strutvane/lock.json',
+    '.strutvane/lock.json.corrupt-1731542400000',
+    '.strutvane/base/app/models/user.model.ts',
+    '.strutvane/base/x',
+    '.strutvane/README.md',
+    '.strutvane/registry.gen.ts',
+    '.strutvane/staging-notes.md',
+    'nested/.strutvane/lock.json',
+    '.github/workflows/ci.yml',
+    '.gitignore',
+    '.gitattributes',
+    'git/config',
+    'node_modules_backup/x.js',
+    'docs/node_modules.md',
+  ])('allows %s', (input) => {
+    expect(normaliseRelativePath(input)).toBe(input)
+  })
+
+  describe('through links', () => {
+    let root: string
+    let cleanup: () => Promise<void>
+    beforeEach(async () => {
+      ;({ root, cleanup } = await tempProject())
+      await mkdir(join(root, '.git', 'hooks'), { recursive: true })
+      await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true })
+    })
+    afterEach(() => cleanup())
+
+    test('a link inside the project cannot reach .git or node_modules', async (ctx) => {
+      if (!(await trySymlink(join(root, '.git'), join(root, 'docs'), 'junction'))) ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'docs/config'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'docs/hooks/post-checkout'))).toBe(
+        'INVALID_PATH',
+      )
+      if (!(await trySymlink(join(root, 'node_modules'), join(root, 'vendor'), 'junction')))
+        ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'vendor/pkg/index.js'))).toBe('INVALID_PATH')
+    })
+
+    test('a link to a protected file is refused', async (ctx) => {
+      if (!(await trySymlink(join(root, '.git', 'config'), join(root, 'settings.ini'), 'file')))
+        ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'settings.ini'))).toBe('INVALID_PATH')
+    })
+
+    test('a Windows 8.3 short name for .git is refused by the real-path check', (ctx) => {
+      if (process.platform !== 'win32') ctx.skip()
+      let short: string
+      try {
+        short = realpathSync(join(root, 'GIT~1'))
+      } catch {
+        return ctx.skip() // 8.3 names are disabled on this volume
+      }
+      expect(short).toBeDefined()
+      expect(codeOf(() => resolveInsideProject(root, 'GIT~1/config'))).toBe('INVALID_PATH')
+    })
   })
 })

@@ -8,9 +8,10 @@
  *   developer's local values and edits always win.
  * - `secret: true` generates a crypto-random value (32 bytes, base64url) for `.env` only.
  * - **`.env.example` never receives a secret.** It gets an empty value for `secret: true` keys, and
- *   also for any key whose name looks secret (`*PASSWORD*`, `*SECRET*`, `*TOKEN*`, `*KEY*`, …),
- *   even if the installer forgot to flag it. That is defence in depth against leaking a real value
- *   into a committed file.
+ *   also for any key whose name looks secret (`*PASSWORD*`, `*SECRET*`, `*TOKEN*`, `*KEY*`,
+ *   `*_DSN`, `*SALT*`, …) and for any value that embeds credentials in a URL
+ *   (`postgres://user:pw@host`), even if the installer forgot to flag it. That is defence in
+ *   depth against leaking a real value into a committed file.
  * - Non-secret values (defaults like `DB_HOST=127.0.0.1`) appear in both files, as in docs/05.
  * - New keys of a section that already exists are appended to the end of that section; otherwise
  *   a new titled block is appended. Comments, ordering and line endings are preserved.
@@ -21,6 +22,7 @@
 import { randomBytes } from 'node:crypto'
 import type { EnvVar, InstallEnv } from '@strutvane/contracts'
 import { DevkitError } from './errors.ts'
+import { ENV_LINE_KEY } from './secret-files.ts'
 import { fromLines, shapeOf, type TextShape, toLines } from './text.ts'
 
 /** The two files and what happened to each key. */
@@ -62,12 +64,27 @@ export interface EnvEditorOptions {
 }
 
 const KEY = /^[A-Z][A-Z0-9_]*$/
-const SECRET_NAME = /(PASSWORD|PASSWD|SECRET|TOKEN|PRIVATE|CREDENTIAL|API_?KEY|_KEY$|^KEY$)/
-const LINE_KEY = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
+/**
+ * Key names that suggest a sensitive value: substrings that are distinctive anywhere
+ * (`PASSWORD`, `SECRET`, `TOKEN`, …), plus short words matched only as a whole `_`-separated
+ * part (`PASS`, `PWD`, `DSN`, `SALT`, `SIGNING`) so that `BYPASS_CACHE` or `COMPASS_URL` stay
+ * public.
+ */
+const SECRET_NAME =
+  /(PASSWORD|PASSWD|PASSPHRASE|SECRET|TOKEN|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_KEY|_KEY$|^KEY$|(?:^|_)(?:PASS|PWD|DSN|SALT|SIGNING)(?:_|$))/
+/** A URL with a password in its user-info part: `scheme://user:password@host`. */
+const CREDENTIAL_URL = /:\/\/[^/\s]*:[^@\s]+@/
+const LINE_KEY = ENV_LINE_KEY
 
-/** True if a key name suggests its value is sensitive. */
-export function looksSecret(key: string): boolean {
-  return SECRET_NAME.test(key)
+/**
+ * True if a key name, or its value when given, suggests the value is sensitive.
+ *
+ * The value check catches connection strings with embedded credentials
+ * (`DATABASE_URL=postgres://app:pw@db/app`), whose key name looks harmless. Erring towards
+ * "secret" is the safe direction: the only effect is an empty value in `.env.example`.
+ */
+export function looksSecret(key: string, value?: string): boolean {
+  return SECRET_NAME.test(key) || (value !== undefined && CREDENTIAL_URL.test(value))
 }
 
 /** Keys defined in an env file's text. */
@@ -193,7 +210,7 @@ export function createEnvEditor(fs: EnvEditorFs, options: EnvEditorOptions = {})
           envEntries.push(...entryLines(v, v.secret === true ? secret() : (v.value ?? '')))
         }
         if (!exampleExisting.has(v.key)) {
-          const safe = v.secret === true || looksSecret(v.key) ? '' : (v.value ?? '')
+          const safe = v.secret === true || looksSecret(v.key, v.value) ? '' : (v.value ?? '')
           exampleEntries.push(...entryLines(v, safe))
         }
       }

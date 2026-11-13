@@ -56,7 +56,7 @@ export default defineInstaller({
 import { checkIdempotent, runInstaller } from '@strutvane/devkit'
 
 const preview = await runInstaller(installer, { projectRoot, dryRun: true })
-console.log(preview.diff) // unified diff; nothing written
+console.log(preview.diff) // unified diff, .env values redacted; nothing written
 
 await runInstaller(installer, { projectRoot })              // commit
 await runInstaller(installer, { projectRoot, mode: 'uninstall' })
@@ -66,9 +66,11 @@ await checkIdempotent(installer, { projectRoot })           // [] when a second 
 What the editors promise:
 
 - **`fs`**: writes never replace a different existing file unless you pass `{ overwrite: true }`. Writing identical content is a no-op. CRLF files stay CRLF.
-- **`env`**: existing keys are never overwritten. `secret: true` generates a 256-bit random value for `.env` only. **`.env.example` never receives a secret**: secret keys, and any key whose name looks secret (`*_PASSWORD`, `*_TOKEN`, `*_KEY`, …), get an empty value there.
+- **`env`**: existing keys are never overwritten. `secret: true` generates a 256-bit random value for `.env` only. **`.env.example` never receives a secret**: secret keys, any key whose name looks secret (`*_PASSWORD`, `*_PASS`, `*_PWD`, `*_TOKEN`, `*_KEY`, `*_DSN`, `*SALT*`, `*SIGNING*`, `*ACCESS_KEY*`, …) and any value that embeds credentials in a URL (`postgres://user:password@host`) get an empty value there.
 - **`deps`**: never replaces or moves a dependency the project already has, and refuses `link:`, `file:`, `workspace:` and path specs (ADR-0016).
 - **`config`**: edits only the `providers` array and one import line in `strutvane.config.ts`. Comments and formatting elsewhere are untouched, and unrecognised config shapes are refused rather than guessed at.
+
+**Previews never print secrets.** Diffs from `runInstaller`, `runGenerator`, `StagedFs.diff()` and `renderUpgradePreview` show every line of a `.env` or `.env.*` file (except `.env.example`) as `KEY=<redacted>`: added, removed and context lines alike. Comments and section headers stay visible. `fs.diff({ revealSecrets: true })` is the explicit opt-out, for output that never leaves your own terminal. `FileChange.before`/`after` hold the raw contents, so print the diff, not those fields.
 
 Installers receive a `DevkitInstallContext`, a superset of the contracts' `InstallContext`. An installer written against `@strutvane/contracts` alone works unchanged.
 
@@ -109,10 +111,28 @@ Each file gets one action: `unchanged`, `update` (clean merge), `conflict` (stan
 
 Every write path above uses the same engine (`commitTransaction`): stage new contents and backups in `.strutvane/staging/`, write a journal, rename into place, and roll back on failure. If the process dies mid-commit, the journal survives. New transactions then refuse to start until `recoverTransactions({ io, projectRoot })` restores the previous state.
 
+```ts
+import { planRecovery, recoverTransactions } from '@strutvane/devkit'
+
+const plan = await planRecovery({ io, projectRoot }) // changes nothing
+console.log(plan.paths)                               // every file recovery would restore or delete
+await recoverTransactions({ io, projectRoot, confirmed: plan }) // refuses if the journals changed since
+```
+
+Recovery treats a journal as untrusted input. Before changing anything it validates every journal, and it refuses:
+
+- journals owned by another user (POSIX),
+- paths outside the project or in a protected location (see Safety), and anything under `.strutvane/` other than the upgrade lock and merge bases,
+- backups that are not regular files,
+- targets that are directories or special files.
+
+It only replaces or unlinks single regular files: it never deletes recursively and never writes through a symlink. Permissions are preserved: a replaced file keeps its mode (a `0600` `.env` stays `0600`), new `.env`/`.env.*` files are created `0600`, backups and journals are `0600`, and staging folders are `0700`. `.strutvane` and `.strutvane/staging` must be real folders; a symlink or junction there is refused. On Windows, permission bits are best-effort and never cause a failure.
+
 ## Safety
 
 - Every path is project-relative and checked: no `..`, no absolute or drive paths, no backslashes or control characters, and no escape through a symlink or junction.
-- Secrets are generated with `node:crypto` and never written to `.env.example`.
+- Protected locations are never read or written: `.git/`, `node_modules/` and devkit's transaction area `.strutvane/staging/`, at any depth. The rest of `.strutvane/` (lock, merge bases, generated registry, README) stays writable. The check covers letter case, Windows aliases (`.git.`, `.git::$DATA`, 8.3 short names) and links that resolve into those folders. Violations throw `INVALID_PATH`.
+- Secrets are generated with `node:crypto`, never written to `.env.example`, and redacted from every diff.
 - Module specifiers written into `strutvane.config.ts` are validated strictly (no quotes, URLs or `..` segments), so an installer cannot inject code.
 - Every failure has a stable `DevkitError.code` (for example `FILE_EXISTS`, `PATH_OUTSIDE_PROJECT`, `LOCAL_DEPENDENCY_SPEC`, `TRANSACTION_ABORTED`).
 

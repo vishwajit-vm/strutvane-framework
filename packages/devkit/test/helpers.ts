@@ -51,6 +51,8 @@ export function faultyIo(
     readText: guard(nodeIo.readText),
     writeText: guard(nodeIo.writeText),
     remove: guard(nodeIo.remove),
+    removeFile: guard(nodeIo.removeFile),
+    inspect: guard(nodeIo.inspect),
     exists: guard(nodeIo.exists),
     listFiles: guard(nodeIo.listFiles),
     rename: guard(async (from: string, to: string) => {
@@ -86,3 +88,27 @@ export async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
   }
   throw new Error('expected the promise to reject')
 }
+
+/**
+ * Create a symlink (or junction) if the OS allows it. Returns `false` where creating one needs a
+ * privilege the test runner lacks (e.g. file symlinks on Windows without Developer Mode), so
+ * symlink tests can skip gracefully instead of failing.
+ */
+export async function trySymlink(
+  target: string,
+  path: string,
+  type: 'file' | 'dir' | 'junction',
+): Promise<boolean> {
+  const { symlink } = await import('node:fs/promises')
+  try {
+    await symlink(target, path, type)
+    return true
+  } catch (error) {
+    const code = (error as { code?: unknown }).code
+    if (code === 'EPERM' || code === 'EACCES' || code === 'ENOSYS') return false
+    throw error
+  }
+}
+
+/** True on POSIX systems, where permission bits and file ownership are meaningful. */
+export const isPosix: boolean = process.platform !== 'win32'

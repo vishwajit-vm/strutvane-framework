@@ -16,9 +16,9 @@
  *
  * @module
  */
-import { createTwoFilesPatch } from 'diff'
 import { type DevkitIo, nodeIo, sha256 } from '../io.ts'
 import { resolveInsideProject } from '../paths.ts'
+import { isSecretEnvFile, unifiedPatch } from '../secret-files.ts'
 import { commitTransaction, type FileOperation, STATE_DIR } from '../transaction.ts'
 import { type Formatter, tryFormat } from './format.ts'
 import { parseHeader } from './header.ts'
@@ -310,14 +310,11 @@ export function renderUpgradePreview(plan: UpgradePlan): string {
     for (const n of item.notes) out.push(`    ${n}`)
     if (item.after !== undefined) {
       out.push(
-        createTwoFilesPatch(
-          item.path,
-          item.path,
-          item.before ?? '',
-          item.after,
-          'current',
-          'after upgrade',
-        ),
+        unifiedPatch(item.path, item.path, item.before ?? '', item.after, {
+          redact: isSecretEnvFile(item.path),
+          oldHeader: 'current',
+          newHeader: 'after upgrade',
+        }),
       )
     }
   }

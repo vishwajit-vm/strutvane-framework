@@ -159,6 +159,55 @@ describe('add', () => {
     for (const k of ['DB_HOST', 'PORT', 'KEYCLOAK_URL', 'MONKEY_COUNT'])
       expect(looksSecret(k), k).toBe(false)
   })
+
+  test.each([
+    // Name patterns
+    ['DB_PASS', undefined, true],
+    ['SMTP_PASS', undefined, true],
+    ['PASS', undefined, true],
+    ['DB_PWD', undefined, true],
+    ['PWD', undefined, true],
+    ['SENTRY_DSN', undefined, true],
+    ['DSN', undefined, true],
+    ['PASSWORD_SALT', undefined, true],
+    ['SALT', undefined, true],
+    ['HASH_SALT_ROUNDS', undefined, true],
+    ['SIGNING_SECRET', undefined, true],
+    ['WEBHOOK_SIGNING', undefined, true],
+    ['AWS_ACCESS_KEY_ID', undefined, true],
+    ['S3_ACCESS_KEY', undefined, true],
+    ['GPG_PASSPHRASE', undefined, true],
+    // Credentials embedded in a URL, whatever the key is called
+    ['DATABASE_URL', 'postgres://app:hunter2@db:5432/app', true],
+    ['REDIS_URL', 'redis://:p4ss@cache:6379', true],
+    ['AMQP', 'amqps://user:pw@mq.example/vhost', true],
+    // Public values
+    ['DATABASE_URL', 'postgres://db:5432/app', false],
+    ['DATABASE_URL', 'postgres://app@db:5432/app', false],
+    ['APP_URL', 'http://localhost:3000', false],
+    ['BYPASS_CACHE', 'true', false],
+    ['COMPASS_URL', undefined, false],
+    ['PASSENGER_COUNT', undefined, false],
+    ['DSN_TIMEOUT_MS', undefined, true],
+    ['SALTY_SNACKS', undefined, false],
+    ['SIGNINGS_ENABLED', undefined, false],
+    ['PWD_LENGTH_MIN', undefined, true],
+  ])('looksSecret(%s, %j) → %s', (key, value, expected) => {
+    expect(looksSecret(key, value)).toBe(expected)
+  })
+
+  test('.env.example never receives a URL with embedded credentials', async () => {
+    const env = createEnvEditor(fs)
+    await env.add('Database', [
+      { key: 'DATABASE_URL', value: 'postgres://app:canary-pw-31@db:5432/app' },
+      { key: 'DATABASE_REPLICA_URL', value: 'postgres://db-replica:5432/app' },
+    ])
+    const example = await fs.read('.env.example')
+    expect(example).not.toContain('canary-pw-31')
+    expect(example).toContain('DATABASE_URL=\n')
+    expect(example).toContain('DATABASE_REPLICA_URL=postgres://db-replica:5432/app')
+    expect(await fs.read('.env')).toContain('canary-pw-31') // the local file keeps the real value
+  })
 })
 
 describe('remove', () => {

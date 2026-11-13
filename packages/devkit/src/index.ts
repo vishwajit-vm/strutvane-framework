@@ -62,7 +62,14 @@ export {
   type RunInstallerOptions,
   runInstaller,
 } from './installer.ts'
-export { type DevkitIo, nodeIo, sha256 } from './io.ts'
+export {
+  type DevkitIo,
+  nodeIo,
+  type PathInfo,
+  type PathKind,
+  sha256,
+  type WriteTextOptions,
+} from './io.ts'
 export {
   createBiomeCliFormatter,
   type FormatOutcome,
@@ -104,8 +111,10 @@ export {
   type UpgradePlan,
 } from './merge/upgrade.ts'
 export { normaliseRelativePath, resolveInsideProject, toProjectPath } from './paths.ts'
+export { isSecretEnvFile, REDACTED, redactEnvLine } from './secret-files.ts'
 export {
   createStagedFs,
+  type DiffOptions,
   type FileChange,
   type StagedFs,
   type WriteOptions,
@@ -124,6 +133,10 @@ export {
   commitTransaction,
   type FileOperation,
   hasInterruptedTransaction,
+  planRecovery,
+  type RecoveryPlan,
+  type RecoveryStep,
+  type RecoveryTransaction,
   recoverTransactions,
   STATE_DIR,
   stagingDir,

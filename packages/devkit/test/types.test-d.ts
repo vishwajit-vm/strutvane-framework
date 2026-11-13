@@ -15,9 +15,14 @@ import {
   type DepsEditor,
   type DevkitInstallContext,
   type DevkitInstaller,
+  type DevkitIo,
   defineGenerator,
   defineInstaller,
   type EnvEditor,
+  looksSecret,
+  nodeIo,
+  type RecoveryPlan,
+  recoverTransactions,
   type StagedFs,
 } from '../src/index.ts'
 
@@ -88,5 +93,31 @@ describe('defineGenerator', () => {
       // @ts-expect-error `missing` is not part of the input
       files: (input) => [{ path: input.missing, content: '' }],
     })
+  })
+})
+
+describe('hardening APIs', () => {
+  test('a custom DevkitIo must implement the safe removal and inspection methods', () => {
+    const { removeFile: _removeFile, ...withoutRemoveFile } = nodeIo
+    // @ts-expect-error removeFile is required: deletions must never fall back to recursive removal
+    const broken: DevkitIo = withoutRemoveFile
+    expectTypeOf(broken).toEqualTypeOf<DevkitIo>()
+  })
+
+  test('diff redaction can only be turned off with an explicit boolean', () => {
+    const fs = {} as StagedFs
+    expectTypeOf(fs.diff)
+      .parameter(0)
+      .toEqualTypeOf<{ readonly revealSecrets?: boolean } | undefined>()
+    // @ts-expect-error a truthy string is not an opt-out
+    void fs.diff({ revealSecrets: 'yes' })
+  })
+
+  test('recovery accepts a confirmed plan and still returns a count', () => {
+    const plan = {} as RecoveryPlan
+    expectTypeOf(
+      recoverTransactions({ io: nodeIo, projectRoot: '.', confirmed: plan }),
+    ).resolves.toEqualTypeOf<number>()
+    expectTypeOf(looksSecret).toEqualTypeOf<(key: string, value?: string) => boolean>()
   })
 })

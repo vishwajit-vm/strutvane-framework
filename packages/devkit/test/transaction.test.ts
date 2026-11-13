@@ -92,10 +92,10 @@ describe('commitTransaction', () => {
     let removes = 0
     const io: DevkitIo = {
       ...nodeIo,
-      async remove(path) {
-        // The first remove is the deletion of gone.txt (op #3); fail it.
+      async removeFile(path) {
+        // The first removal is the deletion of gone.txt (op #3); fail it.
         if (path.endsWith('gone.txt') && removes++ === 0) throw new Error('EBUSY')
-        return nodeIo.remove(path)
+        return nodeIo.removeFile(path)
       },
     }
     const error = await rejectionOf(commitTransaction(ops, { io, projectRoot }))

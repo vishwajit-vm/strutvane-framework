@@ -14,19 +14,24 @@
  *   escape),
  * - an existing file is never overwritten unless the caller says `overwrite: true`; writing the
  *   identical content is a no-op, which keeps installers idempotent,
- * - updating a CRLF file keeps it CRLF.
+ * - updating a CRLF file keeps it CRLF,
+ * - `diff()` redacts the values of secret env files (`.env`, `.env.*` except `.env.example`)
+ *   unless the caller explicitly passes `revealSecrets: true` (see `secret-files.ts`).
  *
  * @module
  */
 import type { InstallFs } from '@strutvane/contracts'
-import { createTwoFilesPatch } from 'diff'
 import { DevkitError } from './errors.ts'
 import { type DevkitIo, nodeIo } from './io.ts'
 import { normaliseRelativePath, resolveInsideProject } from './paths.ts'
+import { isSecretEnvFile, unifiedPatch } from './secret-files.ts'
 import { matchLineEndings } from './text.ts'
 import { commitTransaction } from './transaction.ts'
 
-/** One pending change, as shown in previews. */
+/**
+ * One pending change. `before` and `after` are the raw contents, secrets included: show users
+ * {@link StagedFs.diff} (redacted by default), not these fields.
+ */
 export interface FileChange {
   readonly path: string
   readonly kind: 'create' | 'update' | 'delete'
@@ -47,6 +52,16 @@ export interface WriteOptions {
   readonly preserveLineEndings?: boolean
 }
 
+/** Options for {@link StagedFs.diff}. */
+export interface DiffOptions {
+  /**
+   * Show the real values of secret env files (`.env`, `.env.*` except `.env.example`) instead
+   * of `KEY=<redacted>`. Default `false`. Only for output that never leaves the developer's own
+   * terminal: diffs end up in CI logs and `--json` results.
+   */
+  readonly revealSecrets?: boolean
+}
+
 /** The contracts' `InstallFs`, plus deletion, previews and the transaction controls. */
 export interface StagedFs extends InstallFs {
   readonly projectRoot: string
@@ -55,8 +70,11 @@ export interface StagedFs extends InstallFs {
   remove(path: string): Promise<void>
   /** Pending changes, sorted by path. Writes identical to disk are not changes. */
   changes(): Promise<FileChange[]>
-  /** A unified diff of every pending change, for `--dry-run`. Empty string when nothing changes. */
-  diff(): Promise<string>
+  /**
+   * A unified diff of every pending change, for `--dry-run`. Empty string when nothing changes.
+   * Values in secret env files are redacted unless `revealSecrets: true` is passed.
+   */
+  diff(options?: DiffOptions): Promise<string>
   /** Apply every pending change as one transaction, then clear the stage. Returns changed paths. */
   commit(): Promise<string[]>
   /** Drop every pending change. */
@@ -137,13 +155,15 @@ export function createStagedFs(
       return out
     },
 
-    async diff() {
+    async diff(diffOptions = {}) {
+      const reveal = diffOptions.revealSecrets === true
       const patches = (await fs.changes()).map((c) =>
-        createTwoFilesPatch(
+        unifiedPatch(
           c.kind === 'create' ? '/dev/null' : `a/${c.path}`,
           c.kind === 'delete' ? '/dev/null' : `b/${c.path}`,
           c.before ?? '',
           c.after ?? '',
+          { redact: !reveal && isSecretEnvFile(c.path) },
         ),
       )
       return patches.join('')

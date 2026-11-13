@@ -25,10 +25,11 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 
 | File | Role |
 |---|---|
-| `paths.ts` | Project-relative path validation + symlink/junction escape checks. Every disk access goes through it. |
-| `io.ts` | `DevkitIo`, the injectable file-system surface (tests inject failures). |
-| `transaction.ts` | Stage → journal → rename commit → rollback; `recoverTransactions` after a crash. Journal paths are project-relative. |
+| `paths.ts` | Project-relative path validation, symlink/junction escape checks and protected locations (`.git`, `node_modules`, `.strutvane/staging`; recovery also refuses `.strutvane/**` except lock + bases). Every disk access goes through it. |
+| `io.ts` | `DevkitIo`, the injectable file-system surface (tests inject failures). `removeFile` never recurses or follows links; `inspect` is an lstat. |
+| `transaction.ts` | Stage → journal → rename commit → rollback; `planRecovery`/`recoverTransactions` after a crash. Journal paths are project-relative; recovery validates every journal first. Modes preserved; staging is 0600/0700. |
 | `staged-fs.ts` | `StagedFs`: buffered writes, no-op on identical content, `FILE_EXISTS` guard, CRLF preservation, diffs. |
+| `secret-files.ts` | Which env files hold secrets, and redacting them in every diff (`revealSecrets: true` opts out). |
 | `env-editor.ts` / `deps-editor.ts` / `config-patcher.ts` | The installer editors. Each keeps the contract signature (`add`) and adds `ensure` (reporting) and removal. |
 | `installer.ts` / `generator.ts` | Runtimes for `sv add` and `sv make:*`. |
 | `text.ts` | Line-ending/BOM/final-newline shapes shared by editors and the merge. |
@@ -37,7 +38,9 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 ## Key behaviours to keep (tests enforce them)
 
 - A user-only line is never lost by a merge (golden corpus `test/merge/__golden__` + fast-check properties).
-- `.env.example` never gets a secret value, even for unflagged secret-looking keys.
+- `.env.example` never gets a secret value, even for unflagged secret-looking keys or URLs with credentials.
+- Diffs never show `.env`/`.env.*` values unless the caller passes `revealSecrets: true` (canary tests).
+- Recovery never trusts a journal: protected paths, foreign owners, non-file targets and linked staging folders are refused before anything changes.
 - The config patcher splices text at AST offsets. It never re-prints the file, and register → unregister is byte-exact.
 - Contracts' `InstallFs` has no delete. Devkit extends it (`StagedFs.remove` etc.); propose adding `remove` to contracts via an RFC rather than diverging further.
 
