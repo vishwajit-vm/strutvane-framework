@@ -42,6 +42,7 @@ import { normalizeError, problemResponse, toProblemBody } from './errors.ts'
 import { resolvePermissionProvider } from './permissions.ts'
 import { type ResourceConfig, resolveResources } from './resource.ts'
 import { type HttpEnv, type RequestState, registerResourceRoutes } from './resource-routes.ts'
+import { type RouteDefinition, registerCustomRoutes } from './route.ts'
 import { acceptRequestId, securityHeaders } from './security.ts'
 
 /** Options for {@link createHttpApp}. */
@@ -66,6 +67,38 @@ export interface HttpAppOptions {
   readonly database?: Database
   /** Override the model registry (default: `ModelRegistryToken`, else built from `resources`). */
   readonly registry?: ModelRegistry
+  /** Custom routes (`route.get(…)`), mounted under `basePath` before the CRUD routes. */
+  readonly routes?: readonly RouteDefinition[]
+}
+
+/**
+ * The `http.onRequest` hook payload. Handlers (e.g. `@strutvane/auth`, `@strutvane/logs`) may:
+ * - set `actor` / `tenant` to identify the caller;
+ * - add `headers` (e.g. a refreshed session cookie) to the eventual response;
+ * - set `response` to answer the request themselves (e.g. sign-in routes, the log viewer) and
+ *   call `control.stop()`. The answer still gets security headers, `X-Request-Id` and
+ *   `http.onResponse`, but skips routing and the body limit (such handlers cap bodies themselves).
+ */
+export interface HttpRequestHookPayload {
+  readonly request: Request
+  readonly actor: Actor | null
+  readonly tenant: TenantContext | undefined
+  readonly headers?: Headers
+  readonly response?: Response
+}
+
+/** The `http.onResponse` hook payload (observe only). */
+export interface HttpResponseHookPayload {
+  readonly request: Request
+  readonly status: number
+  readonly requestId: string
+}
+
+/** Copy `extra` onto `target`, keeping every `Set-Cookie` separate. */
+function appendHeaders(target: Headers, extra: Headers | undefined): void {
+  if (!extra) return
+  for (const cookie of extra.getSetCookie()) target.append('set-cookie', cookie)
+  for (const [name, value] of extra) if (name !== 'set-cookie') target.set(name, value)
 }
 
 /** The app returned by {@link createHttpApp}. */
@@ -112,11 +145,9 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   http.use('*', async (c, next) => {
     const requestId = acceptRequestId(c.req.header('x-request-id'), () => ids())
     const locale = negotiateLocale(c.req.header('accept-language'), messages.locales())
-    const resolved = (await hooks.run('http.onRequest', {
-      request: c.req.raw,
-      actor: null,
-      tenant: undefined,
-    })) as { actor: Actor | null; tenant: TenantContext | undefined }
+    const initial: HttpRequestHookPayload = { request: c.req.raw, actor: null, tenant: undefined }
+    const resolved = ((await hooks.run('http.onRequest', initial)) ??
+      initial) as HttpRequestHookPayload
     const state: RequestState = {
       requestId,
       locale,
@@ -124,6 +155,15 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       tenantId: resolved.tenant?.id,
     }
     c.set('sv', state)
+    if (resolved.response instanceof Response) {
+      // A hook answered the request (sign-in route, log viewer): copy it so headers are mutable.
+      const answer = new Response(resolved.response.body, resolved.response)
+      appendHeaders(answer.headers, resolved.headers)
+      answer.headers.set('X-Request-Id', requestId)
+      const done: HttpResponseHookPayload = { request: c.req.raw, status: answer.status, requestId }
+      await hooks.run('http.onResponse', done)
+      return answer
+    }
     await runWithContext(
       {
         requestId,
@@ -134,8 +174,11 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       },
       () => next(),
     )
+    appendHeaders(c.res.headers, resolved.headers)
     c.res.headers.set('X-Request-Id', requestId)
-    await hooks.run('http.onResponse', { request: c.req.raw, status: c.res.status, requestId })
+    const done: HttpResponseHookPayload = { request: c.req.raw, status: c.res.status, requestId }
+    await hooks.run('http.onResponse', done)
+    return undefined
   })
   http.use(
     '*',
@@ -158,6 +201,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     logger,
     basePath,
   }
+  registerCustomRoutes(http, options.routes ?? [], { basePath, permissions })
   for (const resource of resources) {
     registerResourceRoutes(http, resource, deps)
     documentResource(http, resource, basePath)

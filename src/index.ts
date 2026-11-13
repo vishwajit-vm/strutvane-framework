@@ -39,7 +39,13 @@ export {
 // Database
 export type { Database, Dialect, Row, TransactionOptions } from './database/types.ts'
 // HTTP, OpenAPI and manifest
-export { createHttpApp, type HttpApp, type HttpAppOptions } from './http/create-http-app.ts'
+export {
+  createHttpApp,
+  type HttpApp,
+  type HttpAppOptions,
+  type HttpRequestHookPayload,
+  type HttpResponseHookPayload,
+} from './http/create-http-app.ts'
 export { type ListParams, parseListQuery, serializeListParams } from './http/list-query.ts'
 export {
   allowAllPermissions,
@@ -53,6 +59,14 @@ export {
   type ResourceContext,
   type ResourceHooks,
 } from './http/resource.ts'
+export {
+  type RouteContext,
+  type RouteDefinition,
+  type RouteHandler,
+  type RouteMethod,
+  type RouteOptions,
+  route,
+} from './http/route.ts'
 export { securityHeaders } from './http/security.ts'
 export { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from './messages.ts'
 export {
@@ -123,6 +137,12 @@ export {
   operatorsFor,
 } from './model/field.ts'
 export {
+  type PolicyColumn,
+  type PolicyColumnType,
+  type PolicySchema,
+  policySchema,
+} from './model/policy-schema.ts'
+export {
   createModelRegistry,
   dependencyOrder,
   type ModelRegistry,
@@ -144,6 +164,31 @@ export { compileFilter } from './query/compile.ts'
 export { evaluateFilter, MissingFieldError } from './query/evaluate.ts'
 export { type QueryField, queryFields } from './query/fields.ts'
 export { CursorError, SortError } from './query/sort.ts'
+export {
+  type ApiConfig,
+  apiBasePath,
+  type BootedProject,
+  bootProject,
+  mergeResources,
+} from './runtime/boot.ts'
+export { type AppDatabaseConfig, databaseConfigFrom } from './runtime/database-config.ts'
+export {
+  type MigrateProjectOptions,
+  type MigrateProjectResult,
+  type MigrationTarget,
+  migrateProject,
+  migrationTarget,
+  projectMigrationStatus,
+} from './runtime/migrations.ts'
+export {
+  type LoadedProject,
+  type LoadProjectOptions,
+  loadProject,
+  ProjectLoadError,
+} from './runtime/project.ts'
+export { runSeeder } from './runtime/seeders.ts'
+export { type FetchHandler, type RunningServer, type ServeOptions, serve } from './runtime/serve.ts'
+export { type StartedServer, type StartServerOptions, startServer } from './runtime/server.ts'
 // Schema and migrations
 export {
   compilePg,
@@ -167,4 +212,9 @@ export {
   type StoreOptions,
   UploadedFile,
 } from './storage/uploaded-file.ts'
-export { DatabaseToken, ModelRegistryToken, StorageManagerToken } from './tokens.ts'
+export {
+  DatabaseToken,
+  ModelRegistryToken,
+  ProjectModelsToken,
+  StorageManagerToken,
+} from './tokens.ts'

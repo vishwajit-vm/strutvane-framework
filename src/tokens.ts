@@ -6,6 +6,7 @@
  */
 import { type Token, token } from '@strutvane/core'
 import type { Database } from './database/types.ts'
+import type { AnyModel } from './model/define-model.ts'
 import type { ModelRegistry } from './model/registry.ts'
 import type { StorageManager } from './storage/manager.ts'
 
@@ -17,3 +18,12 @@ export const ModelRegistryToken: Token<ModelRegistry> = token<ModelRegistry>('st
 
 /** Storage disks (`local`, `memory`; `@strutvane/files` adds cloud drivers). */
 export const StorageManagerToken: Token<StorageManager> = token<StorageManager>('strutvane.storage')
+
+/**
+ * The models discovered in `app/models` by the project runtime. The zero-option provider
+ * (`@strutvane/framework/provider`) reads it; apps wiring `frameworkProvider({ models })` by hand
+ * don't need it.
+ */
+export const ProjectModelsToken: Token<readonly AnyModel[]> = token<readonly AnyModel[]>(
+  'strutvane.framework.projectModels',
+)

@@ -28,6 +28,7 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
   - `storage/`: keys, MIME sniffing, memory + local disks, signing, manager, streaming multipart, `UploadedFile`
   - `testing/` (subpath export): `createTestApp`, factories
   - `provider.ts`, `tokens.ts`, `messages.ts` (framework catalog + error codes)
+  - `runtime/` (app runtime: `project.ts` loader, `boot.ts`, `serve.ts` Node adapter, `server.ts`, `migrations.ts`, `seeders.ts`, `database-config.ts`, `default-provider.ts`), `entries/` (`/provider`, `/http`, `/database` subpaths), `commands.ts` (CLI contribution: dev/start/build/migrate/migrate:status/db:seed), `http/route.ts` (custom routes), `model/policy-schema.ts`, `testing/define-factory.ts`
 - **Deferred (documented in README):** queue/cache/mail, MySQL, Azure Entra passwordless (config shape kept, throws `NotImplementedError`), relation paths in filters, sparse fieldsets, bulk/export/PUT, `/docs` UI, custom actions.
 - Tests in `test/` run on real engines (PGlite + libSQL): migrations, RLS (as a non-owner role), SQL ↔ memory property tests, end-to-end HTTP, OpenAPI validation, upload attacks, type-level tests (`*.test-d.ts`). `test/readme.test.ts` runs the README examples: update both together.
 - Gate: `corepack pnpm@12.18.0 run ci` (lint → typecheck → tests + coverage 90/90/85/90 → build).

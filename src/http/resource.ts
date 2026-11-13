@@ -78,9 +78,23 @@ export interface ResourceConfig {
   }
 }
 
-/** Define a resource (identity helper for inference and discoverability). */
-export function defineResource(config: ResourceConfig): ResourceConfig {
-  return config
+/**
+ * Define a resource. Two equivalent forms:
+ * - `defineResource(Invoice, { includes: ['customer'] })`: the form `sv make:resource`
+ *   generates and the registry compiler reads (`app/resources/*.resource.ts`);
+ * - `defineResource({ model: Invoice, includes: ['customer'] })`.
+ */
+export function defineResource(
+  model: AnyModel | ModelDefinition,
+  config?: Omit<ResourceConfig, 'model'>,
+): ResourceConfig
+export function defineResource(config: ResourceConfig): ResourceConfig
+export function defineResource(
+  first: ResourceConfig | AnyModel | ModelDefinition,
+  config: Omit<ResourceConfig, 'model'> = {},
+): ResourceConfig {
+  if ('model' in first) return first
+  return { ...config, model: first }
 }
 
 /** A resource with its definition resolved. */

@@ -28,7 +28,8 @@ Strutvane Framework is part of **[Strutvane](https://github.com/vishwajit-vm/str
 | **HTTP** | `createHttpApp(app, { resources })` on Hono: list, show, create, update, delete, restore and `POST /query` per model, the list protocol of ADR-0011, deny-by-default permissions, hooks, domain events, security headers, body limits, `/health`, `/ready`. Every failure is an RFC 9457 problem with catalog messages. |
 | **OpenAPI & manifest** | OpenAPI 3.1 at `/openapi.json` (validated in tests) with `x-strutvane-*` extensions; the resource manifest at `/.well-known/strutvane.json` with per-actor capabilities. |
 | **Storage** (RFC-0002 core) | `local` and `memory` disks behind the `StorageDisk` contract, path-safe keys, streaming with sha256, signed temporary URLs; streaming multipart parsing with limits enforced *while* streaming; magic-byte MIME detection; `UploadedFile.store()`. |
-| **Testing** | `@strutvane/framework/testing`: `createTestApp()`, `factory()`, `actingAs()`, `refreshDatabase()`, typed request helpers, on real SQLite or PGlite. |
+| **Testing** | `@strutvane/framework/testing`: `createTestApp()`, `defineFactory()` (deterministic fake data), `factory()`, `actingAs()`, `refreshDatabase()`, typed request helpers, on real SQLite or PGlite. |
+| **App runtime** | What a generated app runs on: the zero-option provider (`/provider`), custom routes (`/http`), seeders (`/database`), `loadProject()` / `bootProject()` / `startServer()`, and the CLI commands `sv dev`, `start`, `build`, `migrate`, `migrate:status` and `db:seed` (contributed via `strutvane.commands`). |
 
 ## Quick start
 
@@ -104,6 +105,43 @@ await t.refreshDatabase()
 await t.close()
 ```
 
+## In a Strutvane app
+
+`create-strutvane` registers `@strutvane/framework/provider` in `strutvane.config.ts`. The runtime then
+discovers everything by convention, so there is nothing to wire by hand:
+
+| Where | What |
+|---|---|
+| `config/*.ts` | Loaded by file name (`config/database.ts` → `app.config('database')`), after `.env` (real environment variables win). |
+| `app/models/*.model.ts` | Every model gets its CRUD API under `config/api.ts` `prefix` + `version` (default `/api/v1`). |
+| `app/resources/*.resource.ts` | `defineResource(Invoice, { … })` replaces a model's default resource config. |
+| `app/http/routes/*.ts` | `export default [route.get('/hello', { public: true, handler })]`. A route needs `permission`, or `public: true`, or else a signed-in actor (deny-by-default). |
+| `database/migrations/` | `sv migrate` diffs the models with `snapshot.json`, writes a timestamped `.sql` file and applies it (`--pretend`, `--rename old=new`, `--separate old=new`, `--allow-destructive`). |
+| `database/seeders/` | `sv db:seed` runs `database.seeder.ts`; `--class InvoiceSeeder` runs one. |
+
+```ts
+// database/factories/invoice.factory.ts
+import { defineFactory } from '@strutvane/framework/testing'
+import Invoice from '../../app/models/invoice.model.ts'
+export default defineFactory(Invoice, ({ fake, sequence }) => ({
+  number: `INV-${sequence}`,
+  amount: fake.decimal({ min: 10, max: 10_000, scale: 2 }),
+}))
+
+// database/seeders/invoice.seeder.ts
+import { defineSeeder } from '@strutvane/framework/database'
+import InvoiceFactory from '../factories/invoice.factory.ts'
+export default defineSeeder('InvoiceSeeder', async ({ create }) => {
+  await create(InvoiceFactory, 10)
+})
+```
+
+Other packages join the request pipeline through core hooks, never imports. `http.onRequest`
+handlers may set `actor`/`tenant`, add response `headers` (a refreshed session cookie), or answer
+the request themselves with `response` + `control.stop()` (sign-in routes, the log viewer); such
+answers still get security headers, `X-Request-Id` and `http.onResponse`. Policies get their schema
+from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `ModelSchema` shape).
+
 ## Security notes
 
 - **Deny by default.** Without a bound `PermissionProvider` (`@strutvane/auth`), `createHttpApp` refuses to start unless `APP_ENV=local` (allow-all with a warning) or `publicApi: true` is set explicitly.
@@ -123,6 +161,8 @@ await t.close()
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |
 | Locale-aware sorting, case folding beyond ASCII | Text sorts by code point and case-insensitive matching folds ASCII only, identically on every engine. |
 | `/docs` UI, custom actions, ETags, rate limiting, request timeouts | Planned. |
+| Hand-written TypeScript migrations (`defineMigration`) | Declared, not executed: `sv migrate` stops with a clear error. Write `.sql` migrations meanwhile. |
+| Custom routes in OpenAPI, `sv dev` UI serving | Custom routes are served but not documented in `/openapi.json` yet; `sv dev` serves the API only (run Vite separately). |
 
 ## Installation (once released)
 

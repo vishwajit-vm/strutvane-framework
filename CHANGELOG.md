@@ -12,4 +12,6 @@
   - HTTP: `createHttpApp()` on Hono with automatic CRUD routes, `POST /query`, the shared list-query protocol (ADR-0011), deny-by-default permissions, hooks, domain events, security headers, body limits, `/health` and `/ready`, and RFC-0003 problems for every failure.
   - OpenAPI 3.1 at `/openapi.json` with `x-strutvane-*` extensions, and the resource manifest at `/.well-known/strutvane.json`.
   - Storage core (RFC-0002): `local` and `memory` disks, signed temporary URLs, streaming multipart parsing with limits enforced while streaming, and magic-byte MIME detection.
-  - `@strutvane/framework/testing`: `createTestApp()`, factories, `actingAs()`, `refreshDatabase()` and typed request helpers.
+  - `@strutvane/framework/testing`: `createTestApp()`, factories (`defineFactory()` with deterministic fake data), `actingAs()`, `refreshDatabase()` and typed request helpers.
+  - App runtime for generated projects: the zero-option provider (`@strutvane/framework/provider`, database from `config/database.ts` incl. the create-strutvane shapes), custom routes (`@strutvane/framework/http`, deny-by-default), seeders (`@strutvane/framework/database`), `loadProject()` / `bootProject()` / `startServer()`, `policySchema()` for auth policies, `defineResource(Model, config)`, and the CLI commands `dev`, `start`, `build`, `migrate`, `migrate:status` and `db:seed` (`strutvane.commands`).
+  - `http.onRequest` hook handlers may add response headers or answer a request themselves (auth endpoints, the log viewer).
