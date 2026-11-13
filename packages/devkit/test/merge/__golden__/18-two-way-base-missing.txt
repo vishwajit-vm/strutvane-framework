@@ -1,0 +1,72 @@
+case: 18-two-way-base-missing
+what: Base lost: every difference becomes a conflict, nothing is applied silently
+status: conflicted (two-way)
+conflicts: both-modified@line1, both-added@line18, both-modified@line44, both-added@line57
+notes: base unavailable: every difference is reported as a conflict
+----- merged output -----
+<<<<<<< yours
+// @strutvane-template framework/controller@1.0.0 (ejected: this file is yours to edit)
+||||||| original template (unavailable)
+=======
+// @strutvane-template framework/controller@1.1.0 (ejected: this file is yours to edit)
+>>>>>>> new template
+import { defineController } from '@strutvane/framework/http'
+import { z } from 'zod'
+import Invoice from '../models/invoice.model.ts'
+
+export const InvoiceInput = z.object({
+  number: z.string().min(1),
+  amount: z.number().min(0),
+  status: z.enum(['draft', 'sent', 'paid']),
+})
+
+export default defineController(Invoice, {
+<<<<<<< yours
+  async beforeCreate(ctx) {
+    ctx.input.number ??= await nextInvoiceNumber(ctx.actor.tenantId)
+  },
+
+||||||| original template (unavailable)
+=======
+>>>>>>> new template
+  async list(ctx) {
+    const page = await ctx.query.paginate(ctx.request.listQuery)
+    return ctx.json(page)
+  },
+
+  async show(ctx) {
+    const record = await ctx.query.findOrFail(ctx.params.id)
+    return ctx.json(record)
+  },
+
+  async create(ctx) {
+    const input = await ctx.validate(InvoiceInput)
+    const record = await ctx.query.create(input)
+    return ctx.json(record, 201)
+  },
+
+  async update(ctx) {
+    const input = await ctx.validate(InvoiceInput.partial())
+<<<<<<< yours
+    const record = await ctx.query.update(ctx.params.id, input)
+||||||| original template (unavailable)
+=======
+    const record = await ctx.query.update(ctx.params.id, input, { expectedVersion: ctx.request.ifMatch })
+>>>>>>> new template
+    return ctx.json(record)
+  },
+
+  async remove(ctx) {
+    await ctx.query.delete(ctx.params.id)
+    return ctx.noContent()
+  },
+<<<<<<< yours
+||||||| original template (unavailable)
+=======
+
+  async restore(ctx) {
+    const record = await ctx.query.restore(ctx.params.id)
+    return ctx.json(record)
+  },
+>>>>>>> new template
+})

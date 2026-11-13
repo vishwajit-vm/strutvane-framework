@@ -1,0 +1,5 @@
+# TEMPORARY (ADR-0016): @strutvane/contracts@0.1.0-next.0 is not published yet, so local development
+# links the sibling checkout. Remove this override once the version is on npm; CI's check-deps step
+# fails while it is present, by design.
+overrides:
+  "@strutvane/contracts": link:../contracts

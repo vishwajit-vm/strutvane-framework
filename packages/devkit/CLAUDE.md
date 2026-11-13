@@ -16,9 +16,35 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 
 ## Status
 
-- **No code in this repo yet.** It is implemented in its roadmap phase (see ECOSYSTEM.md §7). Design first: read this package's spec and the ADRs, and write or extend an RFC before changing any public API.
-- The source of truth for decisions is `../../docs/00-executive-summary.md` (D1–D20). If anything here conflicts with it, that file wins.
-- The package spec is `../../docs/04-architecture.md` (online: https://github.com/vishwajit-vm/strutvane/blob/main/docs/04-architecture.md).
+- **Phase 1: implemented, version `0.1.0-next.0`, not released.** Changesets is in pre mode (`next`).
+- `@strutvane/contracts` is not published yet, so `pnpm-workspace.yaml` has a **temporary** `link:../contracts` override. Remove it once contracts `0.1.0-next.0` is on npm (ADR-0016; `check-deps` flags it until then).
+- The source of truth for decisions is `../../docs/00-executive-summary.md` (D1–D24). If anything here conflicts with it, that file wins.
+- The package spec is `../../docs/04-architecture.md` (online: https://github.com/vishwajit-vm/strutvane/blob/main/docs/04-architecture.md). The merge engine follows ADR-0012 (spike 06).
+
+## Code map (`src/`, one concept per file)
+
+| File | Role |
+|---|---|
+| `paths.ts` | Project-relative path validation + symlink/junction escape checks. Every disk access goes through it. |
+| `io.ts` | `DevkitIo`, the injectable file-system surface (tests inject failures). |
+| `transaction.ts` | Stage → journal → rename commit → rollback; `recoverTransactions` after a crash. Journal paths are project-relative. |
+| `staged-fs.ts` | `StagedFs`: buffered writes, no-op on identical content, `FILE_EXISTS` guard, CRLF preservation, diffs. |
+| `env-editor.ts` / `deps-editor.ts` / `config-patcher.ts` | The installer editors. Each keeps the contract signature (`add`) and adds `ensure` (reporting) and removal. |
+| `installer.ts` / `generator.ts` | Runtimes for `sv add` and `sv make:*`. |
+| `text.ts` | Line-ending/BOM/final-newline shapes shared by editors and the merge. |
+| `merge/` | `merge.ts` (three-way + two-way), `header.ts`, `lock.ts` (zod-validated lock + sha256 bases), `format.ts` (Biome CLI), `upgrade.ts` (plan/preview/apply/recordEjection). |
+
+## Key behaviours to keep (tests enforce them)
+
+- A user-only line is never lost by a merge (golden corpus `test/merge/__golden__` + fast-check properties).
+- `.env.example` never gets a secret value, even for unflagged secret-looking keys.
+- The config patcher splices text at AST offsets. It never re-prints the file, and register → unregister is byte-exact.
+- Contracts' `InstallFs` has no delete. Devkit extends it (`StagedFs.remove` etc.); propose adding `remove` to contracts via an RFC rather than diverging further.
+
+## Commands
+
+- `corepack pnpm@12.18.0 run ci`: lint → typecheck → tests + coverage (90/90/85/90) → build
+- `PROPERTY_RUNS=2000 corepack pnpm@12.18.0 exec vitest run test/merge/property.test.ts`: deeper property run
 
 ## Boundaries (non-negotiable)
 

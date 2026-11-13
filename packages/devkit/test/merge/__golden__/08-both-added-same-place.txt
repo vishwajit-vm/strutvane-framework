@@ -1,0 +1,58 @@
+case: 08-both-added-same-place
+what: User adds an archive action right after remove; template adds restore at the same spot
+status: conflicted (three-way)
+conflicts: both-added@line39
+notes: none
+----- merged output -----
+// @strutvane-template framework/controller@1.1.0 (ejected: this file is yours to edit)
+import { defineController } from '@strutvane/framework/http'
+import { z } from 'zod'
+import Invoice from '../models/invoice.model.ts'
+
+export const InvoiceInput = z.object({
+  number: z.string().min(1),
+  amount: z.number().min(0),
+  status: z.enum(['draft', 'sent', 'paid']),
+})
+
+export default defineController(Invoice, {
+  async list(ctx) {
+    const page = await ctx.query.paginate(ctx.request.listQuery)
+    return ctx.json(page)
+  },
+
+  async show(ctx) {
+    const record = await ctx.query.findOrFail(ctx.params.id)
+    return ctx.json(record)
+  },
+
+  async create(ctx) {
+    const input = await ctx.validate(InvoiceInput)
+    const record = await ctx.query.create(input)
+    return ctx.json(record, 201)
+  },
+
+  async update(ctx) {
+    const input = await ctx.validate(InvoiceInput.partial())
+    const record = await ctx.query.update(ctx.params.id, input, { expectedVersion: ctx.request.ifMatch })
+    return ctx.json(record)
+  },
+
+  async remove(ctx) {
+    await ctx.query.delete(ctx.params.id)
+    return ctx.noContent()
+  },
+<<<<<<< yours
+
+  async archive(ctx) {
+    return ctx.json(await ctx.query.update(ctx.params.id, { archived: true }))
+  },
+||||||| original template
+=======
+
+  async restore(ctx) {
+    const record = await ctx.query.restore(ctx.params.id)
+    return ctx.json(record)
+  },
+>>>>>>> new template
+})

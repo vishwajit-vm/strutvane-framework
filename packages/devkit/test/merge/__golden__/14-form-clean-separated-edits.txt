@@ -1,0 +1,22 @@
+case: 14-form-clean-separated-edits
+what: User changes the page title hook; template edits are lines away
+status: clean (three-way)
+conflicts: none
+notes: none
+----- merged output -----
+// @strutvane-template ui/form-page@1.1.0 (ejected: this file is yours to edit)
+import { ResourceForm, useResource } from '@strutvane/ui/react'
+
+export default function InvoiceFormPage() {
+  const resource = useResource('Invoice', { include: ['customer'] })
+  return (
+    <ResourceForm
+      resource={resource}
+      fields={['number', 'customer', 'amount', 'status', 'dueDate']}
+      submitLabel="Save invoice"
+      cancelLabel="Cancel"
+      onSuccess={(record) => resource.navigate.show(record.id)}
+      autosaveDraft
+    />
+  )
+}

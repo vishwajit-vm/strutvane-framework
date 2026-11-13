@@ -1,0 +1,50 @@
+case: 10-mixed-line-endings
+what: User file mixes CRLF and LF (e.g. pasted code); output uses the majority style
+status: clean (three-way)
+conflicts: none
+notes: mixed line endings normalised to CRLF
+----- merged output -----
+// @strutvane-template framework/controller@1.1.0 (ejected: this file is yours to edit)<CR>
+import { defineController } from '@strutvane/framework/http'<CR>
+import { z } from 'zod'<CR>
+import Invoice from '../models/invoice.model.ts'<CR>
+<CR>
+export const InvoiceInput = z.object({<CR>
+  number: z.string().min(1),<CR>
+  amount: z.number().min(0),<CR>
+  status: z.enum(['draft', 'sent', 'paid']),<CR>
+})<CR>
+<CR>
+export default defineController(Invoice, {<CR>
+  async list(ctx) {<CR>
+    const page = await ctx.query.paginate(ctx.request.listQuery)<CR>
+    return ctx.json(page)<CR>
+  },<CR>
+<CR>
+  async show(ctx) {<CR>
+    const record = await ctx.query.findOrFail(ctx.params.id)<CR>
+    return ctx.json(record)<CR>
+  },<CR>
+<CR>
+  async create(ctx) {<CR>
+    const input = await ctx.validate(InvoiceInput)<CR>
+    const record = await ctx.query.create(input)<CR>
+    return ctx.json(record, 201)<CR>
+  },<CR>
+<CR>
+  async update(ctx) {<CR>
+    const input = await ctx.validate(InvoiceInput.partial())<CR>
+    const record = await ctx.query.update(ctx.params.id, input, { expectedVersion: ctx.request.ifMatch })<CR>
+    return ctx.json(record)<CR>
+  },<CR>
+<CR>
+  async remove(ctx) {<CR>
+    await ctx.query.delete(ctx.params.id)<CR>
+    return ctx.noContent()<CR>
+  },<CR>
+<CR>
+  async restore(ctx) {<CR>
+    const record = await ctx.query.restore(ctx.params.id)<CR>
+    return ctx.json(record)<CR>
+  },<CR>
+})<CR>
