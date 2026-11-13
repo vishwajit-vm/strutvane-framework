@@ -1,0 +1,4 @@
+# TEMPORARY (ADR-0016): link to the sibling contracts checkout until @strutvane/contracts@0.1.0-next.0
+# is on npm. Remove before committing; CI's check-deps guard rejects it.
+overrides:
+  "@strutvane/contracts": link:../contracts
