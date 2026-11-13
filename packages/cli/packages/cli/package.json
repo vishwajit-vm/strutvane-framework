@@ -1,0 +1,58 @@
+{
+  "name": "@strutvane/cli",
+  "version": "0.1.0-next.0",
+  "description": "The Strutvane command line: project diagnostics, generators (make:*), the typed registry compiler, package installers (add/remove) and safe upgrades.",
+  "keywords": [
+    "strutvane",
+    "cli",
+    "generator",
+    "scaffolding",
+    "code-generation",
+    "registry",
+    "typescript"
+  ],
+  "homepage": "https://github.com/vishwajit-vm/strutvane-cli#readme",
+  "bugs": {
+    "url": "https://github.com/vishwajit-vm/strutvane-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vishwajit-vm/strutvane-cli.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT",
+  "author": "The Strutvane Authors",
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "strutvane-cli": "./dist/bin.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./bin": "./dist/bin.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "dependencies": {
+    "@clack/prompts": "1.9.0",
+    "@strutvane/contracts": "0.1.0-next.0",
+    "@strutvane/core": "0.1.0-next.0",
+    "@strutvane/devkit": "0.1.0-next.0",
+    "oxc-parser": "0.158.0",
+    "zod": "4.6.7"
+  }
+}

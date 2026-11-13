@@ -1,0 +1,15 @@
+import { defineMigration } from '@strutvane/framework/database'
+
+/** backfill_invoice_totals: a hand-written migration (data changes or special DDL). */
+export default defineMigration({
+  async up({ schema }) {
+    await schema.alterTable('invoices', (table) => {
+      // table.string(...)
+    })
+  },
+  async down({ schema }) {
+    await schema.alterTable('invoices', (table) => {
+      // undo the changes from up()
+    })
+  },
+})

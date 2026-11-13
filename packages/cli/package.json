@@ -1,0 +1,34 @@
+{
+  "name": "strutvane-cli-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace for the Strutvane CLI: @strutvane/cli (implementation) and strutvane (launcher), released together.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsdown",
+    "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@changesets/cli": "3.0.3",
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.1.0",
+    "fast-check": "4.10.2",
+    "tsdown": "0.23.7",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

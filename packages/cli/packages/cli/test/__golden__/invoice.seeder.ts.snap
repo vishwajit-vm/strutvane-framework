@@ -1,0 +1,7 @@
+import { defineSeeder } from '@strutvane/framework/database'
+import InvoiceFactory from '../factories/invoice.factory.ts'
+
+/** Seeds development data. Run with `sv db:seed --class InvoiceSeeder`. */
+export default defineSeeder('InvoiceSeeder', async ({ create }) => {
+  await create(InvoiceFactory, 10)
+})
