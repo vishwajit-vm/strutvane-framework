@@ -19,7 +19,8 @@
     "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "test:perf": "vitest run --config vitest.perf.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",
