@@ -76,7 +76,8 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.hint.FRAMEWORK_REQUIRED': 'Install it with: sv add framework',
   'cli.error.FRAMEWORK_COMMAND_MISSING':
     'The installed @strutvane/framework does not provide `sv {command}`.',
-  'cli.hint.FRAMEWORK_COMMAND_MISSING': 'Upgrade it with: sv upgrade',
+  'cli.hint.FRAMEWORK_COMMAND_MISSING':
+    'Run `sv doctor` to see why its commands were not loaded (e.g. a version mismatch), then `sv upgrade`.',
   'cli.error.PRODUCTION_GUARD': '`sv {command}` is destructive and APP_ENV is "production".',
   'cli.hint.PRODUCTION_GUARD': 'Pass --force --i-understand if you really mean it.',
   'cli.error.COMMAND_FAILED': '`{command}` failed with exit code {code}.',

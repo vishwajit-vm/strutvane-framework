@@ -1,26 +1,33 @@
 import { describe, expect, test } from 'vitest'
-import { actingAs, testApp } from '@strutvane/framework/testing'
+import { createTestApp } from '@strutvane/framework/testing'
+import Invoice from '../../app/models/invoice.model.ts'
 import InvoiceFactory from '../../database/factories/invoice.factory.ts'
 
+const actor = { id: '00000000-0000-4000-8000-000000000001', type: 'user', roles: [], attrs: {} } as const
+
 describe('Invoice API', () => {
-  test('lists invoices with invoice.viewAny', async () => {
-    const app = await testApp()
-    await InvoiceFactory.createMany(3)
-    const res = await actingAs(app, { permissions: ['invoice.viewAny'] }).get('/api/v1/invoices')
+  test('lists invoices', async () => {
+    const t = await createTestApp({ resources: [Invoice] })
+    await InvoiceFactory.createMany(t, 3)
+    const res = await t.actingAs(actor).request<{ data: unknown[] }>('GET', '/api/v1/invoices')
     expect(res.status).toBe(200)
     expect(res.body.data).toHaveLength(3)
+    await t.close()
   })
 
   test('denies access without a permission (deny-by-default)', async () => {
-    const app = await testApp()
-    const res = await actingAs(app, { permissions: [] }).get('/api/v1/invoices')
+    const t = await createTestApp({ resources: [Invoice], permissions: 'deny' })
+    const res = await t.actingAs(actor).request('GET', '/api/v1/invoices')
     expect(res.status).toBe(403)
+    await t.close()
   })
 
   test('creates a new invoice', async () => {
-    const app = await testApp()
-    const input = await InvoiceFactory.attributes()
-    const res = await actingAs(app, { permissions: ['invoice.create'] }).post('/api/v1/invoices', input)
+    const t = await createTestApp({ resources: [Invoice] })
+    const res = await t.actingAs(actor).request('POST', '/api/v1/invoices', {
+      body: InvoiceFactory.attributes(),
+    })
     expect(res.status).toBe(201)
+    await t.close()
   })
 })

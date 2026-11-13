@@ -364,7 +364,9 @@ describe('other generators', () => {
       (await cli(['make:test', 'InvoiceMath', '--unit', '--model', 'Invoice'], { cwd: root })).code,
     ).toBe(0)
     expect((await cli(['make:test', 'checkout', '--e2e'], { cwd: root })).code).toBe(0)
-    expect(read(root, 'tests/feature/invoice-totals.test.ts')).toContain('testApp')
+    expect(read(root, 'tests/feature/invoice-totals.test.ts')).toContain(
+      'createTestApp({ resources: [] })',
+    )
     expect(read(root, 'tests/unit/invoice-math.test.ts')).toContain(
       "expect(Invoice.name).toBe('Invoice')",
     )

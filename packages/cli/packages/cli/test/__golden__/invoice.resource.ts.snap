@@ -11,14 +11,14 @@ export default defineResource(Invoice, {
     sendReminder: { label: 'Send reminder' },
   },
   hooks: {
-    async beforeCreate(ctx) {
+    async beforeCreate(input, ctx) {
       // beforeCreate logic for invoice records
-      void ctx
+      void [input, ctx]
     },
 
-    async afterUpdate(ctx) {
+    async afterUpdate(record, previous, ctx) {
       // afterUpdate logic for invoice records
-      void ctx
+      void [record, previous, ctx]
     },
   },
 })
