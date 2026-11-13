@@ -153,6 +153,7 @@ export async function migrate(
         if (/^PRAGMA\s+foreign_keys\s*=/i.test(statement)) continue
         await tx.execute(statement)
       }
+      if (m.run) await m.run(tx)
       await tx.execute(
         tx.dialect === 'postgres'
           ? `INSERT INTO "${MIGRATIONS_TABLE}" ("name", "checksum", "batch", "applied_at") VALUES ($1, $2, $3, $4)`

@@ -1,6 +1,6 @@
 // The project runtime: loading a generated project, booting it, serving it over real HTTP,
 // migrations and seeders, and the CLI command contributions.
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Actor } from '@strutvane/contracts'
@@ -204,7 +204,7 @@ describe('migrations and seeders', () => {
     expect(status.pending).toEqual([])
   })
 
-  test('pretend writes without applying; custom migration tables and TS migrations are refused', async () => {
+  test('pretend writes without applying; custom migration tables are refused', async () => {
     const root = await project()
     const p = await loadProject(root, { dotenv: false })
     const r = await migrateProject(p, { pretend: true })
@@ -212,8 +212,8 @@ describe('migrations and seeders', () => {
     expect(readdirSync(join(root, 'database/migrations')).some((f) => f.endsWith('.sql'))).toBe(
       true,
     )
-    await writeFile(join(root, 'database/migrations/x.ts'), 'export default {}\n')
-    await expect(migrateProject(p)).rejects.toThrow(/TypeScript migrations/)
+    await writeFile(join(root, 'database/migrations/99990101000000_bad.ts'), 'export default {}\n')
+    await expect(migrateProject(p)).rejects.toThrow(/defineMigration/)
     const custom = await project(
       projectFiles({ 'config/database.ts': "export default { migrations: { table: 'mine' } }\n" }),
     )
@@ -224,6 +224,43 @@ describe('migrations and seeders', () => {
         config: { database: { migrations: { table: 'mine' } } },
       }),
     ).toThrow(/strutvane_migrations/)
+  })
+
+  test('hand-written .ts and .sql migrations run in timestamp order with { db }; edits are drift', async () => {
+    const root = await project()
+    const p = await loadProject(root, { dotenv: false })
+    await migrateProject(p, { name: 'create invoices' })
+    const ts = join(root, 'database/migrations/99990101000000_backfill.ts')
+    await writeFile(
+      ts,
+      `import { defineMigration } from '${IMPORTS.database}'
+export default defineMigration({
+  async up({ db }) {
+    await db.execute(
+      "INSERT INTO invoices (id, number, amount, status, created_at, updated_at) VALUES ('00000000-0000-4000-8000-000000000001', 'TS-1', '1.00', 'draft', 'x', 'x')",
+    )
+  },
+  async down({ db }) { await db.execute("DELETE FROM invoices WHERE number = 'TS-1'") },
+})
+`,
+    )
+    await writeFile(
+      join(root, 'database/migrations/99990102000000_more.sql'),
+      "-- more\n-- Notes only, then one statement.\n\nUPDATE invoices SET status = 'sent' WHERE number = 'TS-1';\n",
+    )
+    const r = await migrateProject(p)
+    expect(r.applied).toEqual(['99990101000000_backfill', '99990102000000_more'])
+    const db = await connectDatabase(migrationTarget(p).connection)
+    try {
+      const rows = await db.query("SELECT status FROM invoices WHERE number = 'TS-1'")
+      expect(rows[0]?.['status']).toBe('sent')
+    } finally {
+      await db.close()
+    }
+    await writeFile(ts, `${readFileSync(ts, 'utf8')}// edited\n`)
+    expect((await projectMigrationStatus(p)).drift).toEqual([
+      { name: '99990101000000_backfill', kind: 'changed' },
+    ])
   })
 
   test('defineSeeder / defineMigration validate their input', () => {

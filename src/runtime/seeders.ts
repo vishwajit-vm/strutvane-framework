@@ -70,7 +70,10 @@ export function defineSeeder(
   return Object.freeze(seeder as Seeder)
 }
 
-/** Context for a hand-written migration (declared now, executed in a later release). */
+/**
+ * What a hand-written migration receives: the migrator's transaction. Use `db.execute(sql, params)`
+ * for DDL and data changes. (The `schema` builder sketched in docs/06 §3.2 is not built yet.)
+ */
 export interface MigrationContext {
   readonly db: Database
 }
@@ -82,13 +85,23 @@ export interface MigrationDefinition {
 }
 
 /**
- * Declare a hand-written migration. **Not executed by `sv migrate` yet**: it stops with a clear
- * error instead of silently skipping the file. Use `sv make:migration --sql` meanwhile.
+ * Declare a hand-written migration (`database/migrations/<timestamp>_<name>.ts`). `sv migrate`
+ * runs `up({ db })` in timestamp order inside its transaction. `down()` is kept for the planned
+ * rollback command and is not run today.
  */
 export function defineMigration(definition: MigrationDefinition): MigrationDefinition {
   if (typeof definition?.up !== 'function')
     throw new TypeError('defineMigration needs an up() function')
   return Object.freeze({ ...definition })
+}
+
+/** Is `value` a migration definition? */
+export function isMigrationDefinition(value: unknown): value is MigrationDefinition {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as MigrationDefinition).up === 'function'
+  )
 }
 
 /** Is `value` a seeder? */

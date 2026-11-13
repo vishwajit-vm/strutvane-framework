@@ -116,7 +116,7 @@ discovers everything by convention, so there is nothing to wire by hand:
 | `app/models/*.model.ts` | Every model gets its CRUD API under `config/api.ts` `prefix` + `version` (default `/api/v1`). |
 | `app/resources/*.resource.ts` | `defineResource(Invoice, { … })` replaces a model's default resource config. |
 | `app/http/routes/*.ts` | `export default [route.get('/hello', { public: true, handler })]`. A route needs `permission`, or `public: true`, or else a signed-in actor (deny-by-default). |
-| `database/migrations/` | `sv migrate` diffs the models with `snapshot.json`, writes a timestamped `.sql` file and applies it (`--pretend`, `--rename old=new`, `--separate old=new`, `--allow-destructive`). |
+| `database/migrations/` | `sv migrate` diffs the models with `snapshot.json`, writes a timestamped `.sql` file and applies it together with hand-written `.sql`/`.ts` migrations, in timestamp order (`--pretend`, `--rename old=new`, `--separate old=new`, `--allow-destructive`). |
 | `database/seeders/` | `sv db:seed` runs `database.seeder.ts`; `--class InvoiceSeeder` runs one. |
 
 ```ts
@@ -161,7 +161,7 @@ from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `Mo
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |
 | Locale-aware sorting, case folding beyond ASCII | Text sorts by code point and case-insensitive matching folds ASCII only, identically on every engine. |
 | `/docs` UI, custom actions, ETags, rate limiting, request timeouts | Planned. |
-| Hand-written TypeScript migrations (`defineMigration`) | Declared, not executed: `sv migrate` stops with a clear error. Write `.sql` migrations meanwhile. |
+| Migration `schema` builder and rollback | Hand-written migrations run (`.sql`, or `.ts` with `defineMigration({ up({ db }) {…} })` using `db.execute`), but the `schema` builder of docs/06 §3.2 and `down()`/rollback are not built yet. |
 | Custom routes in OpenAPI, `sv dev` UI serving | Custom routes are served but not documented in `/openapi.json` yet; `sv dev` serves the API only (run Vite separately). |
 
 ## Installation (once released)

@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Dialect } from '../database/types.ts'
+import type { Database, Dialect } from '../database/types.ts'
 import type { ModelDefinition } from '../model/define-model.ts'
 import {
   describeRename,
@@ -44,6 +44,11 @@ export interface MigrationSource {
   readonly statements: readonly string[]
   /** sha256 of the normalised statements; detects edits to applied migrations. */
   readonly checksum: string
+  /**
+   * Code to run after `statements`, inside the same transaction (hand-written TypeScript
+   * migrations). Its checksum covers the file text instead.
+   */
+  readonly run?: (db: Database) => Promise<void>
 }
 
 /** The snapshot stored next to the migrations. */
@@ -130,7 +135,8 @@ export function parseMigration(text: string): { header: MigrationHeader; stateme
     .join('\n')
     .split(BREAKPOINT)
     .map((s) => s.trim())
-    .filter(Boolean)
+    // A chunk of only comments (e.g. a hand-written file's notes) is not a statement.
+    .filter((s) => s.split('\n').some((l) => l.trim() !== '' && !l.trim().startsWith('--')))
   return {
     header: {
       ...optional('name', fields.get('name')),

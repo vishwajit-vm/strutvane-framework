@@ -6,20 +6,31 @@
  * {@link RenameResolutionRequiredError} unless answered (`--rename old=new` / `--separate`), and a
  * destructive change stops with `DestructiveChangeError` unless `allowDestructive` is set.
  *
- * Only `*.sql` migrations are executed. Hand-written TypeScript migrations
- * (`defineMigration`) are reported as not supported yet instead of being silently skipped.
+ * Hand-written migrations live in the same folder: `*.sql` (statements separated by
+ * `--> statement-breakpoint`) or `*.ts` (`defineMigration({ up({ db }) {…} })`). All run in name
+ * (timestamp) order, each pending one inside the migrator's transaction. There is no rollback
+ * yet, so `down()` is recorded for later and never run.
  *
  * @module
  */
-import { isAbsolute, join } from 'node:path'
+
+import { readFile } from 'node:fs/promises'
+import { basename, isAbsolute, join } from 'node:path'
 import { connectDatabase, type DatabaseConfig } from '../database/connect.ts'
 import type { Database, Dialect } from '../database/types.ts'
-import { readMigrations, readSnapshot, writeMigration } from '../migrations/files.ts'
+import {
+  checksumOf,
+  type MigrationSource,
+  readMigrations,
+  readSnapshot,
+  writeMigration,
+} from '../migrations/files.ts'
 import { MIGRATIONS_TABLE, migrate, migrationStatus } from '../migrations/migrator.ts'
 import { planMigration, type RenameResolver } from '../migrations/planner.ts'
 import { createModelRegistry } from '../model/registry.ts'
 import { type AppDatabaseConfig, databaseConfigFrom } from './database-config.ts'
-import { conventionFiles, type LoadedProject } from './project.ts'
+import { conventionFiles, importDefault, type LoadedProject } from './project.ts'
+import { isMigrationDefinition } from './seeders.ts'
 
 /** Where a project's migrations live and how to connect. */
 export interface MigrationTarget {
@@ -66,14 +77,27 @@ export interface MigrateProjectResult {
   readonly applied: readonly string[]
 }
 
-/** Fail if the folder holds hand-written TypeScript migrations, which this runner can't apply. */
-function assertSqlOnly(dir: string): void {
-  const ts = conventionFiles(dir, '.', '.ts')
-  if (ts.length > 0) {
-    throw new Error(
-      `TypeScript migrations are not supported yet (${ts.length} in ${dir}); write them as .sql (sv make:migration --sql).`,
-    )
+/**
+ * Every migration in `dir`: `.sql` files plus hand-written `.ts` files, sorted by name. A `.ts`
+ * file's checksum covers its text, so editing an applied one is reported as drift.
+ */
+export async function readProjectMigrations(dir: string): Promise<MigrationSource[]> {
+  const out = await readMigrations(dir)
+  for (const file of conventionFiles(dir, '.', '.ts')) {
+    const definition = await importDefault(file)
+    if (!isMigrationDefinition(definition))
+      throw new Error(`${file} must default-export defineMigration({ up({ db }) { … } })`)
+    const name = basename(file, '.ts')
+    out.push({
+      name,
+      statements: [],
+      checksum: checksumOf([await readFile(file, 'utf8')]),
+      run: async (db) => {
+        await definition.up({ db })
+      },
+    })
   }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }
 
 /** Generate (when models changed) and apply migrations. */
@@ -82,7 +106,6 @@ export async function migrateProject(
   options: MigrateProjectOptions = {},
 ): Promise<MigrateProjectResult> {
   const target = migrationTarget(project)
-  assertSqlOnly(target.dir)
   const registry = createModelRegistry(project.models.map((m) => m.definition))
   const snapshot = await readSnapshot(target.dir, target.dialect)
   const plan = await planMigration({
@@ -98,7 +121,7 @@ export async function migrateProject(
   if (options.pretend) return { created, applied: [] }
   const db = options.database ?? (await connectDatabase(target.connection))
   try {
-    const applied = await migrate(db, await readMigrations(target.dir))
+    const applied = await migrate(db, await readProjectMigrations(target.dir))
     return { created, applied }
   } finally {
     if (!options.database) await db.close()
@@ -113,7 +136,7 @@ export async function projectMigrationStatus(
   const target = migrationTarget(project)
   const db = options.database ?? (await connectDatabase(target.connection))
   try {
-    return await migrationStatus(db, await readMigrations(target.dir))
+    return await migrationStatus(db, await readProjectMigrations(target.dir))
   } finally {
     if (!options.database) await db.close()
   }
