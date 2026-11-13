@@ -147,6 +147,16 @@ async function promptFields(ctx: CommandContext): Promise<string[]> {
   }
 }
 
+/**
+ * Tenant scoping for a new model. In an app with multi-tenancy (`config/tenancy.ts`), models are
+ * tenant-scoped unless `--no-tenant` says otherwise: forgetting the flag must never produce a
+ * table that every tenant can read (fail closed). Elsewhere the model's own default applies.
+ */
+export function tenantOption(flag: boolean | undefined, root: string): { tenant?: boolean } {
+  if (flag !== undefined) return { tenant: flag }
+  return existsSync(join(root, 'config', 'tenancy.ts')) ? { tenant: true } : {}
+}
+
 export const makeModelCommand: AnyCommand = defineCommand({
   name: 'make:model',
   description: 'Create a model with its policy, factory, seeder and feature test',
@@ -180,7 +190,8 @@ export const makeModelCommand: AnyCommand = defineCommand({
     ui: { type: 'boolean', default: true, description: 'Generate UI screens (--no-ui to disable)' },
     tenant: {
       type: 'boolean',
-      description: 'Scope rows to the tenant (--no-tenant for global data)',
+      description:
+        'Scope rows to the tenant (default in apps with config/tenancy.ts; --no-tenant for global data)',
     },
     audit: { type: 'boolean', default: false, description: 'Record changes in the audit log' },
     'soft-deletes': { type: 'boolean', default: false, description: 'Delete by setting deletedAt' },
@@ -219,7 +230,7 @@ export const makeModelCommand: AnyCommand = defineCommand({
         options: {
           timestamps: ctx.flags.timestamps,
           softDeletes: ctx.flags['soft-deletes'],
-          ...(ctx.flags.tenant === undefined ? {} : { tenant: ctx.flags.tenant }),
+          ...tenantOption(ctx.flags.tenant, ctx.requireProject().root),
           audit: ctx.flags.audit,
           api: ctx.flags.api,
           ui: ctx.flags.ui,

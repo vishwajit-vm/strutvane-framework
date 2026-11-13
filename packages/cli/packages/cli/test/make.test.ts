@@ -33,6 +33,19 @@ const INVOICE_FIELDS = [
 const golden = (name: string): string => `./__golden__/${name}.snap`
 
 describe('make:model', () => {
+  test('models are tenant-scoped by default in apps with config/tenancy.ts (fail closed); --no-tenant opts out', async () => {
+    const root = makeProject({ 'config/tenancy.ts': 'export default {}\n' })
+    expect((await cli(['make:model', 'Invoice', 'number:string'], { cwd: root })).code).toBe(0)
+    expect(read(root, 'app/models/invoice.model.ts')).toContain('tenant: true')
+    expect(
+      (await cli(['make:model', 'Country', 'name:string', '--no-tenant'], { cwd: root })).code,
+    ).toBe(0)
+    expect(read(root, 'app/models/country.model.ts')).toContain('tenant: false')
+    const plain = makeProject()
+    expect((await cli(['make:model', 'Invoice', 'number:string'], { cwd: plain })).code).toBe(0)
+    expect(read(plain, 'app/models/invoice.model.ts')).not.toContain('tenant:')
+  })
+
   test('golden output: model, policy, factory, seeder and feature test', async () => {
     const root = makeProject()
     const r = await cli(
