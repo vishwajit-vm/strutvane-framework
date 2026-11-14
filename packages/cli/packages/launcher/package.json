@@ -1,0 +1,47 @@
+{
+  "name": "strutvane",
+  "version": "0.1.0-next.0",
+  "description": "The `strutvane` command. A tiny launcher that always runs the @strutvane/cli version pinned in your project, so generators match your packages.",
+  "keywords": [
+    "strutvane",
+    "cli",
+    "framework",
+    "typescript",
+    "launcher"
+  ],
+  "homepage": "https://github.com/vishwajit-vm/strutvane-cli#readme",
+  "bugs": {
+    "url": "https://github.com/vishwajit-vm/strutvane-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vishwajit-vm/strutvane-cli.git",
+    "directory": "packages/launcher"
+  },
+  "license": "MIT",
+  "author": "The Strutvane Authors",
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "strutvane": "dist/bin.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/launcher.d.mts",
+      "default": "./dist/launcher.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
