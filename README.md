@@ -16,7 +16,7 @@
 
 ## What it is
 
-Strutvane Framework is part of **[Strutvane](https://github.com/vishwajit-vm/strutvane)**, a TypeScript framework and package ecosystem for enterprise B2B applications. One model definition drives everything: the database schema and migrations, validation, the REST API, OpenAPI, the UI manifest and the tests. It depends only on `@strutvane/core` and `@strutvane/contracts`; auth and UI plug in through contracts, never imports.
+Strutvane Framework is part of **[Strutvane](https://github.com/vishwajit-vm/strutvane)**, a TypeScript framework and package ecosystem for enterprise B2B applications. One model definition drives everything: the database schema and migrations, validation, the REST API, OpenAPI, the UI manifest and the tests. Since the v2 consolidation it also ships the kernel (`@strutvane/framework/core`), the shared contracts (`/contracts`), the installer and generator SDK (`/devkit`) and the CLI (`/console`, bin `strutvane`), which used to be separate packages; see [CONSOLIDATION.md](CONSOLIDATION.md). Auth and UI plug in through contracts, never imports.
 
 ## What's inside
 
@@ -34,7 +34,7 @@ Strutvane Framework is part of **[Strutvane](https://github.com/vishwajit-vm/str
 ## Quick start
 
 ```ts
-import { createApp } from '@strutvane/core'
+import { createApp } from '@strutvane/framework/core'
 import { createHttpApp, defineModel, field, frameworkProvider } from '@strutvane/framework'
 
 export const Customer = defineModel('Customer', {
@@ -238,15 +238,15 @@ from a model with `policySchema(Invoice)` (typed per field, so `row.stage.eq('wo
 ## Installation (once released)
 
 ```bash
-npm install @strutvane/framework @strutvane/core
+npm install @strutvane/framework
 npm install @libsql/client   # or: pg, @electric-sql/pglite (optional peer dependencies)
 ```
 
 ## Development
 
 ```bash
-corepack pnpm@12.18.0 install
-corepack pnpm@12.18.0 run ci   # lint → typecheck → tests (incl. type tests) + coverage → build
+npm install
+npm run ci   # lint → typecheck → tests (incl. type tests) + coverage → build
 ```
 
 | Script | What it does |
@@ -254,9 +254,10 @@ corepack pnpm@12.18.0 run ci   # lint → typecheck → tests (incl. type tests)
 | `lint` / `format` | Biome check / auto-fix |
 | `typecheck` | `tsc --noEmit` with the strictest settings |
 | `test` / `test:coverage` | Vitest on real engines (PGlite + libSQL): migrations, RLS, SQL ↔ memory property tests (fast-check), end-to-end HTTP, OpenAPI validation, upload attacks, type-level tests. Coverage thresholds: 90/90/85/90. |
-| `build` | tsdown → `dist/index.mjs`, `dist/testing/index.mjs` + `.d.mts` |
+| `test:perf` | Performance budgets (`*.perf.test.ts`, today the CLI registry), kept out of the gate |
+| `build` | tsdown → one entry per subpath (`dist/index.mjs`, `dist/core/index.mjs`, `dist/console/bin.mjs`, …) + `.d.mts` |
 
-Until `@strutvane/contracts` and `@strutvane/core` are published, local development links them from `../contracts` and `../core` through temporary `overrides` in `pnpm-workspace.yaml`. Those entries must not be committed (the CI `check-deps` guard rejects them).
+This repo uses npm (>= 11.19). `.npmrc` turns on `strict-allow-scripts`, so only the install scripts approved in `package.json` `allowScripts` run (`npm approve-scripts <pkg>` after reviewing one), and third-party versions must be a day old (`min-release-age`).
 
 Shared configs (`tsconfig.base.json`, `biome.base.json`, `vitest.shared.ts`, CI workflows) are synced from [strutvane-tooling](https://github.com/vishwajit-vm/strutvane-tooling). Don't edit them here.
 
@@ -267,10 +268,10 @@ Shared configs (`tsconfig.base.json`, `biome.base.json`, `vitest.shared.ts`, CI 
 | [`@strutvane/framework`](https://github.com/vishwajit-vm/strutvane-framework) | Backend & database core (this repo) |
 | [`@strutvane/auth`](https://github.com/vishwajit-vm/strutvane-auth) | Authentication, authorization, tenancy, audit |
 | [`@strutvane/ui`](https://github.com/vishwajit-vm/strutvane-ui) | Metadata-driven frontend |
-| [`@strutvane/core`](https://github.com/vishwajit-vm/strutvane-core) | Kernel: container, providers, config, context |
-| [`@strutvane/contracts`](https://github.com/vishwajit-vm/strutvane-contracts) | Shared types and wire protocols |
-| [`strutvane` / `@strutvane/cli`](https://github.com/vishwajit-vm/strutvane-cli) | Unified CLI |
-| [`@strutvane/devkit`](https://github.com/vishwajit-vm/strutvane-devkit) | SDK for installers, generators and plugins |
+| `@strutvane/framework/core` (was `@strutvane/core`) | Kernel: container, providers, config, context (this repo) |
+| `@strutvane/framework/contracts` (was `@strutvane/contracts`) | Shared types and wire protocols (this repo) |
+| `@strutvane/framework/console`, bin `strutvane` (was `@strutvane/cli`) | Unified CLI (this repo) |
+| `@strutvane/framework/devkit` (was `@strutvane/devkit`) | SDK for installers, generators and plugins (this repo) |
 | [`@strutvane/logs`](https://github.com/vishwajit-vm/strutvane-logs) | Zero-config logging + built-in log viewer (default) |
 | [`create-strutvane`](https://github.com/vishwajit-vm/create-strutvane) | Project starter |
 

@@ -1,0 +1,81 @@
+# Original commit -> commit in strutvane-framework (history rewritten under packages/<name>/ by rewrite.sh).
+# Format: <repo> <original sha> <new sha> <subject>
+strutvane-contracts f2c557516672d710dba4c3c641abcfae42b00474 bf21593388d5512cd2b172431323073892f13f04 chore: initial repository scaffolding (design phase, no implementation yet)
+strutvane-contracts 75b3eb2f5c7ca7f01f6a34b5aef8002a69309583 42453208298232b71a5b9b8ab85fe0a74a25a132 docs: update links after moving repositories to the vishwajit-vm org
+strutvane-contracts afb295678c112762f4620faf332d1b3189c935bd addcdb16703589d246a418e8b348deb8be06d92e feat: contracts v0 draft (types, constants, type-level tests)
+strutvane-contracts 5afead6a4f9bcf62c849a13862348b0f3083bbb2 6d7365c743fd0596f29abd19923268d831d2bf82 fix!: adopt two-valued, null-safe QueryFilter semantics (from spike 02)
+strutvane-contracts 5b9a7e06b1461e4c8a94d1178d4edf25affaa388 f7ebbdec45aa60b7058df6edf0dbcade202fc2e7 chore: sync tooling configs (release gated behind RELEASE_ENABLED)
+strutvane-contracts cf8140d7f47acb247e3665222dbd7a7a0424156c 12408c5197e33c1b8c3e07e7173c4880831ca90d docs: add shared ecosystem memory, guardian agent and contribute skill
+strutvane-contracts 91e07879f6cdb925bd31f20909176b33d7d4d180 a1f90485a821efebf2ec1b22085a285434e23a9d chore: ignore TypeScript major upgrades in Dependabot (TS 6 pinned by decision)
+strutvane-contracts a9dbdbd5b0d5bff97738a94dd673b6b7a20b11da 7381fac2b0ed585f68a8d2d4fa1a92f3ec691420 docs: sync ecosystem memory (logs package, VAPT program, Phase 0 status)
+strutvane-contracts fc56405e41e9ecbaf9f6aba052f7480146cdd860 033a79051d0b5f17a884e92cd1e7ef043769f6de docs: sync ecosystem memory (spikes 01-09 done)
+strutvane-contracts b00d7236d25a0830c085e592422ec1c488b1d0ae d6a2334feff19788c42d7c13fd35e165a268f908 docs: sync ecosystem memory (Phase 0 complete)
+strutvane-contracts f7b8ca30c4fa399da66721c84f40627c85488f9f 5035a6f853b94180617ec0a6d8f9f2272649c880 feat: contracts 0.1.0-next.0 (RFC-0002/0003/0004)
+strutvane-contracts 4dacc7206fc9eceb9c7d25490f35fb8cee688156 f9e4285abdce7dbef2032cff39867322731e1edf chore: sync tooling configs (biome useLiteralKeys off)
+strutvane-contracts 247db9f6df2ef94850179e4a7e61572b2fd6bdd8 a4f538564e8600226e8b584d50e03d5106a0d05f chore: sync tooling configs (perf tests split from gate)
+strutvane-contracts 2cfe3cf3a73ff03256b3756b4426a84fd6621275 189c5f8a2ff2f70dab9fa7ecf07f07755769b611 feat(contracts): installer removal operations; document A-Z case folding (in 0.1.0-next.0, unpublished)
+strutvane-contracts 424f3444e788bb744f1a06e27c24c3b09242b176 18af701022cf89810b46ecac1c8e84210f67f53a chore: sync tooling configs (Scorecard workflow)
+strutvane-contracts c19d09290795b1ed96e01ebd23b8aeaa0817a678 29552e3a57c2c0c2ca8d434dbcc688d850b3ae7c chore: sync tooling configs (scorecard formatting)
+strutvane-contracts 46cb4751944faec116322d16dbf9aff0ba9a4e52 00691c4728db8ff73beddf3b25f615e1641e3cfb feat(contracts): HTTP hook protocol with clientAddress (in 0.1.0-next.0, unpublished)
+strutvane-contracts 1c0c2992077ebcbc5d2ffe3e9900f83090f74b03 0fc2f1b9430d48406e5b5e4236df0703248507e1 feat(contracts): optional route template on the http.onResponse payload (in 0.1.0-next.0, unpublished)
+strutvane-contracts c0161e89a873e17cfdf12ddb8e52c814ccd10d7d 9b09300bcd99b5279b3c32c2f58aeb0e626009ad feat(contracts): optional PermissionProvider.filterableFields (in 0.1.0-next.0, unpublished)
+strutvane-contracts d57994fef038de99f4bb109e368e3ff84e3e1d2c 415fb85ed95927ec31d655acaa0e404b177dd0b7 docs(contracts): clientAddress may come from a trusted proxy (framework trustProxy)
+strutvane-contracts bbab3e9798c069775557b2ef43ed3426600bd6aa 62e8892fe9e88b0039d6e11b06c6b190ef8e8d3a docs(contracts): filterableFields rejection codes match the framework
+strutvane-contracts ff88b194e927ec96962d14e85f255077f090b854 65e530c08fad462c85947faf8ac8b5bc45955434 chore: sync tooling configs (staged npm publishing, ADR-0018)
+strutvane-contracts 41afcb9a449cb5c0bcaf13d1bcde9a3bef824a37 983537e26695ea5bb52aa7e184709251701b2055 chore: sync tooling configs (multi-package release script)
+strutvane-core 779406aa2e27b96692f9f610e974e1a978868feb 78d97d6643b150fc494b9f9ca54d99e70b66c636 chore: initial repository scaffolding (design phase, no implementation yet)
+strutvane-core 2b6f615353ce5dc4c97a9ad51352b243c574689d 2e1e8a92f4feacb56f084d5f9ebc83f7212c37c7 docs: update links after moving repositories to the vishwajit-vm org
+strutvane-core e6cd13b7f2d9c21994ae76587ca22c177806c2a0 9c023addc2871905914a4b972d4515ad9efde825 chore: sync tooling configs (.gitattributes forces LF line endings)
+strutvane-core abb17a3866f0e063f863aefd53b6de0c2feb1b69 90b616727f84c6cd9effd435b59f6fa6636a605f docs: add shared ecosystem memory, guardian agent and contribute skill
+strutvane-core 2aeaf121685685f5d856fdc050c8afc8fe32b1fc 3f98c2b76c29dd32a965f88269b754a6d30f09e4 docs: sync ecosystem memory (logs package, VAPT program, Phase 0 status)
+strutvane-core acbadfef8048d9a35c9d75ae63001e5ccaadabc9 62db510959c3c8f12bb08a7f2d2f384a26af6468 docs: sync ecosystem memory (spikes 01-09 done)
+strutvane-core 6cec0f3a182ddb3bd50c7293a780b45429d38556 a12b5a9eadacaf9992aa60eac7825b4a0faa1e01 docs: sync ecosystem memory (Phase 0 complete)
+strutvane-core c08979c53151b998c11fb502e5fd673f9fe226ef 52000cdbe4718ab72d1d11a3d9f06cee35b3c9b4 feat: @strutvane/core 0.1.0-next.0 (kernel)
+strutvane-core 7f1dcb2b7d3fb36b8fab38be2b24826750951083 bfb0386089f91844a5682ae6dcca1ffe3637ab8f chore: sync tooling configs (biome useLiteralKeys off)
+strutvane-core c1c7143b7fe84b3d756ba2c22a70f00b4e2b86bc a482080f7fb3a0038ba918ad8371dd03bd98ad23 chore: sync tooling configs (perf tests split from gate)
+strutvane-core e6997bd3eed6d066e3951f179f87bac3cd30c9e8 f2cf40ac4de0987b8259bdc3394475547466d7ce feat(logger): extend sensitive key lists, add whole-word keys and runtime registration
+strutvane-core bdcfa3f55bca234a3163a858cdc863e2a9b730ee 12a14bcaffc5eebbddbe87e3ddc58459ac3cb451 chore: sync tooling configs (staged npm publishing, ADR-0018)
+strutvane-core 2df6242cbc6969399e16d94536e47cc6beae730b 4b731a8d0c7ad4c8fcb238ae9643a6ad377c4f9a chore: sync tooling configs (multi-package release script)
+strutvane-core bd3f8fbae115e511b1b9ccf2383771bec749cef9 afdb4cd137e6e7ce68d689d254278dfd3548f732 chore: depend on the published @strutvane/contracts@0.1.0-next.0
+strutvane-core 24478d047bd9f8733880774d90760dae0ec7144c 4ab32e24da7503125ff454aabfdb60b213cce6f6 fix(errors): issue paths named after Object.prototype members no longer cause a 500
+strutvane-devkit d6d62bcdf54460fcac115b9d343d283e07358687 fa09ded084479969e7c3b12fe911ce5832224e44 chore: initial repository scaffolding (design phase, no implementation yet)
+strutvane-devkit c8107a95a6cc54acdbefab48a0a9b80ab9e07bc0 585e5396c24d394188348ebce61645f850f0f708 docs: update links after moving repositories to the vishwajit-vm org
+strutvane-devkit 61f8af86eb3952abd17e0adccbdb1d19dd488c3d a9d9a2e4a1a5bc1eba0cf5b9132d367460602653 chore: sync tooling configs (.gitattributes forces LF line endings)
+strutvane-devkit bfc41e02048b19a8036149f7de4b3ba091679f3d b78a74e4e7c48b6aa3030f6325ec615a9e6a5e5d docs: add shared ecosystem memory, guardian agent and contribute skill
+strutvane-devkit 0455c5e08652e855b32e05e0fdd3a57ab1fde65b f01d22f7d4ea71f445d4ac3d8d8ad739149245f3 docs: sync ecosystem memory (logs package, VAPT program, Phase 0 status)
+strutvane-devkit 1d66f228c22864847c950c7051120dce4f64cb55 d34600e2266dbfa5c17c48d45cdb3ad51a6808e5 docs: sync ecosystem memory (spikes 01-09 done)
+strutvane-devkit 31b6c8bb9d021066081c8a84e659df03b1974004 fd53e217495920577922ab514a2f50039ca0af3a docs: sync ecosystem memory (Phase 0 complete)
+strutvane-devkit f20b2964a2b4524c0df7cae72d8a09ed037a7458 45538b5d24105f1962892dc0950f5ea9f983a1e8 feat: @strutvane/devkit 0.1.0-next.0 (installers, generators, merge engine)
+strutvane-devkit 5bbc107555ff37a1f85097633f636df25f0e8f44 247114f33c3c43b129722023946990bdd7e02b3c chore: sync tooling configs (biome useLiteralKeys off)
+strutvane-devkit e3eba3df26ead5557a178c5a66a5d1adf84f0c8c 9691c1827c5a115c0f2975824a05e8dcd0b48e8e chore: sync tooling configs (perf tests split from gate)
+strutvane-devkit 5c015d8330af4eb3c2db49c4f25530d521a5d49f 147bcf932f8039466d551484f5121c8892d585af fix: harden transaction recovery, staging permissions and secret previews
+strutvane-devkit ddb5d5dc51f7cbdfa0896a9313b8e0aa9c61b7b7 2b073f6aba57757f0b5c594438593f06c4638143 chore: sync tooling configs (staged npm publishing, ADR-0018)
+strutvane-devkit 62c6f0bc86b72639bd46f60df287ba3bd94487d6 92f2a65317825ffb7a51d2606ddfcd4e980dafc0 chore: sync tooling configs (multi-package release script)
+strutvane-devkit e1018c37fe0ff91029eefc1b188f88766c96b4f2 3d2c0d9c70cefdb8a50d515e0e0b28af87a00b67 chore: depend on the published @strutvane/contracts@0.1.0-next.0
+strutvane-devkit 77673929c3c68c65d84e846cbe83f81bfb200bae 53a050f1e7f90bf7b308caccc8cb51e21f35ef85 fix(paths): follow dangling links when checking protected locations
+strutvane-cli 848eea52c0b07d5806917d187b2a31a841059f8d 201c3df481661e4eedde03ba3a69724a43874321 chore: initial repository scaffolding (design phase, no implementation yet)
+strutvane-cli 52a70da87a5246cb3b79b961a1cea2a93f8abc93 0f385e5c30dfe01f29bbbb994b0cdd6384058de9 docs: update links after moving repositories to the vishwajit-vm org
+strutvane-cli 3722b12854ee54ed9a55a1f71dcfe4abe8a7b889 9d17f509bf06f58e9b60f54b3382d56631a47662 chore: sync tooling configs (.gitattributes forces LF line endings)
+strutvane-cli 539fc031f1a20b4e2ed9dc5698298ce6622e803f be3c7016b8f78b90e22f5f9087bce3220e5d3796 docs: add shared ecosystem memory, guardian agent and contribute skill
+strutvane-cli 3cbe8321129d244d8249f015a88bf58d11551972 a4689a620256cded71d4bb3f34f0dbee54e2cea9 docs: sync ecosystem memory (logs package, VAPT program, Phase 0 status)
+strutvane-cli a68cb9954dead334a41c6218da297e56c5a100fd a71d38278d82819d663cdaf0145d4ce41e75bdec docs: sync ecosystem memory (spikes 01-09 done)
+strutvane-cli 9e46aa3b9844d1c4765a2dba6f2e592ed7eeb60e 99f7c23ec2aa4cdaa3a970cb54d81b940d15282d docs: sync ecosystem memory (Phase 0 complete)
+strutvane-cli 69a85e0b72932f84973d5aedd478ae7b63c830a0 c5a7b60899afc80f0d33846f4a6d336a1ddb0291 feat: strutvane CLI 0.1.0-next.0 (@strutvane/cli + strutvane launcher)
+strutvane-cli c0b6c4d5a238a1a8a2f0578ed0fb656374a389a5 2f23bfa749696c3bfe348c80e6085b1ac26004fd chore: sync tooling configs (perf tests split from gate)
+strutvane-cli b3cb06d58802af3200e8a5befef529067f13874a 27cba7064f971db17b59000f165c31668c96497e fix(make): generate code against the real framework and auth APIs
+strutvane-cli a0e23d100ab7f2cba5c960e4c51f8adf79078e9a a474f99701f8edeed296acc5196509d22c27768c docs: changelog for generator API alignment
+strutvane-cli d4f6951d916efdc0cbbec5573de4445b4c5fb31b e57ad675a5eb9c71b27b4b4be95c02ca46396250 fix(make:migration): stubs match what the framework runs (up({ db }), no SQL down section)
+strutvane-cli 76b84184bb58e934a57c9f90a3ebe1be7da315e9 38660b5da469aac915dc1f557f2182b9b371ae26 fix(make:model): tenant-scoped by default in apps with config/tenancy.ts
+strutvane-cli a2e12c66e8e3c29c558494595ebd8faaa263357a c6278854236ac185d991c6dce2fe4d52a5a45830 fix: stricter project detection, APP_ENV-aware production guard and validated generator inputs
+strutvane-cli 8f427d7b9a219ee6808a009db32e0134d145486d 7840aa2dafb090f06a530a903428fc1911c736f5 fix(make:policy): use the config/auth.ts role vocabulary (admin, member, viewer, owner)
+strutvane-cli 95a03827224b64ed6c0249f6c4b7b9c75456aef3 dacb8405f012460b858384ff63622fca36e85a77 fix(cli): report an invalid environment as a configuration error
+strutvane-cli b00302224dea48c67d022cb0e1f5021a87b82725 ae730f325b43cb0b029de7644b635ac9bb531eac chore: sync tooling configs (staged npm publishing, ADR-0018)
+strutvane-cli 6ec03e2727a686a231b94ea1270ef142c0d451ad b001560f177ae4f5884c37eae7b1776ebc2a129b chore: sync tooling configs (multi-package release script)
+strutvane-cli b8babd5997ac3654f578191c8fc346447f8db0be 901d72f59a932a7d3abf3a9a103d85bc96c2f2a9 chore: depend on the published @strutvane packages (0.1.0-next.0)
+strutvane-cli 8ad6be5a5745b11d5532170505165e7144d37ce6 054f0f50ad5c3558f858f94749c03fed8d65f856 fix(registry): catch-up rebuild after the watcher starts
+strutvane-cli a0751ac3796f92cec59acc27cfc96bc33ac21e1d 4dd004d5be1b2ccf640d6b0a68255cb4577ac378 fix: drop the leading ./ from package.json bin paths
+strutvane-cli 361ccd39ccf745820da682d59679ddc52bdff316 a636a6e9afea387f437eb43750823dbc1db113c0 fix(launcher): fetch the starter and packages from the own release channel
+strutvane-cli ad1227d835a09948c2d2999cc0c5d2783e12f4ee 89085aec540749cbe73fa46042f27169abacd594 test: every package.json bin target is built with a shebang
+strutvane-cli 349201c27aa0577ed2423dd1d993abd4e6f70214 2e957fe3a96825d69b4503432a885bf64b4f39fa fix(make): cmd-safe field syntax and seeder registration
+strutvane-cli 4046c809db22dd9dc2cee8870ac1cc63f0b859b9 f8cc305822b4541578f47bfb473c8581597085f3 fix(cli): a port the server cannot bind is a configuration error
+strutvane-cli 584608de32894a2505900fe6fd259bc0f0c363fc 1e34ef129cc8c3872a54ee9d6ba0f89f54eab6b4 feat(cli): gate package migrations like contributed commands

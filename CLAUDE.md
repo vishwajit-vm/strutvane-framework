@@ -12,7 +12,7 @@ The file below is synced from strutvane-tooling and is identical in every repo. 
 
 The backend & database core of Strutvane: declare models as fields and types, get migrations, a secured CRUD API, OpenAPI docs, queues, cache and mail.
 
-It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per package; see ADR-0002). The hub with the full blueprint is https://github.com/vishwajit-vm/strutvane. Locally it is the umbrella folder two levels up: `../../docs/`.
+It is one repo of the **Strutvane** ecosystem. On branch `v2/consolidate` it also holds the former `core`, `contracts`, `devkit` and `cli` repos, with their history (blueprint `docs/18-v2-blueprint.md` §3.2). [CONSOLIDATION.md](CONSOLIDATION.md) says what moved where. The hub with the full blueprint is https://github.com/vishwajit-vm/strutvane. Locally it is the umbrella folder two levels up: `../../docs/`.
 
 ## Status
 
@@ -29,11 +29,11 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
   - `model/sensitive-keys.ts`: registers hidden/sensitive field keys with core's `registerSensitiveKeys` at boot
   - `testing/` (subpath export): `createTestApp`, factories
   - `provider.ts`, `tokens.ts`, `messages.ts` (framework catalog + error codes)
+  - absorbed (v2 consolidation; subpath exports): `contracts/` (`/contracts`, was `@strutvane/contracts`), `core/` (`/core`, the kernel), `devkit/` (`/devkit`), `console/` (`/console` + bin `strutvane`, alias `strutvane-cli`, was `@strutvane/cli`). Their tests are in `test/<part>/`; their changelogs in `docs/changelogs/`, their old READMEs in `docs/absorbed/`. They import each other by relative `.ts` path, never through the package name.
   - `runtime/` (app runtime: `project.ts` loader, `boot.ts`, `serve.ts` Node adapter, `server.ts`, `migrations.ts`, `seeders.ts`, `database-config.ts`, `storage-config.ts` (`config/filesystems.ts`), `dev-ui.ts` (`sv dev` serves Vite on the API port), `default-provider.ts`), `entries/` (`/provider`, `/http`, `/database` subpaths), `commands.ts` (CLI contribution: dev/start/build/migrate/migrate:status/db:seed), `http/route.ts` (custom routes), `model/policy-schema.ts`, `testing/define-factory.ts`
 - **Deferred (documented in README):** queue/cache/mail, MySQL, Azure Entra passwordless (config shape kept, throws `NotImplementedError`), relation paths in filters, sparse fieldsets, bulk/export/PUT, custom actions.
 - Tests in `test/` run on real engines (PGlite + libSQL): migrations, RLS (as a non-owner role), SQL ↔ memory property tests, end-to-end HTTP, OpenAPI validation, upload attacks, type-level tests (`*.test-d.ts`). `test/readme.test.ts` runs the README examples: update both together.
-- Gate: `corepack pnpm@12.18.0 run ci` (lint → typecheck → tests + coverage 90/90/85/90 → build).
-- **Temporary:** `pnpm-workspace.yaml` overrides `@strutvane/contracts` and `@strutvane/core` with `link:../contracts` / `link:../core` until both are published. **Never commit those overrides**; the CI `check-deps` guard rejects them.
+- Gate: `npm run ci` (lint → typecheck → tests + coverage 90/90/85/90 → build). npm 11.19+; `.npmrc` enforces `strict-allow-scripts` (approvals in `package.json` `allowScripts`) and `min-release-age`. Never run pnpm here.
 - Changesets is in pre mode (`next` tag).
 - Design first: read this package's spec and the ADRs, and write or extend an RFC before changing any public API.
 - The source of truth for decisions is `../../docs/00-executive-summary.md`. If anything here conflicts with it, that file wins.
@@ -51,7 +51,7 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 
 ## Boundaries (non-negotiable)
 
-- Allowed dependencies: `@strutvane/core`, `@strutvane/contracts`. It must never import `@strutvane/auth` or `@strutvane/ui`; it cooperates with them only through contracts resolved from the container.
+- Internal layering (was the repo boundary): `src/contracts` imports nothing of ours; `src/core` imports only `contracts`; `src/devkit` only `contracts`; `src/console` may use `contracts`, `core` and `devkit`. It must never import `@strutvane/auth` or `@strutvane/ui`; it cooperates with them only through contracts resolved from the container.
 - Cooperation with other Strutvane packages happens **only through `@strutvane/contracts`**, resolved at runtime via the core container.
 - Public API changes need a changeset, docs and tests. Contract changes need an RFC.
 
@@ -59,7 +59,7 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 
 - TypeScript strict, ESM only, Node 24+ (Node 26 LTS is the target). No decorators or reflection.
 - Validation uses Standard Schema with Zod 4 as the default. Errors are RFC 9457 problem+json.
-- Tooling: pnpm, tsdown (build), Biome (lint/format), Vitest (tests), Playwright (UI e2e), Testcontainers (DB).
+- Tooling: npm, tsdown (build), Biome (lint/format), Vitest (tests), Playwright (UI e2e), Testcontainers (DB).
 - Code generation and AST work pin the TypeScript 6 compiler API (`@typescript/typescript6`), because TypeScript 7 has no compiler API.
 - Releases: Changesets, npm trusted publishing (OIDC) with provenance. Core packages share a major release train.
 - **Docker is local-only and never committed** (ADR-0006). Never commit `.env`; keep `.env.example` complete and documented.
