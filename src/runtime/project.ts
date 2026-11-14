@@ -20,6 +20,7 @@ import type { Provider } from '@strutvane/core'
 import type { ResourceConfig } from '../http/resource.ts'
 import { isRouteDefinition, type RouteDefinition } from '../http/route.ts'
 import type { AnyModel } from '../model/define-model.ts'
+import { normaliseAppEnv } from './app-env.ts'
 
 /** Thrown when a project file is missing or has the wrong shape. */
 export class ProjectLoadError extends Error {
@@ -41,6 +42,12 @@ export interface LoadedProject {
 export interface LoadProjectOptions {
   /** Load `.env` into `process.env` (existing variables win). Default `true`. */
   readonly dotenv?: boolean
+  /**
+   * The `APP_ENV` already resolved by the caller (the CLI passes `ctx.appEnv`). It is written to
+   * `process.env` *before* `.env` and the config files load, so `config/app.ts` and `.env` can
+   * never disagree with the value the caller (and its production guard) used.
+   */
+  readonly appEnv?: string
 }
 
 /** List `dir/*<suffix>` sorted by name (empty when the folder doesn't exist). */
@@ -76,6 +83,13 @@ export async function loadProject(
   root: string,
   options: LoadProjectOptions = {},
 ): Promise<LoadedProject> {
+  const appEnv = normaliseAppEnv(options.appEnv)
+  if (appEnv !== undefined) process.env['APP_ENV'] = appEnv
+  else if (
+    process.env['APP_ENV'] !== undefined &&
+    normaliseAppEnv(process.env['APP_ENV']) === undefined
+  )
+    delete process.env['APP_ENV'] // `APP_ENV=` means unset: let `.env` (or the default) decide
   if (options.dotenv !== false) loadDotEnv(root)
   const rel = (file: string) => relative(root, file).replaceAll('\\', '/')
 

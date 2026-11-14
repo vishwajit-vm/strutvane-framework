@@ -163,11 +163,7 @@ export {
   valueSchema,
 } from './model/schemas.ts'
 // Wiring
-export {
-  REDACT_KEYS_HOOK,
-  type RedactKeysPayload,
-  sensitiveFieldKeys,
-} from './model/sensitive-keys.ts'
+export { registerModelSensitiveKeys, sensitiveFieldKeys } from './model/sensitive-keys.ts'
 export { buildOpenApiDocument, type OpenApiDocument } from './openapi/document.ts'
 export { buildManifest } from './openapi/manifest.ts'
 export { type FrameworkProviderOptions, frameworkProvider } from './provider.ts'
@@ -176,6 +172,7 @@ export { compileFilter } from './query/compile.ts'
 export { evaluateFilter, MissingFieldError } from './query/evaluate.ts'
 export { clientQueryFields, type QueryField, queryFields } from './query/fields.ts'
 export { CursorError, SortError } from './query/sort.ts'
+export { firstAppEnv, normaliseAppEnv } from './runtime/app-env.ts'
 export {
   type ApiConfig,
   apiBasePath,

@@ -6,8 +6,13 @@ import { join } from 'node:path'
 import type { Actor } from '@strutvane/contracts'
 import { defineProvider, HooksToken, PermissionProviderToken } from '@strutvane/core'
 import { afterEach, describe, expect, test } from 'vitest'
-import commands, { type CommandContextLike, renameAnswers } from '../../src/commands.ts'
+import commands, {
+  type CommandContextLike,
+  commandAppEnv,
+  renameAnswers,
+} from '../../src/commands.ts'
 import { connectDatabase } from '../../src/database/connect.ts'
+import { firstAppEnv, normaliseAppEnv } from '../../src/runtime/app-env.ts'
 import { apiBasePath, bootProject, mergeResources } from '../../src/runtime/boot.ts'
 import { databaseConfigFrom } from '../../src/runtime/database-config.ts'
 import { createDefaultFrameworkProvider } from '../../src/runtime/default-provider.ts'
@@ -468,6 +473,55 @@ describe('contributed commands', () => {
     const b = context(root)
     await command('build').run(b.ctx)
     expect(b.lines[0]).toMatch(/1 model\(s\), 5 route\(s\)/)
+  })
+
+  test('commands use the APP_ENV the CLI resolved, normalised like the CLI', async () => {
+    expect(commandAppEnv({ ...context('x').ctx, appEnv: ' Staging ' })).toBe('staging')
+    expect(
+      commandAppEnv({ ...context('x').ctx, appEnv: '', services: { env: { APP_ENV: 'Local' } } }),
+    ).toBe('local')
+    expect(commandAppEnv(context('x').ctx)).toBeUndefined()
+    expect(normaliseAppEnv('  ')).toBeUndefined()
+    expect(normaliseAppEnv(3)).toBeUndefined()
+    expect(firstAppEnv(undefined, '', ' PRODUCTION ')).toBe('production')
+    const root = await project()
+    const before = process.env['APP_ENV']
+    try {
+      const b = context(root)
+      await command('build').run({ ...b.ctx, appEnv: 'Staging' })
+      // written before config and .env load, so nothing re-reads a different value
+      expect(process.env['APP_ENV']).toBe('staging')
+      process.env['APP_ENV'] = ''
+      await loadProject(root, { dotenv: false })
+      expect(process.env['APP_ENV']).toBeUndefined()
+    } finally {
+      if (before === undefined) delete process.env['APP_ENV']
+      else process.env['APP_ENV'] = before
+    }
+  })
+
+  test('the runtime treats APP_ENV like the CLI: trimmed, lowercased, empty is unset', async () => {
+    const root = await project()
+    const loaded = await loadProject(root, { dotenv: false })
+    const booted = await bootProject(loaded, { env: ' LOCAL ' })
+    try {
+      expect(booted.env).toBe('local')
+    } finally {
+      await booted.shutdown()
+    }
+    const noEnv = {
+      ...loaded,
+      config: { ...loaded.config, app: { ...(loaded.config['app'] as object), env: undefined } },
+    }
+    const before = process.env['APP_ENV']
+    process.env['APP_ENV'] = '   '
+    try {
+      // blank APP_ENV is unset → production → no PermissionProvider → refuses to start
+      await expect(bootProject(noEnv)).rejects.toThrow(/No PermissionProvider/)
+    } finally {
+      if (before === undefined) delete process.env['APP_ENV']
+      else process.env['APP_ENV'] = before
+    }
   })
 
   test('rename answers map to planner decisions and reject malformed input', () => {

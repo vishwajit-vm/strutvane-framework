@@ -1,25 +1,15 @@
 /**
- * Field keys the logger must redact: every model field marked `sensitive()` or `hidden()`.
+ * Field keys loggers must redact: every model field marked `sensitive()` or `hidden()`.
  *
- * The framework never imports a logging package. At boot it runs the {@link REDACT_KEYS_HOOK}
- * hook with these keys (integration map: hooks), and the active logger implementation
- * (`@strutvane/logs`, or any other) adds them to its redaction rules. When nobody handles the
- * hook, the logger's built-in key list still applies.
+ * The framework never imports a logging package. At boot it registers these keys with core's
+ * process-wide redaction registry (`registerSensitiveKeys` from `@strutvane/core`), which both
+ * core's fallback logger and `@strutvane/logs` consult on every record, including loggers that
+ * were created before the keys were registered.
  *
  * @module
  */
+import { registerSensitiveKeys } from '@strutvane/core'
 import type { ModelDefinition } from './define-model.ts'
-
-/** Hook run once at boot with {@link RedactKeysPayload}. Observe-only. */
-export const REDACT_KEYS_HOOK = 'logger.redactKeys'
-
-/** Payload of {@link REDACT_KEYS_HOOK}. */
-export interface RedactKeysPayload {
-  /** Field keys (API names, e.g. `taxId`) and their column names (e.g. `tax_id`), deduplicated. */
-  readonly keys: readonly string[]
-  /** Who contributed the keys. */
-  readonly source: '@strutvane/framework'
-}
 
 /** The keys of every `sensitive` or `hidden` field, as API keys and as column names. */
 export function sensitiveFieldKeys(models: readonly ModelDefinition[]): string[] {
@@ -33,4 +23,11 @@ export function sensitiveFieldKeys(models: readonly ModelDefinition[]): string[]
     }
   }
   return [...keys].sort()
+}
+
+/** Register the models' sensitive and hidden field keys for log redaction. Returns the keys. */
+export function registerModelSensitiveKeys(models: readonly ModelDefinition[]): string[] {
+  const keys = sensitiveFieldKeys(models)
+  if (keys.length > 0) registerSensitiveKeys(keys)
+  return keys
 }

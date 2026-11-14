@@ -10,6 +10,7 @@ import type { TrustProxy } from '../http/proxy.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import type { AnyModel } from '../model/define-model.ts'
 import { ProjectModelsToken } from '../tokens.ts'
+import { firstAppEnv, processAppEnv } from './app-env.ts'
 import type { LoadedProject } from './project.ts'
 
 /** A booted project. */
@@ -62,7 +63,8 @@ export async function bootProject(
   const appConfig = project.config['app'] as
     | { env?: string; name?: string; publicUrl?: string; trustProxy?: TrustProxy }
     | undefined
-  const env = options.env ?? appConfig?.env ?? process.env['APP_ENV'] ?? 'production'
+  // Trimmed, lowercased, empty = unset; the CLI's guard reads APP_ENV the same way.
+  const env = firstAppEnv(options.env, appConfig?.env, processAppEnv()) ?? 'production'
   const app = createApp({ config: project.config, providers: project.providers })
   app.container.value(ProjectModelsToken, project.models)
   await app.boot()

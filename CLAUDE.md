@@ -26,7 +26,7 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
   - `http/`: `create-http-app.ts`, `resource-routes.ts` (pipeline, post-write policy check, cost limits), `resource.ts` (config + hooks), `list-query.ts` (shared serializer/parser), `permissions.ts`, `security.ts`, `proxy.ts` (`trustProxy`/`publicUrl`, client address), `errors.ts`
   - `openapi/`: `document.ts` (OpenAPI 3.1 + `x-strutvane-*`), `manifest.ts`
   - `storage/`: keys, MIME sniffing, memory + local disks, signing (HKDF subkey), `serve-signed.ts`, `tenant-disk.ts`, manager, streaming multipart, `UploadedFile`
-  - `model/sensitive-keys.ts`: runs the `logger.redactKeys` hook at boot with hidden/sensitive field keys
+  - `model/sensitive-keys.ts`: registers hidden/sensitive field keys with core's `registerSensitiveKeys` at boot
   - `testing/` (subpath export): `createTestApp`, factories
   - `provider.ts`, `tokens.ts`, `messages.ts` (framework catalog + error codes)
   - `runtime/` (app runtime: `project.ts` loader, `boot.ts`, `serve.ts` Node adapter, `server.ts`, `migrations.ts`, `seeders.ts`, `database-config.ts`, `default-provider.ts`), `entries/` (`/provider`, `/http`, `/database` subpaths), `commands.ts` (CLI contribution: dev/start/build/migrate/migrate:status/db:seed), `http/route.ts` (custom routes), `model/policy-schema.ts`, `testing/define-factory.ts`

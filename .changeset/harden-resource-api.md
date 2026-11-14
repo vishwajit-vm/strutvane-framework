@@ -4,7 +4,7 @@
 
 Safer defaults across the API, runtime and storage:
 
-- Hidden fields are never writable and cannot be filterable, sortable or searchable; hidden and sensitive field keys are offered to the logger at boot (`logger.redactKeys` hook).
+- Hidden fields are never writable and cannot be filterable, sortable or searchable; hidden and sensitive field keys are registered for log redaction at boot (core `registerSensitiveKeys`).
 - Creates and updates are checked against the actor's policy filter after the write, in the same transaction (`Scope.check`); record-level `can()` for updates sees the resulting row; `resource.beforeQuery` results are combined with the policy filter; `belongsTo` references must be visible to the actor (`Scope.references`).
 - List cost limits: offset pages up to `MAX_OFFSET` rows deep, totals only with `allowTotal: true`, `pageSize.max` applied to `POST /query`, deduplicated and capped includes, and a default 5 s Postgres `statement_timeout`.
 - Client filters reject `$actor` references and malformed nodes (422 `invalid_filter`); custom route `json()` requires a JSON content type.

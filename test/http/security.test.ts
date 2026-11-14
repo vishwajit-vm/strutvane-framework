@@ -5,7 +5,7 @@
  */
 import type { Actor, PermissionProvider, QueryFilter, ResourceRef } from '@strutvane/contracts'
 import { HTTP_HOOKS } from '@strutvane/contracts'
-import { createApp, HooksToken, PermissionProviderToken } from '@strutvane/core'
+import { createApp, createLogger, HooksToken, PermissionProviderToken } from '@strutvane/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_STATEMENT_TIMEOUT_MS, pgPoolOptions } from '../../src/database/connect.ts'
 import { createHttpApp } from '../../src/http/create-http-app.ts'
@@ -22,7 +22,7 @@ import { defineModel, type ModelDefinition } from '../../src/model/define-model.
 import { field } from '../../src/model/field.ts'
 import { createModelRegistry } from '../../src/model/registry.ts'
 import { modelSchemas } from '../../src/model/schemas.ts'
-import { REDACT_KEYS_HOOK, sensitiveFieldKeys } from '../../src/model/sensitive-keys.ts'
+import { sensitiveFieldKeys } from '../../src/model/sensitive-keys.ts'
 import { frameworkProvider } from '../../src/provider.ts'
 import { bindFilter } from '../../src/query/bind.ts'
 import { clientQueryFields, queryFields } from '../../src/query/fields.ts'
@@ -429,6 +429,24 @@ describe('client address, proxies and request ids', () => {
     )
   })
 
+  it('http.onResponse gets the route template, never a raw unmatched path', async () => {
+    await boot()
+    const routes: (string | undefined)[] = []
+    t.app.make(HooksToken).on(
+      HTTP_HOOKS.response,
+      (p) => {
+        routes.push((p as { route?: string }).route)
+        return undefined
+      },
+      { name: 'test.route' },
+    )
+    const a = t.actingAs(person('u'), { tenantId: TENANT_A })
+    await a.request('GET', `${BASE}/customers/0190a000-0000-7000-8000-0000000000ff`)
+    await a.request('GET', '/no/such/path/secret-token-123')
+    await t.request('GET', '/health')
+    expect(routes).toEqual([`${BASE}/customers/:id`, undefined, '/health'])
+  })
+
   it('proxy helpers fail closed', () => {
     expect(trustedHops(undefined)).toBe(0)
     expect(trustedHops(true)).toBe(1)
@@ -468,14 +486,16 @@ describe('database cost limits and log redaction', () => {
     )
   })
 
-  it('sensitive and hidden field keys are handed to the logger at boot', async () => {
+  it('sensitive and hidden field values never reach the logs (registered at boot)', async () => {
     expect(sensitiveFieldKeys([Account.definition, Note.definition])).toEqual([
       'apiSecret',
       'api_secret',
       'taxId',
       'tax_id',
     ])
-    const received: unknown[] = []
+    const lines: string[] = []
+    // A logger created before boot still redacts the keys registered at boot.
+    const log = createLogger({ sink: (line) => lines.push(line) })
     const app = createApp({
       config: {},
       providers: [
@@ -485,20 +505,15 @@ describe('database cost limits and log redaction', () => {
         }),
       ],
     })
-    app.make(HooksToken).on(
-      REDACT_KEYS_HOOK,
-      (p) => {
-        received.push(p)
-        return undefined
-      },
-      { name: 'test.redact' },
-    )
     app.container.value(PermissionProviderToken, allowAllPermissions())
     await app.boot()
     try {
-      expect(received).toEqual([
-        { keys: ['apiSecret', 'api_secret', 'taxId', 'tax_id'], source: '@strutvane/framework' },
-      ])
+      log.info('account', { apiSecret: 'canary-1', tax_id: 'canary-2', name: 'visible' })
+      await log.flush()
+      const out = lines.join(' ')
+      expect(out).not.toContain('canary-1')
+      expect(out).not.toContain('canary-2')
+      expect(out).toContain('visible')
       // and the HTTP app builds on the same container
       expect(createHttpApp(app, { resources: [Account, Note], env: 'local' })).toBeDefined()
     } finally {

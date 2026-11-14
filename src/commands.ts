@@ -17,8 +17,9 @@ import { connectDatabase } from './database/connect.ts'
 import { answersResolver } from './migrations/files.ts'
 import type { RenameDecision } from './migrations/planner.ts'
 import { createModelRegistry } from './model/registry.ts'
+import { firstAppEnv } from './runtime/app-env.ts'
 import { migrateProject, migrationTarget, projectMigrationStatus } from './runtime/migrations.ts'
-import { importDefault, loadProject } from './runtime/project.ts'
+import { importDefault, type LoadedProject, loadProject } from './runtime/project.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
 import { startServer, stopOnSignals } from './runtime/server.ts'
 
@@ -26,6 +27,14 @@ import { startServer, stopOnSignals } from './runtime/server.ts'
 export interface CommandContextLike {
   readonly flags: Readonly<Record<string, string | boolean | string[] | undefined>>
   requireProject(): { readonly root: string }
+  /**
+   * `APP_ENV` as the CLI resolved it (process env, then `.env.<--env>`, then `.env`; trimmed,
+   * lowercased, empty = unset). Commands use it instead of re-reading `.env`, so the CLI's
+   * production guard and the command always agree.
+   */
+  readonly appEnv?: string | undefined
+  /** CLI services; `env` is the environment the command runs with (`APP_ENV` included). */
+  readonly services?: { readonly env?: Readonly<Record<string, string | undefined>> }
   readonly out: {
     line(text?: string): void
     success(text: string): void
@@ -80,6 +89,17 @@ export function renameAnswers(
   return out
 }
 
+/** The APP_ENV the CLI resolved for this command (`ctx.appEnv`, else `ctx.services.env`). */
+export function commandAppEnv(ctx: CommandContextLike): string | undefined {
+  return firstAppEnv(ctx.appEnv, ctx.services?.env?.['APP_ENV'])
+}
+
+/** Load the project with the CLI's APP_ENV (never a different one re-read from `.env`). */
+function loadFor(ctx: CommandContextLike): Promise<LoadedProject> {
+  const appEnv = commandAppEnv(ctx)
+  return loadProject(ctx.requireProject().root, appEnv !== undefined ? { appEnv } : {})
+}
+
 const list = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(String) : typeof v === 'string' ? [v] : []
 
@@ -98,7 +118,7 @@ const migrateCommand: ContributedCommand = {
     separate: { type: 'string', multiple: true, description: 'Reject a rename: old=new' },
   },
   async run(ctx) {
-    const project = await loadProject(ctx.requireProject().root)
+    const project = await loadFor(ctx)
     const answers = renameAnswers(list(ctx.flags['rename']), list(ctx.flags['separate']))
     const result = await migrateProject(project, {
       ...(str(ctx.flags['name']) ? { name: str(ctx.flags['name']) as string } : {}),
@@ -117,7 +137,7 @@ const statusCommand: ContributedCommand = {
   name: 'migrate:status',
   description: 'Show applied, pending and drifted migrations',
   async run(ctx) {
-    const project = await loadProject(ctx.requireProject().root)
+    const project = await loadFor(ctx)
     const status = await projectMigrationStatus(project)
     ctx.out.table(
       ['Migration', 'Status'],
@@ -136,7 +156,7 @@ const seedCommand: ContributedCommand = {
   description: 'Run the database seeders',
   flags: { class: { type: 'string', description: 'Run one seeder, e.g. InvoiceSeeder' } },
   async run(ctx) {
-    const project = await loadProject(ctx.requireProject().root)
+    const project = await loadFor(ctx)
     const target = migrationTarget(project)
     const raw = project.config['database'] as { seeders?: { directory?: string } } | undefined
     const dir = join(project.root, raw?.seeders?.directory ?? 'database/seeders')
@@ -181,8 +201,10 @@ const startCommand: ContributedCommand = {
     const root = ctx.requireProject().root
     const port = str(ctx.flags['port'])
     const host = str(ctx.flags['host'])
+    const appEnv = commandAppEnv(ctx)
     const started = await startServer({
       root,
+      ...(appEnv !== undefined ? { env: appEnv } : {}),
       ...(port ? { port: Number(port) } : {}),
       ...(host ? { hostname: host } : {}),
     })
@@ -206,7 +228,10 @@ const devCommand: ContributedCommand = {
     const args = [...watch, main, root, str(ctx.flags['port']) ?? '', str(ctx.flags['host']) ?? '']
     ctx.out.info('Watching app/, config/ and .env for changes.')
     const code = await new Promise<number>((resolve) => {
-      const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit' })
+      // The child re-reads nothing on its own: it gets the CLI's APP_ENV explicitly.
+      const appEnv = commandAppEnv(ctx)
+      const env = appEnv !== undefined ? { ...process.env, APP_ENV: appEnv } : process.env
+      const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit', env })
       const forward = (signal: NodeJS.Signals) => () => child.kill(signal)
       process.on('SIGINT', forward('SIGINT'))
       process.on('SIGTERM', forward('SIGTERM'))
@@ -221,7 +246,7 @@ const buildCommand: ContributedCommand = {
   description: 'Check that the app boots (models, config, routes) and build the web UI with Vite',
   async run(ctx) {
     const root = ctx.requireProject().root
-    const project = await loadProject(root)
+    const project = await loadFor(ctx)
     createModelRegistry(project.models.map((m) => m.definition))
     ctx.out.success(
       `Project loads: ${project.models.length} model(s), ${project.routes.length} route(s)`,

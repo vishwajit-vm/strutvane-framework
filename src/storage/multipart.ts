@@ -151,6 +151,11 @@ export async function parseMultipart(
       }
       const tempPath = join(dir, `${files.length + pending.length}-${randomUUID()}`)
       const out = createWriteStream(tempPath, { flags: 'wx' })
+      // A disk error, or a write racing `fail()` destroying the stream, must reject the upload,
+      // never surface as an uncaught exception.
+      out.on('error', (error) =>
+        fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })),
+      )
       writers.add(out)
       closed.push(new Promise<void>((r) => out.once('close', () => r())))
       const hash = createHash('sha256')
@@ -160,6 +165,7 @@ export async function parseMultipart(
       pending.push(
         new Promise<void>((resolveFile) => {
           stream.on('data', (chunk: Buffer) => {
+            if (failure !== undefined || out.destroyed) return
             resetIdle()
             size += chunk.length
             total += chunk.length
@@ -186,6 +192,10 @@ export async function parseMultipart(
             fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })),
           )
           stream.on('end', () => {
+            if (failure !== undefined || out.destroyed) {
+              resolveFile()
+              return
+            }
             out.end(() => {
               writers.delete(out)
               if (failure === undefined) {

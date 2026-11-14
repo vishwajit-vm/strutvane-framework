@@ -32,7 +32,9 @@ import {
   StrutvaneError,
   UnauthenticatedError,
 } from '@strutvane/core'
+import type { Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
+import { matchedRoutes } from 'hono/route'
 import type { Database } from '../database/types.ts'
 import { registerFrameworkErrors, withFrameworkMessages } from '../messages.ts'
 import type { AnyModel } from '../model/define-model.ts'
@@ -43,6 +45,7 @@ import {
   type OpenApiDocument,
 } from '../openapi/document.ts'
 import { buildManifest } from '../openapi/manifest.ts'
+import { firstAppEnv, processAppEnv } from '../runtime/app-env.ts'
 import {
   type SignedFileOptions,
   serveSignedFile,
@@ -74,7 +77,10 @@ export interface HttpAppOptions {
   readonly resources: readonly (ResourceConfig | AnyModel)[]
   /** Prefix for resource routes. Default `/api/v1`. */
   readonly basePath?: string
-  /** `APP_ENV`. Default `process.env['APP_ENV']`, else `production` (fail closed). */
+  /**
+   * `APP_ENV`. Default `process.env['APP_ENV']`, else `production` (fail closed). Trimmed and
+   * lowercased; an empty value counts as unset.
+   */
   readonly env?: string
   /** Serve without a PermissionProvider outside local development (explicit opt-in). */
   readonly publicApi?: boolean
@@ -141,7 +147,7 @@ const DEFAULT_BODY_LIMIT = 1024 * 1024
 
 /** Create the HTTP application for a booted Strutvane `Application`. */
 export function createHttpApp(app: Application, options: HttpAppOptions): HttpApp {
-  const env = options.env ?? process.env['APP_ENV'] ?? 'production'
+  const env = firstAppEnv(options.env, processAppEnv()) ?? 'production'
   const basePath = (options.basePath ?? '/api/v1').replace(/\/+$/, '')
   const logger = app.make(LoggerToken)
   const permissions = resolvePermissionProvider(app, {
@@ -235,7 +241,13 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     )
     appendHeaders(c.res.headers, resolved.headers)
     c.res.headers.set('X-Request-Id', requestId)
-    const done: HttpResponseHookPayload = { request: c.req.raw, status: c.res.status, requestId }
+    const route = matchedRouteTemplate(c)
+    const done: HttpResponseHookPayload = {
+      request: c.req.raw,
+      status: c.res.status,
+      requestId,
+      ...(route !== undefined ? { route } : {}),
+    }
     await hooks.run(HTTP_HOOKS.response, done)
     return undefined
   })
@@ -361,6 +373,20 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   })
 
   return Object.assign(http, { openApiDocument }) as HttpApp
+}
+
+/**
+ * The route template that handled the request (`/api/v1/invoices/:id`), for `http.onResponse`:
+ * the last matched route registered for a method (middleware is registered for `ALL`).
+ * `undefined` for unmatched requests (404s), so loggers never get an attacker-chosen path here.
+ */
+function matchedRouteTemplate(c: Context): string | undefined {
+  const routes = matchedRoutes(c)
+  for (let i = routes.length - 1; i >= 0; i--) {
+    const r = routes[i]
+    if (r && r.method !== 'ALL') return r.path
+  }
+  return undefined
 }
 
 /**

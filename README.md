@@ -113,6 +113,7 @@ discovers everything by convention, so there is nothing to wire by hand:
 | Where | What |
 |---|---|
 | `config/*.ts` | Loaded by file name (`config/database.ts` → `app.config('database')`), after `.env` (real environment variables win). |
+| `APP_ENV` | Trimmed and lowercased; empty means unset; unset means `production`. `sv` commands run with the value the CLI resolved (process env, `.env.<--env>`, `.env`), so the CLI's guard and the command never disagree. |
 | `app/models/*.model.ts` | Every model gets its CRUD API under `config/api.ts` `prefix` + `version` (default `/api/v1`). |
 | `app/resources/*.resource.ts` | `defineResource(Invoice, { … })` replaces a model's default resource config. |
 | `app/http/routes/*.ts` | `export default [route.get('/hello', { public: true, handler })]`. A route needs `permission`, or `public: true`, or else a signed-in actor (deny-by-default). |
@@ -141,7 +142,8 @@ handlers may set `actor`/`tenant`, add response `headers` (a refreshed session c
 the request themselves with `response` + `control.stop()` (sign-in routes, the log viewer); such
 answers still get security headers, `X-Request-Id` and `http.onResponse`. The payload types and
 hook names (`HttpRequestHookPayload`, `HttpResponseHookPayload`, `HTTP_HOOKS`) come from
-`@strutvane/contracts` and are re-exported here. Policies get their schema
+`@strutvane/contracts` and are re-exported here. `http.onResponse` receives `route`, the matched
+route template (`/api/v1/invoices/:id`), or nothing for unmatched requests. Policies get their schema
 from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `ModelSchema` shape).
 
 ## Security notes
@@ -152,7 +154,7 @@ from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `Mo
 - **Writes are checked after the fact** (the `WITH CHECK` of RLS, on every engine). A created row must match the actor's `create` filter and an updated row its `update` filter, inside the same transaction; otherwise the write is rolled back with 403. Record-level `can()` for an update sees the row as it would be after the change. `Scope.check` (repository) overrides the default (`Scope.filter`).
 - **Hooks narrow, never widen.** A `resource.beforeQuery` result is AND-ed with the PermissionProvider's filter.
 - **References are checked in scope.** A `belongsTo` id must name a row of the same tenant that the actor may `view` (foreign keys alone would accept another tenant's id).
-- **Hidden fields stay server-side.** `hidden()` fields are never serialised, never writable (`unknown_field`), absent from OpenAPI and the manifest, and cannot be filterable, sortable or searchable (rejected when the model is defined). Hidden and `sensitive()` field keys are handed to the logger at boot through the `logger.redactKeys` hook (`REDACT_KEYS_HOOK`), so a logger implementation can redact them.
+- **Hidden fields stay server-side.** `hidden()` fields are never serialised, never writable (`unknown_field`), absent from OpenAPI and the manifest, and cannot be filterable, sortable or searchable (rejected when the model is defined). Hidden and `sensitive()` field keys are registered at boot with core's log redaction (`registerSensitiveKeys`), which core's fallback logger and `@strutvane/logs` both apply.
 - **Query cost is bounded.** Page size is at most 100 (or the resource's `pageSize.max`, also on `POST /query`), offset pages reach at most `MAX_OFFSET` (10 000) rows deep (cursors go further), total counts only where a resource sets `allowTotal: true`, at most 10 includes, and Postgres pools get a 5 s `statement_timeout` by default (`pool.statementTimeoutMs`, `0` disables).
 - **Never trusted:** the payload's tenant, system fields and unknown keys (strict schemas → `unknown_field`), `$actor` references in client filters, malformed filter nodes (422 `invalid_filter`), client file names (keys are UUIDs), browser MIME types (magic bytes decide), filter text (`%`/`_` are literal; no `LIKE`), and `X-Forwarded-*` / `X-Request-Id` unless `trustProxy` says a proxy you run sets them.
 - **Discovery needs an identity.** The manifest lists only resources the caller can use at all; `/openapi.json` is served to identified callers outside `APP_ENV=local` (`openapi: 'public' | 'authenticated' | false`).

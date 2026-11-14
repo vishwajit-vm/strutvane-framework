@@ -74,6 +74,13 @@ describe('serve', () => {
     await reader?.read()
     controller.abort()
     await within(stream.cancel)
+    // the body may be cancelled (socket destroyed) a moment before 'close' aborts the signal
+    await within(
+      new Promise<void>((resolve) => {
+        if (signal?.aborted) resolve()
+        else signal?.addEventListener('abort', () => resolve(), { once: true })
+      }),
+    )
     expect(signal?.aborted).toBe(true)
   })
 
