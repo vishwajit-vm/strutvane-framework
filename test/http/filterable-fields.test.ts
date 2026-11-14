@@ -168,3 +168,77 @@ describe.each(DIALECTS)('filterableFields on %s', (dialect) => {
     expect(search.body.data.map((r) => r.title)).toEqual(['Alpha', 'hush-title'])
   })
 })
+
+describe('includes follow the fields the actor may read', () => {
+  const Team = defineModel('Team', {
+    name: field.string(80).filterable(),
+    members: field.hasMany('Member', 'team'),
+  })
+  const Member = defineModel('Member', {
+    name: field.string(80).filterable(),
+    team: field.belongsTo('Team').optional(),
+  })
+  let t: TestApp | undefined
+  afterEach(async () => {
+    await t?.close()
+    t = undefined
+  })
+
+  /** Everything is visible, except the link fields (`Member.team`) are not readable. */
+  const setup = async (readable: Readonly<Record<string, readonly string[]>>) => {
+    const p: PermissionProvider = {
+      can: async () => ({ allowed: true, reason: 'test' }),
+      filterFor: async () => ({ op: 'true' }),
+      filterableFields: async (_actor, type) => new Set(readable[type] ?? []),
+    }
+    t = await createTestApp({
+      dialect: 'sqlite',
+      resources: [
+        { model: Team, includes: ['members'] },
+        { model: Member, includes: ['team'] },
+      ],
+      permissions: p,
+    })
+    const team = await t.repository(Team).create({ name: 'Red' })
+    const member = await t.repository(Member).create({ name: 'Ann', team: team.id })
+    return { client: t.actingAs(reader), team: team.id, member: member.id }
+  }
+
+  it('an include whose link field the actor may not read is refused on every list and show path', async () => {
+    const { client, team, member } = await setup({
+      team: ['id', 'name'],
+      member: ['id', 'name'],
+    })
+    for (const [method, path, body] of [
+      ['GET', `${BASE}/members?include=team`, undefined],
+      ['GET', `${BASE}/members/${member}?include=team`, undefined],
+      ['POST', `${BASE}/members/query`, { include: ['team'] }],
+      ['GET', `${BASE}/teams?include=members`, undefined],
+      ['GET', `${BASE}/teams/${team}?include=members`, undefined],
+      ['POST', `${BASE}/teams/query`, { include: ['members'] }],
+    ] as const) {
+      const res = await client.request<Problem>(method, path, body ? { body } : {})
+      expect(res.status, `${method} ${path}`).toBe(422)
+      expect(res.body.issues?.[0]?.code).toBe('include_not_allowed')
+    }
+  })
+
+  it('includes work when the link field is readable', async () => {
+    const { client, team, member } = await setup({
+      team: ['id', 'name'],
+      member: ['id', 'name', 'team'],
+    })
+    const show = await client.request<{ included: { team: { id: string } } }>(
+      'GET',
+      `${BASE}/members/${member}?include=team`,
+    )
+    expect(show.status).toBe(200)
+    expect(show.body.included.team.id).toBe(team)
+    const list = await client.request<{ data: { included: { members: unknown[] } }[] }>(
+      'GET',
+      `${BASE}/teams?include=members`,
+    )
+    expect(list.status).toBe(200)
+    expect(list.body.data[0]?.included.members).toHaveLength(1)
+  })
+})

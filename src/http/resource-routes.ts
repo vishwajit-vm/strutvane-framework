@@ -445,6 +445,36 @@ export function registerResourceRoutes(
     return { fields: narrowQueryFields(fields, allowed), allowed }
   }
 
+  /**
+   * An include reveals which record is linked to which, so it needs the link field to be readable
+   * (`PermissionProvider.filterableFields`, the actor's readable fields): the `belongsTo` field on
+   * this model, or the target's foreign key for a `hasMany` relation. Otherwise the include is
+   * refused exactly like an unknown one (`include_not_allowed`), even though the field itself is
+   * stripped from the serialized record. Providers without `filterableFields` do not narrow.
+   */
+  const assertReadableIncludes = async (
+    s: RequestState,
+    names: readonly string[],
+    allowed: ReadonlySet<string> | undefined,
+    path: readonly string[],
+  ): Promise<void> => {
+    for (const name of names) {
+      const relation = model.relations[name]
+      const readable = relation
+        ? await deps.permissions.filterableFields?.(
+            s.actor,
+            deps.registry.require(relation.target).permission,
+          )
+        : allowed
+      const link = relation ? relation.foreignKey : name
+      if (readable !== undefined && !readable.has(link)) {
+        throw new ValidationError([
+          { path: [...path], code: 'include_not_allowed', params: { relation: name } },
+        ])
+      }
+    }
+  }
+
   const runList = async (
     c: Context<HttpEnv>,
     query: ParsedListQuery,
@@ -454,6 +484,12 @@ export function registerResourceRoutes(
     const s = state(c)
     await authorizeRows(s, 'list')
     checkListCost(query, where)
+    await assertReadableIncludes(
+      s,
+      query.include ?? [],
+      client.allowed,
+      where === 'query' ? ['query', 'include'] : ['include'],
+    )
     await resource.hooks?.beforeList?.(ctxOf(s))
     try {
       const userFilter = query.filter
@@ -570,6 +606,10 @@ export function registerResourceRoutes(
             { path: ['query', 'include'], code: 'include_not_allowed', params: { relation: n } },
           ])
         }
+      }
+      if (names.length > 0) {
+        const allowed = await deps.permissions.filterableFields?.(s.actor, model.permission)
+        await assertReadableIncludes(s, names, allowed, ['query', 'include'])
       }
       const inc =
         names.length > 0 ? (await loadIncludes([record], names, s)).get(record.id) : undefined
