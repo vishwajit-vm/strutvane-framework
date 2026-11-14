@@ -92,6 +92,8 @@ const DEVKIT_EXIT: Readonly<Record<string, ExitCode>> = {
   GENERATOR_INPUT_INVALID: EXIT.VALIDATION,
   TRANSACTION_ABORTED: EXIT.FAILURE,
   INTERRUPTED_TRANSACTION: EXIT.FAILURE,
+  // Not devkit's, but matched the same way: the registry compiler refusing to write via a link.
+  UNSAFE_OUTPUT_PATH: EXIT.VALIDATION,
 }
 
 function isIssueList(value: unknown): value is readonly { path: unknown; message: unknown }[] {

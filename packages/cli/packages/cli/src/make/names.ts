@@ -73,8 +73,15 @@ const capital = (w: string): string => w.charAt(0).toUpperCase() + w.slice(1)
 const NAME = /^[A-Za-z][A-Za-z0-9_-]*$/
 
 /**
+ * Device names Windows reserves in every folder, with or without an extension (`con.model.ts` is
+ * still the console). Generated file names derive from the name, so these are refused everywhere:
+ * a project must check out on every OS.
+ */
+export const WINDOWS_RESERVED: RegExp = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i
+
+/**
  * Derive every spelling from `input`. Throws `INVALID_NAME` (exit 3) for names that cannot be a
- * TypeScript identifier and a file name on every OS.
+ * TypeScript identifier and a file name on every OS (including Windows device names).
  */
 export function names(input: string, what = 'Name'): Names {
   if (!NAME.test(input)) {
@@ -89,6 +96,20 @@ export function names(input: string, what = 'Name'): Names {
   const last = parts[parts.length - 1] ?? ''
   const pluralParts = [...parts.slice(0, -1), pluralize(last)]
   const label = capital(parts.join(' '))
+  const reserved = [
+    parts.join('-'),
+    parts.join('_'),
+    pluralParts.join('-'),
+    pluralParts.join('_'),
+  ].filter((file) => WINDOWS_RESERVED.test(file))
+  if (reserved.length > 0) {
+    throw new CliError('INVALID_NAME', {
+      exitCode: EXIT.VALIDATION,
+      params: {
+        detail: `${what} "${input}" would create a file named "${reserved[0]}", which Windows reserves for a device. Choose another name.`,
+      },
+    })
+  }
   return {
     pascal: parts.map(capital).join(''),
     camel: parts.map((w, i) => (i === 0 ? w : capital(w))).join(''),

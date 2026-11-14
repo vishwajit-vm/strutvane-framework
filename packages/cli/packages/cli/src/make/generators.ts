@@ -10,7 +10,14 @@
  */
 import { defineGenerator, type Generator } from '@strutvane/devkit'
 import { z } from 'zod'
-import type { FieldSpec } from './fields.ts'
+import {
+  type FieldSpec,
+  FieldSpecError,
+  formatFieldSpec,
+  modifierInfo,
+  parseFieldSpec,
+  typeInfo,
+} from './fields.ts'
 import { names } from './names.ts'
 import {
   factoryTemplate,
@@ -29,12 +36,49 @@ import {
 } from './templates.ts'
 
 const PascalName = z.string().regex(/^[A-Z][A-Za-z0-9]*$/, 'must be a PascalCase name')
-const Field: z.ZodType<FieldSpec> = z.object({
-  name: z.string().regex(/^[a-z][A-Za-z0-9]*$/),
-  type: z.string().min(1),
-  typeArgs: z.array(z.string()),
-  modifiers: z.array(z.object({ name: z.string().min(1), args: z.array(z.string()) })),
-})
+
+/** Two fields are the same when name, type, arguments and modifiers match exactly, in order. */
+function sameField(a: FieldSpec, b: FieldSpec): boolean {
+  const canonical = (f: FieldSpec): string =>
+    JSON.stringify([f.name, f.type, f.typeArgs, f.modifiers.map((m) => [m.name, m.args])])
+  return canonical(a) === canonical(b)
+}
+
+/**
+ * A field as generators accept it. The shape alone is not enough, because generators are public
+ * (IDE extensions, `create-strutvane`) and their input does not have to come from the field
+ * parser. So the field must be exactly what {@link parseFieldSpec} produces for its canonical
+ * spelling: a known type and known modifiers that apply to it, the right number of arguments, and
+ * every argument in its kind's format (numbers, identifiers, model names, enum options…).
+ * Templates re-check numbers and names again at render time.
+ */
+export const FieldSchema: z.ZodType<FieldSpec> = z
+  .object({
+    name: z.string().regex(/^[a-z][A-Za-z0-9]*$/, 'field names are lower camelCase'),
+    type: z.string().refine((t) => typeInfo(t) !== undefined, 'unknown field type'),
+    typeArgs: z.array(z.string().max(500)).max(100),
+    modifiers: z
+      .array(
+        z.object({
+          name: z.string().refine((m) => modifierInfo(m) !== undefined, 'unknown modifier'),
+          args: z.array(z.string().max(500)).max(100),
+        }),
+      )
+      .max(30),
+  })
+  .superRefine((field, ctx) => {
+    try {
+      if (!sameField(parseFieldSpec(formatFieldSpec(field)), field)) {
+        ctx.addIssue({ code: 'custom', message: 'the field is not in canonical form' })
+      }
+    } catch (error) {
+      ctx.addIssue({
+        code: 'custom',
+        message: error instanceof FieldSpecError ? error.message : 'the field is invalid',
+      })
+    }
+  })
+const Field = FieldSchema
 
 /** Input of the model generator. */
 export interface ModelGeneratorInput {

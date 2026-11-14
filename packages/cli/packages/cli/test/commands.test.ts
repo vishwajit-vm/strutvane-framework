@@ -138,6 +138,56 @@ describe('env:check', () => {
     expect(r.stdout).not.toContain('leaked')
   })
 
+  test('secret canary: invalid lines and keys are reported by file and line only', async () => {
+    const CANARY = 'sk_live_canary_93b1'
+    const root = makeProject({
+      '.env.example': `A=1\n${CANARY}\nDATABASE_URL=postgres://app:${CANARY}@db/app\n`,
+      '.env': [
+        'A=1',
+        CANARY,
+        `postgres://admin:${CANARY}@prod/db?x=1`,
+        `${CANARY}-x=1`,
+        `${CANARY}-x=2`,
+        `   ${CANARY} with spaces`,
+        'DATABASE_URL=x',
+        '',
+      ].join('\n'),
+      '.env.ci': `oops ${CANARY}\n`,
+      '.gitignore': '.env\n',
+    })
+    for (const argv of [
+      ['env:check', '--json'],
+      ['env:check'],
+      ['env:check', '--env', 'ci', '--json'],
+      ['env:check', '--strict', '--verbose'],
+      ['doctor', '--json'],
+      ['doctor'],
+    ]) {
+      const r = await cli(argv, { cwd: root })
+      expect(r.stdout + r.stderr, argv.join(' ')).not.toContain(CANARY)
+      expect(r.stdout + r.stderr, argv.join(' ')).not.toContain('canary')
+    }
+    const r = await cli(['env:check', '--env', 'ci', '--json'], { cwd: root })
+    const problems = (r.json().data as ReturnType<typeof checkEnv>).problems
+    expect(problems.filter((p) => p.kind === 'invalid-line').map((p) => p.key)).toEqual([
+      '.env.ci:1',
+      '.env.example:2',
+      '.env:2',
+      '.env:6',
+    ])
+    expect(problems.filter((p) => p.kind === 'invalid-key').map((p) => p.key)).toEqual([
+      '.env:3',
+      '.env:5',
+    ])
+    // A credential URL as a value in .env.example is flagged without echoing it.
+    expect(problems.find((p) => p.kind === 'secret-in-example')?.key).toBe('DATABASE_URL')
+    const doctor = await cli(['doctor', '--json'], { cwd: root })
+    const env = (doctor.json().data as { checks: { id: string; message: string }[] }).checks.find(
+      (c) => c.id === 'env',
+    )
+    expect(env?.message).toContain('.env:2')
+  })
+
   test('no .env.example: ENV_EXAMPLE_MISSING (exit 3)', async () => {
     const r = await cli(['env:check', '--json'], { cwd: makeProject({ '.env': 'A=1\n' }) })
     expect(r.code).toBe(3)
@@ -180,10 +230,42 @@ describe('key:generate', () => {
     expect(r.code).toBe(4)
     expect(r.json().error?.code).toBe('KEY_EXISTS')
     expect(read(root, '.env')).toBe('APP_KEY=old\n')
-    const forced = await cli(['key:generate', '--force', '--json'], { cwd: root })
+    const forced = await cli(['key:generate', '--force', '--json'], {
+      cwd: root,
+      env: { APP_ENV: 'local' },
+    })
     expect(forced.code).toBe(0)
     expect(read(root, '.env')).not.toContain('APP_KEY=old')
     expect(forced.json().warnings[0]).toContain('previous key was replaced')
+  })
+
+  test('replacing a key with --force is production-guarded', async () => {
+    for (const env of ['APP_ENV=production\n', 'APP_ENV= Production \n', '']) {
+      const root = makeProject({ '.env': `${env}APP_KEY=old\n` })
+      const r = await cli(['key:generate', '--force', '--json'], { cwd: root })
+      expect(r.json().error?.code, env).toBe('PRODUCTION_GUARD')
+      expect(read(root, '.env')).toContain('APP_KEY=old')
+      const ok = await cli(['key:generate', '--force', '--i-understand', '--json'], { cwd: root })
+      expect(ok.code).toBe(0)
+      expect(read(root, '.env')).not.toContain('APP_KEY=old')
+    }
+    // Filling an empty key is not destructive: no confirmation needed anywhere.
+    const empty = makeProject({ '.env': 'APP_ENV=production\nAPP_KEY=\n' })
+    expect((await cli(['key:generate', '--json'], { cwd: empty })).code).toBe(0)
+  })
+
+  test('every APP_KEY line is replaced; a non-empty duplicate counts as an existing key', async () => {
+    const root = makeProject({ '.env': 'APP_KEY=real\nAPP_ENV=local\nexport APP_KEY=\n' })
+    const r = await cli(['key:generate', '--json'], { cwd: root })
+    expect(r.json().error?.code).toBe('KEY_EXISTS')
+    const forced = await cli(['key:generate', '--force', '--json'], { cwd: root })
+    expect(forced.code).toBe(0)
+    const lines = read(root, '.env').split('\n')
+    const keys = lines.filter((l) => l.includes('APP_KEY='))
+    expect(keys).toHaveLength(2)
+    expect(new Set(keys.map((l) => l.split('=')[1])).size).toBe(1)
+    expect(read(root, '.env')).not.toContain('real')
+    expect(keys[1]?.startsWith('export APP_KEY=')).toBe(true)
   })
 
   test('--dry-run writes nothing and never shows the key; --show prints a key and writes nothing', async () => {
@@ -336,17 +418,36 @@ describe('doctor', () => {
       files: { 'c.mjs': '' },
     })
     installFakePackage(root, 'strutvane-plugin-b', {
-      strutvane: { commands: './c.mjs' },
+      strutvane: { commands: './c.mjs', compat: '*' },
       files: { 'c.mjs': 'export default []' },
     })
     installFakePackage(root, 'strutvane-plugin-c', {
-      strutvane: { commands: './c.mjs' },
+      strutvane: { commands: './c.mjs', compat: '*' },
       files: { 'c.mjs': "export default { name: 'c:x', description: 'x', run() {} }" },
     })
     const plugins = (
       (await cli(['doctor', '--json'], { cwd: root })).json().data as { checks: typeof checks }
     ).checks.filter((c) => c.id === 'plugins')
     expect(plugins.map((c) => c.status)).toEqual(['fail', 'warn'])
+
+    // A plugin without strutvane.compat is never loaded, and doctor says why.
+    addDependencies(root, { 'strutvane-plugin-d': '1' })
+    installFakePackage(root, 'strutvane-plugin-d', {
+      version: '2.0.0\u001b[2J',
+      strutvane: { commands: './c.mjs' },
+      files: { 'c.mjs': 'globalThis.__loadedD = true; export default []' },
+    })
+    const withD = (
+      (await cli(['doctor', '--json'], { cwd: root })).json().data as { checks: typeof checks }
+    ).checks.filter((c) => c.id === 'plugins')
+    expect(withD.map((c) => c.message)).toContain(
+      'strutvane-plugin-d@2.0.0[2J declares no strutvane.compat range, so it is not loaded',
+    )
+    expect((globalThis as { __loadedD?: boolean }).__loadedD).toBeUndefined()
+    const missing = await cli(['d:x', '--json'], { cwd: root })
+    expect(missing.json().error?.message).toContain(
+      'strutvane-plugin-d (declares no strutvane.compat)',
+    )
   })
 
   test('--global checks only the machine; without it, a project is required', async () => {
@@ -368,7 +469,7 @@ describe('doctor', () => {
     const root = makeProject({ '.gitignore': '/.env\n' })
     addDependencies(root, { 'strutvane-plugin-ok': '1' })
     installFakePackage(root, 'strutvane-plugin-ok', {
-      strutvane: { commands: './c.mjs' },
+      strutvane: { commands: './c.mjs', compat: '>=0.0.0-0' },
       files: { 'c.mjs': "export default { name: 'ok:x', description: 'x', run() {} }" },
     })
     const checks = (

@@ -31,7 +31,7 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.hint.INPUT_REQUIRED': 'Pass it on the command line, or use --yes to accept defaults.',
   'cli.error.PROJECT_NOT_FOUND': 'No Strutvane project found at or above {cwd}.',
   'cli.hint.PROJECT_NOT_FOUND':
-    'Run this inside a project (a folder with package.json), or pass --cwd <path>.',
+    'Run this inside a project (a folder with strutvane.config.ts, or whose package.json lists @strutvane/cli), or pass --cwd <path>. Drive roots, the temp folder and folders above your home directory never count.',
   'cli.error.CWD_NOT_FOUND': 'The --cwd directory does not exist: {cwd}.',
   'cli.error.INVALID_PACKAGE_JSON': 'Could not read {path}: {detail}.',
   'cli.error.INVALID_FIELD': 'Invalid field "{spec}": {detail}',
@@ -69,6 +69,10 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
     '{name}@{version} requires Strutvane {range}, but this CLI is {cli}.',
   'cli.hint.INCOMPATIBLE_PACKAGE':
     'Upgrade both together (sv upgrade), or install a matching version.',
+  'cli.error.MISSING_COMPAT':
+    '{name}@{version} does not declare which Strutvane versions it supports (strutvane.compat), so it is not loaded.',
+  'cli.hint.MISSING_COMPAT':
+    'Ask the plugin author to add "strutvane": { "compat": "^0.1.0" } (the supported range) to its package.json.',
   'cli.error.INCOMPATIBLE_PLUGINS':
     'Unknown command "{name}". These plugins were refused as incompatible: {plugins}.',
   'cli.hint.INCOMPATIBLE_PLUGINS': 'Run `sv doctor` for details.',
@@ -78,9 +82,14 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
     'The installed @strutvane/framework does not provide `sv {command}`.',
   'cli.hint.FRAMEWORK_COMMAND_MISSING':
     'Run `sv doctor` to see why its commands were not loaded (e.g. a version mismatch), then `sv upgrade`.',
-  'cli.error.PRODUCTION_GUARD': '`sv {command}` is destructive and APP_ENV is "production".',
-  'cli.hint.PRODUCTION_GUARD': 'Pass --force --i-understand if you really mean it.',
+  'cli.error.PRODUCTION_GUARD':
+    '`sv {command}` is destructive and APP_ENV is {env}; it runs without confirmation only in local, test, testing or development.',
+  'cli.hint.PRODUCTION_GUARD':
+    'Set APP_ENV for this project, or pass --force --i-understand if you really mean it.',
   'cli.error.COMMAND_FAILED': '`{command}` failed with exit code {code}.',
+  'cli.error.COMMAND_NOT_FOUND': 'Could not find `{command}` on PATH.',
+  'cli.hint.COMMAND_NOT_FOUND':
+    'Install it, or check PATH. Programs in the project folder itself are never run by name.',
   'cli.error.UNSAFE_ARGUMENT': 'Refusing to pass "{value}" to a shell.',
   'cli.error.TYPECHECK_FAILED': 'The project no longer type-checks after the upgrade.',
   'cli.hint.TYPECHECK_FAILED': 'Fix the errors above. Your files were upgraded; see git diff.',

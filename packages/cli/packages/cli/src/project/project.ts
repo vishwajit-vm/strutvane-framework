@@ -8,27 +8,42 @@
  * @module
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, parse } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { Project } from '../framework/command.ts'
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
+import { printable } from '../framework/printable.ts'
+import {
+  type BoundaryFacts,
+  declaresCli,
+  isForbiddenProjectDir,
+  isOwnedByCurrentUser,
+  processBoundary,
+  readManifest,
+} from './boundary.ts'
 
 /** The file that marks a Strutvane project root (docs/09 §1.1). */
 export const PROJECT_MARKER = 'strutvane.config.ts'
 
 /**
- * Find the project root for `start`: the nearest directory containing `strutvane.config.ts`, or
- * else the nearest directory containing `package.json`. Returns `undefined` when neither exists
- * up to the file-system root.
+ * Find the project root for `start`: the nearest directory that contains `strutvane.config.ts`
+ * or whose package.json declares `@strutvane/cli`, under the boundary rules of `boundary.ts`
+ * (never a drive or file-system root, the OS temp directory or a folder above home; on POSIX,
+ * owned by the current user). The search stops at the first folder that breaks those rules, and at
+ * the first project folder (one owned by someone else ends the search with no project). Returns
+ * `undefined` when there is no acceptable project.
  */
-export function findProjectRoot(start: string): string | undefined {
-  let nearestPackage: string | undefined
-  let dir = start
+export function findProjectRoot(
+  start: string,
+  facts: BoundaryFacts = processBoundary(),
+): string | undefined {
+  let dir = resolve(start)
   for (;;) {
-    if (existsSync(join(dir, PROJECT_MARKER))) return dir
-    if (nearestPackage === undefined && existsSync(join(dir, 'package.json'))) nearestPackage = dir
+    if (isForbiddenProjectDir(dir, facts)) return undefined
+    const isProject = existsSync(join(dir, PROJECT_MARKER)) || declaresCli(readManifest(dir))
+    if (isProject) return isOwnedByCurrentUser(dir, facts) ? dir : undefined
     const parent = dirname(dir)
-    if (parent === dir || dir === parse(dir).root) return nearestPackage
+    if (parent === dir) return undefined
     dir = parent
   }
 }
@@ -174,7 +189,9 @@ export function readInstalledPackage(root: string, name: string): InstalledPacka
   const manifestPath = join(dir, 'package.json')
   if (!existsSync(manifestPath) || !statSync(manifestPath).isFile()) return undefined
   const manifest = readJsonObject(manifestPath)
-  const version = typeof manifest['version'] === 'string' ? manifest['version'] : '0.0.0'
+  // Printed in messages and `doctor`: never let a manifest put control characters on screen.
+  const version =
+    typeof manifest['version'] === 'string' ? printable(manifest['version'], 64) : '0.0.0'
   return { name, version, dir, manifest }
 }
 

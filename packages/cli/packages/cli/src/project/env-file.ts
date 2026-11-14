@@ -23,10 +23,15 @@ export interface EnvEntry {
 export interface EnvFile {
   /** Last definition wins, as in dotenv. */
   readonly entries: ReadonlyMap<string, EnvEntry>
+  /** Every assignment in file order, duplicates included. */
+  readonly all: readonly EnvEntry[]
   /** Keys defined more than once. */
   readonly duplicates: readonly string[]
-  /** Lines that are neither blank, comments nor assignments. */
-  readonly invalid: readonly { readonly line: number; readonly text: string }[]
+  /**
+   * Lines that are neither blank, comments nor assignments, by line number only: their text is
+   * never kept, because a malformed line is often a pasted secret.
+   */
+  readonly invalid: readonly { readonly line: number }[]
 }
 
 /** Valid variable names: what shells and process managers accept everywhere. */
@@ -66,7 +71,8 @@ function unquote(raw: string): string {
 export function parseEnv(text: string): EnvFile {
   const entries = new Map<string, EnvEntry>()
   const duplicates = new Set<string>()
-  const invalid: { line: number; text: string }[] = []
+  const all: EnvEntry[] = []
+  const invalid: { line: number }[] = []
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/)
   lines.forEach((raw, index) => {
     const trimmed = raw.trim()
@@ -74,13 +80,15 @@ export function parseEnv(text: string): EnvFile {
     const match = ASSIGNMENT.exec(raw)
     const key = match?.[1]
     if (match === null || key === undefined) {
-      invalid.push({ line: index + 1, text: trimmed })
+      invalid.push({ line: index + 1 })
       return
     }
     if (entries.has(key)) duplicates.add(key)
-    entries.set(key, { key, value: unquote(match[2] ?? ''), line: index + 1 })
+    const entry = { key, value: unquote(match[2] ?? ''), line: index + 1 }
+    entries.set(key, entry)
+    all.push(entry)
   })
-  return { entries, duplicates: [...duplicates].sort(), invalid }
+  return { entries, all, duplicates: [...duplicates].sort(), invalid }
 }
 
 /** Read and parse a file; `undefined` if it does not exist. */

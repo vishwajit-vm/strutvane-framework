@@ -17,7 +17,8 @@ export const envCheckCommand: AnyCommand = defineCommand({
   description: 'Compare .env with .env.example: missing, unknown, empty and invalid keys',
   details: [
     'Exits 3 when there are errors: a documented key is missing, a line is invalid, or a',
-    'secret-looking key has a value in .env.example. Values are never printed.',
+    'secret-looking key has a value in .env.example. Values are never printed, and malformed',
+    'lines are reported by file and line number only.',
   ].join('\n'),
   flags: {
     strict: { type: 'boolean', description: 'Treat unknown and empty keys as errors' },
@@ -72,6 +73,8 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
     'The key encrypts cookies, sessions and encrypted fields. It is written only to .env, which is',
     'never committed; .env.example gets an empty APP_KEY= entry. The key is never printed unless',
     '--show is passed (and then nothing is written).',
+    'Replacing a non-empty key needs --force; unless APP_ENV is local, test, testing or',
+    'development it also needs --i-understand. Every APP_KEY line in .env is replaced.',
   ].join('\n'),
   // --show works anywhere; writing calls requireProject().
   requiresProject: false,
@@ -88,15 +91,24 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
       return { data: { key, written: false } }
     }
     const root = ctx.requireProject().root
-    const current = readEnvFile(join(root, '.env'))?.entries.get('APP_KEY')
-    if (current !== undefined && current.value !== '' && !ctx.globals.force) {
-      throw new CliError('KEY_EXISTS', { exitCode: EXIT.CONFLICT, params: { path: '.env' } })
+    const existing = readEnvFile(join(root, '.env'))
+    const current = existing?.entries.get('APP_KEY')
+    // Every APP_KEY line counts (a duplicate earlier in the file may hold the real key).
+    const replacesKey = existing?.all.some((e) => e.key === 'APP_KEY' && e.value !== '') === true
+    if (replacesKey) {
+      if (!ctx.globals.force) {
+        throw new CliError('KEY_EXISTS', { exitCode: EXIT.CONFLICT, params: { path: '.env' } })
+      }
+      // Replacing a key makes existing sessions and encrypted data unreadable: outside local,
+      // test and development environments that needs --force --i-understand.
+      ctx.guardDestructive()
     }
     const fs = createStagedFs(root)
     if (current !== undefined) {
-      // Replace the existing (empty, or forced) line in place, keeping the file's layout.
+      // Replace every existing APP_KEY line in place (empty, or forced), keeping the layout, so no
+      // stale duplicate is left behind for a later loader to pick up.
       const text = await fs.read('.env')
-      const replaced = text.replace(/^([ \t]*(?:export[ \t]+)?APP_KEY[ \t]*=).*$/m, `$1${key}`)
+      const replaced = text.replace(/^([ \t]*(?:export[ \t]+)?APP_KEY[ \t]*=).*$/gm, `$1${key}`)
       await fs.write('.env', replaced, { overwrite: true })
     }
     const env = createEnvEditor(fs, { generateSecret: () => key })
@@ -115,7 +127,7 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
     out.success(
       `APP_KEY written to .env${files.includes('.env.example') ? ' (and documented in .env.example)' : ''}.`,
     )
-    if (current !== undefined && current.value !== '') {
+    if (replacesKey) {
       out.warn(
         'The previous key was replaced: existing sessions and encrypted values can no longer be read.',
       )

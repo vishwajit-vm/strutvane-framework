@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto'
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -149,15 +150,53 @@ function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
 }
 
+/** Thrown when the registry's output folder is a symbolic link or junction. */
+export class UnsafeOutputPathError extends Error {
+  override readonly name = 'UnsafeOutputPathError'
+  /** Mapped to exit code 3 by the CLI runner. */
+  readonly code = 'UNSAFE_OUTPUT_PATH'
+}
+
+/**
+ * Refuse to write through a link: if `.strutvane` (or the output file) were a symbolic link or
+ * junction, the registry would be written wherever it points, outside the project. Nothing in
+ * Strutvane creates such links, so one is refused rather than followed.
+ */
+export function assertNoLink(path: string): void {
+  let stats: ReturnType<typeof lstatSync> | undefined
+  try {
+    stats = lstatSync(path)
+  } catch {
+    return // does not exist yet: it will be created as a plain folder or file
+  }
+  if (stats.isSymbolicLink()) {
+    throw new UnsafeOutputPathError(
+      `${path} is a symbolic link or junction; the registry is never written through a link. Remove it and run the command again.`,
+    )
+  }
+}
+
 /**
  * Write via a temp file + rename, so readers (tsc, Vite, editors) never observe a partial file.
  * On Windows, rename can briefly fail with EPERM/EBUSY while an antivirus or editor holds the
  * target; retry a few times before giving up.
+ *
+ * The output folder and file are lstat-checked first (no links), and the temp file is created
+ * exclusively (`wx`), so a pre-planted file or link at the temp path is removed, never followed.
  */
 function writeAtomically(path: string, content: string): void {
-  mkdirSync(dirname(path), { recursive: true })
+  const dir = dirname(path)
+  assertNoLink(dir)
+  mkdirSync(dir, { recursive: true })
+  assertNoLink(dir)
+  assertNoLink(path)
   const temp = `${path}.${process.pid}.tmp`
-  writeFileSync(temp, content, 'utf8')
+  try {
+    unlinkSync(temp) // a leftover from a crashed run (or a planted link): remove, never follow
+  } catch {
+    // nothing to remove
+  }
+  writeFileSync(temp, content, { encoding: 'utf8', flag: 'wx' })
   for (let attempt = 1; ; attempt++) {
     try {
       renameSync(temp, path)

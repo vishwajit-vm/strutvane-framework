@@ -1,5 +1,8 @@
 {
   "name": "fixture-app",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@strutvane/cli": "0.1.0-next.0"
+  }
 }

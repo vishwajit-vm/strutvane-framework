@@ -52,7 +52,10 @@ export function frameworkPlaceholder(
     placeholder: true,
     destructive,
     allowUnknownFlags: true,
-    details: `Provided by ${FRAMEWORK_PACKAGE}; available once it is installed (sv add framework).`,
+    details: destructive
+      ? `Provided by ${FRAMEWORK_PACKAGE}; available once it is installed (sv add framework).
+Destructive: type the full name; unless APP_ENV is local, test, testing or development it needs --force --i-understand.`
+      : `Provided by ${FRAMEWORK_PACKAGE}; available once it is installed (sv add framework).`,
     run(ctx) {
       const project = ctx.requireProject()
       const installed = readInstalledPackage(project.root, FRAMEWORK_PACKAGE) !== undefined

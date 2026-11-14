@@ -4,7 +4,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { recordEjection } from '@strutvane/devkit'
+import { REDACTED, recordEjection } from '@strutvane/devkit'
 import { afterAll, describe, expect, test } from 'vitest'
 import { packageArgument } from '../src/commands/packages.ts'
 import {
@@ -161,6 +161,46 @@ describe('add', () => {
     expect(packageArgument('auth')).toBe('@strutvane/auth')
     expect(packageArgument('strutvane-plugin-x')).toBe('strutvane-plugin-x')
     expect(packageArgument('@acme/thing')).toBe('@acme/thing')
+  })
+
+  test('--diff never shows env-file values (secret canary)', async () => {
+    const CANARY = 'canary-7f3a9c1e'
+    const root = makeProject({ '.env': `EXISTING_TOKEN=${CANARY}-old\nAPP_ENV=local\n` })
+    installFakePackage(root, '@strutvane/secrets', {
+      strutvane: { installer: './i.mjs' },
+      files: {
+        'i.mjs': `export default { name: 'secrets', async install(ctx) {
+  await ctx.env.add('Payments', [{ key: 'PAYMENT_TOKEN', value: '${CANARY}' }])
+  await ctx.fs.write('.env.local', 'LOCAL_TOKEN=${CANARY}\\n')
+  await ctx.fs.write('config/payments.ts', 'export default {}\\n')
+} }`,
+      },
+    })
+    addDependencies(root, { '@strutvane/secrets': '0.1.0' })
+    for (const extra of [['--dry-run', '--diff'], ['--dry-run', '--diff', '--json'], ['--diff']]) {
+      const r = await cli(['add', '@strutvane/secrets', ...extra], { cwd: root })
+      expect(r.code, extra.join(' ')).toBe(0)
+      expect(r.stdout + r.stderr).not.toContain(CANARY)
+      if (!extra.includes('--json')) {
+        expect(r.stdout).toContain(`PAYMENT_TOKEN=${REDACTED}`)
+        expect(r.stdout).toContain('+++ b/config/payments.ts')
+      }
+    }
+  })
+
+  test('a third-party plugin without strutvane.compat is refused before its installer runs', async () => {
+    const root = makeProject()
+    installFakePackage(root, 'strutvane-plugin-nocompat', {
+      version: '1.0.0',
+      strutvane: { installer: './i.mjs' },
+      files: { 'i.mjs': 'globalThis.__ranNoCompat = true; export default {}' },
+    })
+    addDependencies(root, { 'strutvane-plugin-nocompat': '1.0.0' })
+    const r = await cli(['add', 'strutvane-plugin-nocompat', '--json'], { cwd: root })
+    expect(r.code).toBe(7)
+    expect(r.json().error?.code).toBe('MISSING_COMPAT')
+    expect(r.json().error?.hint).toContain('strutvane')
+    expect((globalThis as { __ranNoCompat?: boolean }).__ranNoCompat).toBeUndefined()
   })
 
   test('incompatible packages are refused (exit 7) before their installer runs', async () => {

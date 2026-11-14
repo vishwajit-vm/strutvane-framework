@@ -225,7 +225,15 @@ async function checkPlugins(project: Project, version: string): Promise<DoctorCh
   const { problems, commands } = await loadPluginCommands(project, version)
   const checks: DoctorCheck[] = []
   for (const p of problems) {
-    if (p.kind === 'incompatible') {
+    if (p.kind === 'incompatible' && p.missing === true) {
+      checks.push(
+        fail(
+          'plugins',
+          `${p.name}@${p.version} declares no strutvane.compat range, so it is not loaded`,
+          'Ask the plugin author to declare the Strutvane versions it supports.',
+        ),
+      )
+    } else if (p.kind === 'incompatible') {
       checks.push(
         fail(
           'plugins',

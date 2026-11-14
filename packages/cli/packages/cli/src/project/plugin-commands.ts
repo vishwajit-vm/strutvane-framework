@@ -25,6 +25,8 @@ export type PluginProblem =
       readonly name: string
       readonly version: string
       readonly range: string
+      /** The package declares no `strutvane.compat` range (plugins must). */
+      readonly missing?: true
     }
   | { readonly kind: 'error'; readonly name: string; readonly error: unknown }
   | { readonly kind: 'invalid-command'; readonly name: string; readonly detail: string }
@@ -58,7 +60,13 @@ export async function loadPluginCommands(
       if (path === undefined) continue
       const compat = checkCompat(pkg, cliVersion)
       if (!compat.ok) {
-        problems.push({ kind: 'incompatible', name, version: pkg.version, range: compat.range })
+        problems.push({
+          kind: 'incompatible',
+          name,
+          version: pkg.version,
+          range: compat.range,
+          ...(compat.missing === true ? { missing: true as const } : {}),
+        })
         continue
       }
       const module = await importFile(path)

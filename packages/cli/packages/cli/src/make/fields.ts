@@ -78,7 +78,7 @@ export class FieldSpecError extends Error {
 }
 
 /** How a type or modifier argument is checked. */
-type ArgKind =
+export type ArgKind =
   | 'length'
   | 'integer'
   | 'number'
@@ -107,7 +107,7 @@ export type FieldCategory =
   | 'file'
   | 'computed'
 
-interface Arity {
+export interface Arity {
   readonly min: number
   readonly max: number
   readonly kind: ArgKind
@@ -115,7 +115,7 @@ interface Arity {
   readonly restKind?: ArgKind
 }
 
-interface TypeInfo {
+export interface TypeInfo {
   readonly category: FieldCategory
   readonly args: Arity
 }
@@ -168,7 +168,7 @@ export const FIELD_TYPES: Readonly<Record<string, TypeInfo>> = Object.freeze({
   computed: t('computed'),
 })
 
-interface ModifierInfo {
+export interface ModifierInfo {
   readonly args: Arity
   /** Categories the modifier applies to (`undefined` = all column-backed types). */
   readonly only?: readonly FieldCategory[]
@@ -205,6 +205,19 @@ export const FIELD_MODIFIERS: Readonly<Record<string, ModifierInfo>> = Object.fr
   deprecated: m({ min: 0, max: 1, kind: 'text' }),
   permission: m({ min: 1, max: 1, kind: 'permission' }),
 })
+
+/**
+ * Look up a type in the catalogue. Own keys only: `constructor`, `__proto__` or `toString` are
+ * not field types just because every object inherits them.
+ */
+export function typeInfo(type: string): TypeInfo | undefined {
+  return Object.hasOwn(FIELD_TYPES, type) ? FIELD_TYPES[type] : undefined
+}
+
+/** Look up a modifier in the catalogue (own keys only, as {@link typeInfo}). */
+export function modifierInfo(modifier: string): ModifierInfo | undefined {
+  return Object.hasOwn(FIELD_MODIFIERS, modifier) ? FIELD_MODIFIERS[modifier] : undefined
+}
 
 /** Modifiers that need a database column (not valid on hasMany/manyToMany/computed…). */
 const COLUMN_MODIFIERS = new Set(['unique', 'index', 'default', 'nullable', 'sortable'])
@@ -409,7 +422,7 @@ function checkDefault(
   args: readonly Located<string>[],
   column: number,
 ): void {
-  const info = FIELD_TYPES[type]
+  const info = typeInfo(type)
   const fail = (message: string, at = column): FieldSpecError =>
     new FieldSpecError('INVALID_DEFAULT', message, spec, at)
   if (info === undefined) return
@@ -497,7 +510,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
     )
   }
   const type = typeSeg.head.value
-  const info = FIELD_TYPES[type]
+  const info = typeInfo(type)
   if (info === undefined) {
     const close = suggest(type, Object.keys(FIELD_TYPES))
     throw new FieldSpecError(
@@ -542,7 +555,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
   const modifiers: FieldModifier[] = []
   for (const seg of modifierSegs) {
     const modifier = seg.head.value
-    const mod = FIELD_MODIFIERS[modifier]
+    const mod = modifierInfo(modifier)
     if (mod === undefined) {
       const close = suggest(modifier, Object.keys(FIELD_MODIFIERS))
       throw new FieldSpecError(
@@ -655,5 +668,5 @@ export function formatFieldSpec(field: FieldSpec): string {
 
 /** The category of a field's type. */
 export function categoryOf(field: FieldSpec): FieldCategory {
-  return FIELD_TYPES[field.type]?.category ?? 'string'
+  return typeInfo(field.type)?.category ?? 'string'
 }

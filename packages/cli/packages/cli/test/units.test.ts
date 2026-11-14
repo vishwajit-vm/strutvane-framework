@@ -165,7 +165,17 @@ describe('env file parser', () => {
     expect(value('UNTERMINATED')).toBe('abc')
     expect(env.entries.get('DB_URL')?.line).toBe(4)
     expect(env.duplicates).toEqual(['APP_NAME'])
-    expect(env.invalid).toEqual([{ line: 10, text: 'not a line' }])
+    expect(env.invalid).toEqual([{ line: 10 }])
+    expect(env.all.map((e) => e.key)).toEqual([
+      'APP_NAME',
+      'DB_URL',
+      'QUOTED',
+      'DOUBLE',
+      'INLINE',
+      'EMPTY',
+      'APP_NAME',
+      'UNTERMINATED',
+    ])
   })
 
   test('fuzz: never throws, and every entry has a line inside the file', () => {

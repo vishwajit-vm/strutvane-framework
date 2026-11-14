@@ -21,6 +21,7 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
+import { printable } from '../framework/printable.ts'
 import { type InstalledPackage, strutvaneField } from './project.ts'
 import { satisfies } from './semver.ts'
 
@@ -80,24 +81,41 @@ export async function importFile(path: string): Promise<Record<string, unknown>>
   return module as Record<string, unknown>
 }
 
-/** The result of a `strutvane.compat` check. */
-export type CompatResult = { readonly ok: true } | { readonly ok: false; readonly range: string }
+/**
+ * The result of a `strutvane.compat` check. `missing: true` when a third-party package declares
+ * no range at all.
+ */
+export type CompatResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly range: string; readonly missing?: true }
 
-/** Check a package's declared `strutvane.compat` range against the CLI version. */
-export function checkCompat(pkg: InstalledPackage, cliVersion: string): CompatResult {
-  const range = strutvaneField(pkg.manifest)?.['compat']
-  if (range === undefined) return { ok: true }
-  if (typeof range !== 'string') return { ok: false, range: String(range) }
-  return satisfies(cliVersion, range, { includePrerelease: true })
-    ? { ok: true }
-    : { ok: false, range }
+/** First-party packages are released with the CLI, so they may omit `strutvane.compat`. */
+function isFirstParty(name: string): boolean {
+  return name.startsWith('@strutvane/')
 }
 
-/** Throw `INCOMPATIBLE_PACKAGE` (exit 7) unless the package accepts this CLI version. */
+/**
+ * Check a package's declared `strutvane.compat` range against the CLI version. A plugin (any
+ * package outside `@strutvane/`) that declares no range is incompatible: its code is never loaded
+ * on the assumption that it might work. The range is returned printable (control characters
+ * removed), because it is shown in messages.
+ */
+export function checkCompat(pkg: InstalledPackage, cliVersion: string): CompatResult {
+  const range = strutvaneField(pkg.manifest)?.['compat']
+  if (range === undefined) {
+    return isFirstParty(pkg.name) ? { ok: true } : { ok: false, range: '', missing: true }
+  }
+  if (typeof range !== 'string') return { ok: false, range: printable(String(range), 80) }
+  return satisfies(cliVersion, range, { includePrerelease: true })
+    ? { ok: true }
+    : { ok: false, range: printable(range, 80) }
+}
+
+/** Throw `INCOMPATIBLE_PACKAGE` or `MISSING_COMPAT` (exit 7) unless the package accepts this CLI. */
 export function assertCompatible(pkg: InstalledPackage, cliVersion: string): void {
   const result = checkCompat(pkg, cliVersion)
   if (!result.ok) {
-    throw new CliError('INCOMPATIBLE_PACKAGE', {
+    throw new CliError(result.missing === true ? 'MISSING_COMPAT' : 'INCOMPATIBLE_PACKAGE', {
       exitCode: EXIT.INCOMPATIBLE,
       params: { name: pkg.name, version: pkg.version, range: result.range, cli: cliVersion },
     })

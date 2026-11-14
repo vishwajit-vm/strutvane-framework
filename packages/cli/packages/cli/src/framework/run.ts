@@ -16,10 +16,16 @@
  * @module
  */
 import { existsSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import type { Logger } from '@strutvane/contracts'
 import { createLogger, type ErrorParams } from '@strutvane/core'
-import { readEnvFile } from '../project/env-file.ts'
+import {
+  envFileOverlay,
+  isSafeAppEnv,
+  type ResolvedAppEnv,
+  resolveAppEnv,
+} from '../project/app-env.ts'
+import { isValidEnvName } from '../project/env-check.ts'
 import {
   loadPluginCommands,
   mergeCommands,
@@ -35,6 +41,7 @@ import { renderCommandHelp, renderGlobalHelp, renderGroupHelp, summarize } from 
 import { createCliMessages } from './messages.ts'
 import { createOutput, type Output, type OutputStreams, shouldUseColor } from './output.ts'
 import { parseCommandLine } from './parse.ts'
+import { printable } from './printable.ts'
 import {
   createInteractivePrompter,
   createNonInteractivePrompter,
@@ -79,6 +86,13 @@ export interface RunOptions {
   readonly prompter?: Prompter
   /** Version shown and checked against `strutvane.compat`. Default: the installed version. */
   readonly version?: string
+  /**
+   * Applies variables the runner resolved for the command (the normalised `APP_ENV`, plus
+   * `.env.<name>` with `--env`) to the real process environment, so code a command loads
+   * in-process reads the same values as the guard. `main()` passes a `process.env` writer; the
+   * default does nothing (in-process callers and tests keep their environment untouched).
+   */
+  readonly applyEnv?: (vars: ReadonlyMap<string, string>) => void
 }
 
 const processStreams: OutputStreams = {
@@ -217,9 +231,31 @@ async function execute(
   if (command.requiresProject !== false && project === undefined) {
     throw usageError('PROJECT_NOT_FOUND', { cwd })
   }
-  if (command.destructive === true && project !== undefined) {
-    guardProduction(command.name, project, services, globals.force && parsed.iUnderstand)
+  if (globals.env !== undefined && !isValidEnvName(globals.env)) {
+    throw usageError('INVALID_ARGUMENT', {
+      detail: `--env "${globals.env}" must be a plain name like "test".`,
+    })
   }
+  // Resolve APP_ENV once, as the runtime will, and give the command exactly that value.
+  const appEnv = resolveAppEnv({
+    processEnv: services.env,
+    root: project?.root,
+    envName: globals.env,
+  })
+  const confirmed = globals.force && parsed.iUnderstand
+  const guard = (): void => guardProduction(command.name, appEnv, confirmed)
+  if (command.destructive === true) guard()
+  const exported = new Map<string, string>(
+    project === undefined || globals.env === undefined
+      ? []
+      : envFileOverlay(project.root, globals.env, services.env),
+  )
+  if (appEnv.value !== undefined) exported.set('APP_ENV', appEnv.value)
+  if (exported.size > 0) options.applyEnv?.(exported)
+  const commandServices: CliServices =
+    exported.size === 0
+      ? services
+      : { ...services, env: { ...services.env, ...Object.fromEntries(exported) } }
 
   const interactive = services.isTTY && globals.interactive && !globals.yes && !globals.json
   const prompt =
@@ -247,8 +283,10 @@ async function execute(
     out,
     prompt,
     log,
-    services,
+    services: commandServices,
     version,
+    appEnv: appEnv.value,
+    guardDestructive: guard,
   }
   const outcome = (await command.run(ctx)) ?? {}
   return finish(state, streams, outcome.data, outcome.exitCode ?? EXIT.OK)
@@ -286,7 +324,11 @@ function unresolved(
       params: {
         name: input,
         plugins: incompatible
-          .map((p) => `${p.name} (needs ${p.kind === 'incompatible' ? p.range : ''})`)
+          .map((p) =>
+            p.kind === 'incompatible' && p.missing === true
+              ? `${p.name} (declares no strutvane.compat)`
+              : `${p.name} (needs ${p.kind === 'incompatible' ? p.range : ''})`,
+          )
           .join(', '),
       },
     })
@@ -300,21 +342,17 @@ function unresolved(
 }
 
 /**
- * Refuse destructive commands in production unless both `--force` and `--i-understand` are given
- * (docs/09 §4). `APP_ENV` is read from the environment first, then from the project's `.env`.
+ * Refuse a destructive command unless the resolved `APP_ENV` is one of `SAFE_APP_ENVS` or both
+ * `--force` and `--i-understand` are given (docs/09 §4). Fails closed: an unset `APP_ENV` (which
+ * the runtime treats as production) is refused too.
  */
-function guardProduction(
-  command: string,
-  project: Project,
-  services: CliServices,
-  confirmed: boolean,
-): void {
-  const appEnv =
-    services.env['APP_ENV'] ??
-    readEnvFile(join(project.root, '.env'))?.entries.get('APP_ENV')?.value
-  if (appEnv === 'production' && !confirmed) {
-    throw usageError('PRODUCTION_GUARD', { command })
-  }
+function guardProduction(command: string, appEnv: ResolvedAppEnv, confirmed: boolean): void {
+  if (isSafeAppEnv(appEnv.value) || confirmed) return
+  const env =
+    appEnv.value === undefined
+      ? 'not set'
+      : `"${printable(appEnv.value, 40)}" (from ${appEnv.source === 'process' ? 'the environment' : appEnv.source})`
+  throw usageError('PRODUCTION_GUARD', { command, env })
 }
 
 function finish(state: RunState, streams: OutputStreams, data: unknown, exitCode: number): number {

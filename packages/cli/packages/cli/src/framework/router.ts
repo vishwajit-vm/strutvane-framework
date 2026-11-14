@@ -7,6 +7,9 @@
  *   several commands is an error listing them, never a guess.
  * - Exact matches always beat prefix matches, so adding a command can never change what an exact
  *   name means.
+ * - Destructive commands (`migrate:fresh`, `db:wipe`…) are never reached by a prefix: the input is
+ *   reported as unknown with the full name suggested, so they always need their exact name (or an
+ *   exact alias).
  *
  * @module
  */
@@ -83,6 +86,10 @@ export function resolveCommand(table: CommandTable, words: readonly string[]): R
     const commands = [...new Set(matches.map((m) => table.get(m)?.name ?? m))]
     if (commands.length === 1) {
       const command = table.get(matches[0] ?? '')
+      // Destructive commands need their exact name: an abbreviation never drops a database.
+      if (command?.destructive === true) {
+        return { kind: 'unknown', input: text, suggestions: [command.name] }
+      }
       if (command !== undefined) return { kind: 'found', command, consumed }
     }
     if (commands.length > 1) return { kind: 'ambiguous', input: text, matches: commands.sort() }

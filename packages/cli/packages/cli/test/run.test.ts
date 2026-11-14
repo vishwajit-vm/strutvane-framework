@@ -3,10 +3,11 @@
  * exit codes, project detection, contributed commands and the production guard.
  */
 import { afterAll, describe, expect, test } from 'vitest'
+import { BUILTIN_COMMANDS } from '../src/commands/builtins.ts'
 import { defineCommand } from '../src/framework/command.ts'
 import { CliError } from '../src/framework/errors.ts'
 import { EXIT } from '../src/framework/exit-codes.ts'
-import { JSON_SCHEMA_VERSION } from '../src/framework/run.ts'
+import { JSON_SCHEMA_VERSION, runCli } from '../src/framework/run.ts'
 import {
   addDependencies,
   cleanupTempDirs,
@@ -359,7 +360,7 @@ export default [
     const root = makeProject()
     addDependencies(root, { 'strutvane-plugin-broken': '1.0.0' })
     installFakePackage(root, 'strutvane-plugin-broken', {
-      strutvane: { commands: './c.mjs' },
+      strutvane: { commands: './c.mjs', compat: '*' },
       files: { 'c.mjs': 'throw new Error("broken plugin")' },
     })
     expect((await cli(['help'], { cwd: root })).code).toBe(0)
@@ -399,12 +400,27 @@ export const commands = [
 ]`,
       },
     })
-    expect((await cli(['migrate', '--json'], { cwd: root })).json().data).toEqual({ applied: 3 })
-    const check = await cli(['migrate', '--check', '--json'], { cwd: root })
+    const env = { APP_ENV: 'local' }
+    expect((await cli(['migrate', '--json'], { cwd: root, env })).json().data).toEqual({
+      applied: 3,
+    })
+    const check = await cli(['migrate', '--check', '--json'], { cwd: root, env })
     expect(check.code).toBe(EXIT.PENDING)
-    // Prefixes reach contributed commands too.
-    expect((await cli(['mi:fr', '--json'], { cwd: root })).json().data).toEqual({ fresh: true })
-    expect((await cli(['help', '--json'], { cwd: root })).json().warnings).toEqual([])
+    // Prefixes reach contributed commands too, except destructive ones (exact name only).
+    expect((await cli(['mi:st', '--json'], { cwd: root, env })).json().command).toBe(
+      'migrate:status',
+    )
+    const prefixed = await cli(['mi:fr', '--json'], { cwd: root, env })
+    expect(prefixed.json().error?.code).toBe('UNKNOWN_COMMAND')
+    expect(prefixed.json().error?.issues?.[0]?.message).toBe('migrate:fresh')
+    expect((await cli(['migrate', 'fr', '--json'], { cwd: root, env })).code).toBe(EXIT.USAGE)
+    expect((await cli(['migrate:fresh', '--json'], { cwd: root, env })).json().data).toEqual({
+      fresh: true,
+    })
+    expect((await cli(['migrate', 'fresh', '--json'], { cwd: root, env })).json().data).toEqual({
+      fresh: true,
+    })
+    expect((await cli(['help', '--json'], { cwd: root, env })).json().warnings).toEqual([])
   })
 
   test('production guard: destructive commands need --force --i-understand', async () => {
@@ -426,5 +442,170 @@ export const commands = [
     // The process environment wins over .env.
     const local = await cli(['migrate:fresh', '--json'], { cwd: root, env: { APP_ENV: 'local' } })
     expect(local.json().data).toBe('dropped')
+  })
+
+  /** A project whose framework contributes a destructive command that reports what it saw. */
+  function guardedProject(files: Readonly<Record<string, string>>): string {
+    const root = makeProject(files)
+    addDependencies(root, { '@strutvane/framework': '0.1.0' })
+    installFakePackage(root, '@strutvane/framework', {
+      strutvane: { commands: './cli.mjs' },
+      files: {
+        'cli.mjs': `export default { name: 'db:wipe', description: 'wipe', run(ctx) {
+  return { data: { appEnv: ctx.appEnv ?? null, seen: ctx.services.env.APP_ENV ?? null, db: ctx.services.env.DATABASE_URL ?? null } } } }`,
+      },
+    })
+    return root
+  }
+
+  test.each([
+    [
+      '--env production with .env.production',
+      { '.env': 'APP_ENV=local\n', '.env.production': 'APP_ENV=production\n' },
+      {},
+      ['--env', 'production'],
+    ],
+    [
+      'empty APP_ENV in the shell falls through to .env',
+      { '.env': 'APP_ENV=production\n' },
+      { APP_ENV: '' },
+      [],
+    ],
+    [
+      'whitespace-only APP_ENV in the shell',
+      { '.env': 'APP_ENV=production\n' },
+      { APP_ENV: '   ' },
+      [],
+    ],
+    ['quoted value', { '.env': 'APP_ENV="production"\n' }, {}, []],
+    ['single-quoted value', { '.env': "APP_ENV='production'\n" }, {}, []],
+    ['export prefix', { '.env': 'export APP_ENV=production\n' }, {}, []],
+    ['mixed case', { '.env': 'APP_ENV=Production\n' }, {}, []],
+    ['padded value', { '.env': 'APP_ENV=  production  \n' }, {}, []],
+    ['padded quoted mixed case', { '.env': 'export APP_ENV=" PRODUCTION "\n' }, {}, []],
+    ['staging (not a safe environment)', { '.env': 'APP_ENV=staging\n' }, {}, []],
+    ['no .env at all', {}, {}, []],
+    ['.env without APP_ENV', { '.env': 'APP_NAME=x\n' }, {}, []],
+    ['empty APP_ENV everywhere', { '.env': 'APP_ENV=\n' }, { APP_ENV: '' }, []],
+    [
+      'shell production beats a local .env',
+      { '.env': 'APP_ENV=local\n' },
+      { APP_ENV: 'production' },
+      [],
+    ],
+    [
+      '--env name whose file is missing falls back to .env',
+      { '.env': 'APP_ENV=production\n' },
+      {},
+      ['--env', 'ci'],
+    ],
+  ] as const)('production guard refuses: %s', async (_, files, env, extra) => {
+    const root = guardedProject(files)
+    const refused = await cli(['db:wipe', ...extra, '--json'], { cwd: root, env })
+    expect(refused.code).toBe(EXIT.USAGE)
+    expect(refused.json().error?.code).toBe('PRODUCTION_GUARD')
+    expect((await cli(['db:wipe', ...extra, '--force', '--json'], { cwd: root, env })).code).toBe(
+      EXIT.USAGE,
+    )
+    expect(
+      (await cli(['db:wipe', ...extra, '--i-understand', '--json'], { cwd: root, env })).code,
+    ).toBe(EXIT.USAGE)
+    const forced = await cli(['db:wipe', ...extra, '--force', '--i-understand', '--json'], {
+      cwd: root,
+      env,
+    })
+    expect(forced.code).toBe(0)
+  })
+
+  test.each([
+    ['local', { '.env': 'APP_ENV=local\n' }, {}, [], 'local'],
+    [
+      'test via --env',
+      { '.env': 'APP_ENV=production\n', '.env.test': 'APP_ENV=Test\n' },
+      {},
+      ['--env', 'test'],
+      'test',
+    ],
+    ['testing', { '.env': 'APP_ENV=" testing "\n' }, {}, [], 'testing'],
+    [
+      'development from the shell',
+      { '.env': 'APP_ENV=production\n' },
+      { APP_ENV: ' Development' },
+      [],
+      'development',
+    ],
+  ] as const)(
+    'production guard allows %s, and the command sees the same value',
+    async (_, files, env, extra, expected) => {
+      const root = guardedProject(files)
+      const r = await cli(['db:wipe', ...extra, '--json'], { cwd: root, env })
+      expect(r.code).toBe(0)
+      expect(r.json().data).toMatchObject({ appEnv: expected, seen: expected })
+    },
+  )
+
+  test('--env layers .env.<name> into the command environment; the shell still wins', async () => {
+    const root = guardedProject({
+      '.env': 'APP_ENV=local\nDATABASE_URL=postgres://dev\n',
+      '.env.test': 'APP_ENV=test\nDATABASE_URL=postgres://test\n__proto__=x\n',
+    })
+    const r = await cli(['db:wipe', '--env', 'test', '--json'], { cwd: root })
+    expect(r.json().data).toEqual({ appEnv: 'test', seen: 'test', db: 'postgres://test' })
+    const shell = await cli(['db:wipe', '--env', 'test', '--json'], {
+      cwd: root,
+      env: { DATABASE_URL: 'postgres://shell' },
+    })
+    expect(shell.json().data).toMatchObject({ db: 'postgres://shell' })
+    const bad = await cli(['db:wipe', '--env', '../x', '--json'], { cwd: root })
+    expect(bad.json().error?.code).toBe('INVALID_ARGUMENT')
+  })
+
+  test('the guard message names the resolved value and its source, without control characters', async () => {
+    const root = guardedProject({ '.env.ci': 'APP_ENV="prod\u001b[2Juction"\n' })
+    const r = await cli(['db:wipe', '--env', 'ci'], { cwd: root })
+    expect(r.stderr).toContain('APP_ENV is "prod[2juction" (from .env.ci)')
+    expect(r.stderr.includes('\u001b')).toBe(false)
+    const unset = await cli(['db:wipe'], { cwd: guardedProject({}) })
+    expect(unset.stderr).toContain('APP_ENV is not set')
+    const shell = await cli(['db:wipe'], { cwd: guardedProject({}), env: { APP_ENV: 'prod' } })
+    expect(shell.stderr).toContain('"prod" (from the environment)')
+  })
+
+  test('runCli hands the resolved variables to applyEnv (main writes them to process.env)', async () => {
+    const root = guardedProject({ '.env': 'APP_ENV=Local\n', '.env.test': 'EXTRA=1\n' })
+    const applied: Record<string, string>[] = []
+    const code = await runCli({
+      argv: ['db:wipe', '--env', 'test', '--quiet'],
+      cwd: root,
+      builtins: BUILTIN_COMMANDS,
+      streams: { stdout: () => {}, stderr: () => {} },
+      services: { env: {}, isTTY: false },
+      applyEnv: (vars) => applied.push(Object.fromEntries(vars)),
+    })
+    expect(code).toBe(0)
+    expect(applied).toEqual([{ EXTRA: '1', APP_ENV: 'local' }])
+  })
+
+  test('destructive commands are refused without a project too (fail closed)', async () => {
+    const guarded = defineCommand({
+      name: 'danger:zone',
+      description: 'd',
+      destructive: true,
+      requiresProject: false,
+      run: () => ({ data: 'ran' }),
+    })
+    const dir = tempDir()
+    const builtins = [...BUILTIN_COMMANDS, guarded]
+    expect((await cli(['danger:zone', '--json'], { cwd: dir, builtins })).code).toBe(EXIT.USAGE)
+    const ok = await cli(['danger:zone', '--json'], {
+      cwd: dir,
+      builtins,
+      env: { APP_ENV: 'test' },
+    })
+    expect(ok.json().data).toBe('ran')
+    // Destructive built-ins also need their exact name.
+    expect((await cli(['danger:z', '--json'], { cwd: dir, builtins })).json().error?.code).toBe(
+      'UNKNOWN_COMMAND',
+    )
   })
 })

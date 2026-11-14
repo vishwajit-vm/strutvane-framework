@@ -9,6 +9,8 @@
  * @module
  */
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { win32 } from 'node:path'
 import type { Clock } from '@strutvane/core'
 import { systemClock } from '@strutvane/core'
 import { CliError } from './errors.ts'
@@ -73,18 +75,85 @@ export function exitCodeForSignal(signal: string | null): number {
  * (`node.exe`) are always spawned directly.
  */
 export function needsShell(command: string, platform: NodeJS.Platform, execPath: string): boolean {
-  return platform === 'win32' && command !== execPath && !/\.exe$/i.test(command)
+  return platform === 'win32' && command !== execPath && !/\.(exe|com)$/i.test(command)
 }
+
+/**
+ * Windows only: the absolute path of a program named on the command line (`pnpm`, `npm.cmd`…),
+ * from PATH and PATHEXT. The working directory, relative PATH entries and empty entries are
+ * skipped: Windows would otherwise look in the working directory (the project) first, so a
+ * `pnpm.cmd` committed to a repository would run instead of the real one. Returns `undefined`
+ * when the program is not on PATH. Commands that already are paths are returned unchanged.
+ */
+export function resolveWindowsCommand(
+  command: string,
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string,
+  exists: (path: string) => boolean = existsSync,
+): string | undefined {
+  if (win32.isAbsolute(command)) return command
+  if (/[\\/]/.test(command)) return undefined // relative paths are never resolved
+  const pathValue = env['PATH'] ?? env['Path'] ?? ''
+  const exts = (env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD').split(';').filter((e) => e.startsWith('.'))
+  const named = exts.some((e) => command.toLowerCase().endsWith(e.toLowerCase()))
+  const here = win32.resolve(cwd).toLowerCase()
+  for (const entry of pathValue.split(';')) {
+    const dir = entry.trim().replace(/^"(.*)"$/, '$1')
+    if (dir === '' || !win32.isAbsolute(dir) || win32.resolve(dir).toLowerCase() === here) continue
+    for (const ext of named ? [''] : exts) {
+      const candidate = win32.join(dir, `${command}${ext.toLowerCase()}`)
+      if (exists(candidate)) return candidate
+    }
+  }
+  return undefined
+}
+
+/**
+ * The environment of a child process. On Windows `NoDefaultCurrentDirectoryInExePath=1` makes
+ * cmd.exe (and the `.cmd` shims it runs, which call `node`) skip the working directory when it
+ * looks up programs.
+ */
+export function childEnvironment(
+  platform: NodeJS.Platform,
+  base: Readonly<Record<string, string | undefined>>,
+  extra: Readonly<Record<string, string | undefined>> = {},
+): Record<string, string | undefined> {
+  return {
+    ...base,
+    ...extra,
+    ...(platform === 'win32' ? { NoDefaultCurrentDirectoryInExePath: '1' } : {}),
+  }
+}
+
+/** Characters allowed in an absolute program path that is quoted for cmd.exe. */
+const SHELL_SAFE_PATH = /^[^"%!^&|<>\r\n]+$/
 
 /** Create the real spawner. Arguments are never interpolated into a shell string unchecked. */
 export function createNodeSpawner(
   platform: NodeJS.Platform = process.platform,
   execPath: string = process.execPath,
+  baseEnv: Readonly<Record<string, string | undefined>> = process.env,
 ): Spawner {
   return (command, args, options) => {
-    const shell = needsShell(command, platform, execPath)
+    const env = childEnvironment(platform, baseEnv, options.env)
+    let program = command
+    if (platform === 'win32' && command !== execPath) {
+      const resolved = resolveWindowsCommand(command, env, options.cwd)
+      if (resolved === undefined) {
+        return Promise.reject(
+          new CliError('COMMAND_NOT_FOUND', { exitCode: EXIT.FAILURE, params: { command } }),
+        )
+      }
+      program = resolved
+    }
+    const shell = needsShell(program, platform, execPath)
     if (shell) {
-      for (const value of [command, ...args]) {
+      if (!SHELL_SAFE_PATH.test(program)) {
+        return Promise.reject(
+          new CliError('UNSAFE_ARGUMENT', { exitCode: EXIT.USAGE, params: { value: program } }),
+        )
+      }
+      for (const value of args) {
         if (!SHELL_SAFE.test(value)) {
           return Promise.reject(
             new CliError('UNSAFE_ARGUMENT', { exitCode: EXIT.USAGE, params: { value } }),
@@ -93,10 +162,11 @@ export function createNodeSpawner(
       }
     }
     return new Promise((resolve, reject) => {
-      const child = spawn(command, [...args], {
+      // A quoted absolute path: cmd.exe runs exactly that file, whatever the working directory.
+      const child = spawn(shell ? `"${program}"` : program, [...args], {
         cwd: options.cwd,
         stdio: options.stdio === 'inherit' ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, ...options.env },
+        env,
         shell,
         windowsHide: true,
       })

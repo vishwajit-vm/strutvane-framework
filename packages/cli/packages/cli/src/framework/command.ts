@@ -118,6 +118,19 @@ export interface CommandContext<F extends FlagMap = FlagMap, A extends ArgMap = 
   readonly services: CliServices
   /** The `@strutvane/cli` version. */
   readonly version: string
+  /**
+   * `APP_ENV` as the runtime will see it: the process environment (empty counts as unset), then
+   * `.env.<name>` with `--env`, then `.env`; trimmed and lowercased. `undefined` when nothing sets
+   * it (the runtime then assumes production). The same value is in `services.env.APP_ENV`, and is
+   * the one the production guard checked.
+   */
+  readonly appEnv: string | undefined
+  /**
+   * Apply the production guard from inside a command that is only sometimes destructive (e.g.
+   * `key:generate --force` replacing a key). Throws `PRODUCTION_GUARD` unless {@link appEnv} is
+   * local, test, testing or development, or `--force --i-understand` was passed.
+   */
+  guardDestructive(): void
 }
 
 /** What a command returns. */
@@ -149,7 +162,12 @@ export interface CommandDefinition<F extends FlagMap = FlagMap, A extends ArgMap
    * `@strutvane/framework`). A contributed command with the same name replaces it silently.
    */
   readonly placeholder?: boolean
-  /** Destructive: refused when `APP_ENV=production` unless `--force --i-understand` is passed. */
+  /**
+   * Destructive: runs without confirmation only when `APP_ENV` (resolved as for
+   * {@link CommandContext.appEnv}) is local, test, testing or development; anywhere else, including
+   * when it is not set, `--force --i-understand` is required. Must be invoked by its exact name
+   * (no prefix abbreviations).
+   */
   readonly destructive?: boolean
   /** Hidden from `sv help` listings (still runnable, still in `sv help <name>`). */
   readonly hidden?: boolean

@@ -6,8 +6,11 @@ Add it to a project as a dev dependency and run it through the `strutvane` launc
 
 ```bash
 pnpm add -D @strutvane/cli
-pnpm sv help
+pnpm exec strutvane-cli help    # list every command (the launcher answers `help` itself)
+pnpm sv make:model Invoice
 ```
+
+A folder counts as a project when its package.json lists `@strutvane/cli` or it has `strutvane.config.ts` (never a drive root, the temp folder or a folder above home). Destructive commands need `--force --i-understand` unless `APP_ENV` is local, test, testing or development; see the repository README.
 
 As a library it exports `defineCommand` (for package and plugin commands), `runCli`, the field mini-language parser, the generators and the registry compiler.
 

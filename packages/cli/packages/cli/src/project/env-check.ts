@@ -12,6 +12,7 @@
  *   committed; secrets must never be in it.
  *
  * Values are never included in results (they may be secrets); only keys and line numbers are.
+ * Malformed lines and invalid keys are reported by `file:line` only, never by their text.
  *
  * @module
  */
@@ -33,7 +34,10 @@ export type EnvProblemKind =
 export interface EnvProblem {
   readonly kind: EnvProblemKind
   readonly severity: 'error' | 'warning'
-  /** The variable name, or the line text for `invalid-line`. */
+  /**
+   * The variable name; for `invalid-line` and `invalid-key` the location `file:line` instead,
+   * because the text of a malformed line may be a secret and is never reported.
+   */
   readonly key: string
   /** Project-relative file the problem is in. */
   readonly file: string
@@ -85,7 +89,8 @@ export function checkEnv(root: string, options: EnvCheckOptions = {}): EnvCheckR
     for (const entry of parsed.entries.values()) {
       merged.set(entry.key, { value: entry.value, file, line: entry.line })
     }
-    for (const key of parsed.duplicates) {
+    // Invalid keys are reported (by location) below; their text is never echoed.
+    for (const key of parsed.duplicates.filter((k) => ENV_KEY.test(k))) {
       problems.push({
         kind: 'duplicate',
         severity: 'warning',
@@ -94,11 +99,11 @@ export function checkEnv(root: string, options: EnvCheckOptions = {}): EnvCheckR
         message: `${key} is defined more than once in ${file}; the last value wins.`,
       })
     }
-    for (const { line, text } of parsed.invalid) {
+    for (const { line } of parsed.invalid) {
       problems.push({
         kind: 'invalid-line',
         severity: 'error',
-        key: text.slice(0, 40),
+        key: `${file}:${line}`,
         file,
         line,
         message: `${file}:${line} is not a KEY=value line.`,
@@ -111,10 +116,10 @@ export function checkEnv(root: string, options: EnvCheckOptions = {}): EnvCheckR
       problems.push({
         kind: 'invalid-key',
         severity: 'error',
-        key,
+        key: `${entry.file}:${entry.line}`,
         file: entry.file,
         line: entry.line,
-        message: `${key} is not a valid variable name (letters, digits and _ only).`,
+        message: `${entry.file}:${entry.line} does not start with a valid variable name (letters, digits and _ only).`,
       })
       continue
     }
@@ -151,7 +156,7 @@ export function checkEnv(root: string, options: EnvCheckOptions = {}): EnvCheckR
           message: `${entry.key} is in ${exampleFile} but not set in ${envFiles.join(' / ')}.`,
         })
       }
-      if (looksSecret(entry.key) && entry.value !== '') {
+      if (entry.value !== '' && looksSecret(entry.key, entry.value)) {
         problems.push({
           kind: 'secret-in-example',
           severity: 'error',
@@ -162,11 +167,11 @@ export function checkEnv(root: string, options: EnvCheckOptions = {}): EnvCheckR
         })
       }
     }
-    for (const { line, text } of example.invalid) {
+    for (const { line } of example.invalid) {
       problems.push({
         kind: 'invalid-line',
         severity: 'error',
-        key: text.slice(0, 40),
+        key: `${exampleFile}:${line}`,
         file: exampleFile,
         line,
         message: `${exampleFile}:${line} is not a KEY=value line.`,

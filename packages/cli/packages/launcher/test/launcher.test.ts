@@ -5,17 +5,27 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, parse } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, test } from 'vitest'
 import {
+  type BoundaryFacts,
   CREATE_ENV,
+  childEnv,
+  commandWord,
   cwdFlag,
   DEPTH_ENV,
+  declaresCli,
   findLocalCli,
+  findNpxCli,
+  isForbiddenProjectDir,
+  isLauncherCommand,
+  isOwnedByCurrentUser,
   type LauncherEnvironment,
   NO_NOTICE_ENV,
   nodeLaunchSpawner,
+  printable,
+  resolveWindowsExecutable,
   runLauncher,
 } from '../src/launcher.ts'
 
@@ -144,12 +154,37 @@ describe('runLauncher (in-process)', () => {
     expect(env.captured.stderr).toBe('')
   })
 
-  test('local wins: even --version and new are handled by the local CLI', async () => {
-    const env = environment(projectWithCli())
-    await runLauncher(['--version'], env)
-    await runLauncher(['new', 'x'], env)
-    expect(env.captured.calls).toHaveLength(2)
-    expect(env.captured.stdout).toBe('')
+  test('--version, help, new and create are never delegated, even inside a project', async () => {
+    const root = projectWithCli('0.9.0')
+    for (const argv of [
+      ['--version'],
+      ['-V'],
+      [],
+      ['help'],
+      ['help', 'make:model'],
+      ['--help'],
+      ['--cwd', root, '--version'],
+    ]) {
+      const env = environment(root, { version: '0.1.0' })
+      expect(await runLauncher(argv, env)).toBe(0)
+      expect(env.captured.calls).toEqual([])
+    }
+    const v = environment(root, { version: '0.1.0' })
+    await runLauncher(['--version'], v)
+    expect(v.captured.stdout).toBe('strutvane 0.1.0\nproject @strutvane/cli 0.9.0\n')
+    const h = environment(root)
+    await runLauncher(['help'], h)
+    expect(h.captured.stdout).toContain('This project uses @strutvane/cli 0.9.0')
+    for (const argv of [
+      ['new', 'x'],
+      ['create', 'x'],
+    ]) {
+      const env = environment(root)
+      await runLauncher(argv, env)
+      expect(env.captured.calls).toHaveLength(1)
+      expect(env.captured.calls[0]?.args.some((a) => a.includes('node_modules'))).toBe(false)
+      expect(env.captured.calls[0]?.args).toContain('create-strutvane@latest')
+    }
   })
 
   test('--cwd selects where to look', async () => {
@@ -198,7 +233,7 @@ describe('runLauncher (in-process)', () => {
     expect(e.captured.stderr).toContain('pnpm add -D @strutvane/cli')
   })
 
-  test('new/create run create-strutvane through npx (npx.cmd + shell on Windows, args checked)', async () => {
+  test('new/create run create-strutvane through npx (plain npx without npm next to node)', async () => {
     const dir = temp()
     const linux = environment(dir)
     await runLauncher(['new', 'acme', '--preset', 'api'], linux)
@@ -207,12 +242,6 @@ describe('runLauncher (in-process)', () => {
       args: ['--yes', 'create-strutvane@latest', 'acme', '--preset', 'api'],
       shell: false,
     })
-    const win = environment(dir, { platform: 'win32' })
-    await runLauncher(['create', 'acme'], win)
-    expect(win.captured.calls[0]).toMatchObject({ command: 'npx.cmd', shell: true })
-    const unsafe = environment(dir, { platform: 'win32' })
-    expect(await runLauncher(['new', 'acme & calc'], unsafe)).toBe(2)
-    expect(unsafe.captured.calls).toEqual([])
   })
 
   test('doctor --global runs the matching @strutvane/cli through npx', async () => {
@@ -235,8 +264,12 @@ describe('runLauncher (in-process)', () => {
       args: ['create.js', 'x'],
       shell: false,
     })
-    const bad = environment(dir, { env: { [CREATE_ENV]: '"node"' } })
-    expect(await runLauncher(['new', 'x'], bad)).toBe(2)
+    for (const value of ['"node"', '{ not json', '[]', '[1]', '[""]']) {
+      const bad = environment(dir, { env: { [CREATE_ENV]: value } })
+      expect(await runLauncher(['new', 'x'], bad)).toBe(2)
+      expect(bad.captured.stderr).toContain(`${CREATE_ENV} must be a JSON array of strings`)
+      expect(bad.captured.calls).toEqual([])
+    }
   })
 })
 
@@ -304,4 +337,234 @@ describe('end to end with real child processes', () => {
       'ok',
     )
   })
+})
+
+/** Plant a working fake `@strutvane/cli` in `dir/node_modules` (no project marker). */
+function plantCli(dir: string, version = '6.6.6'): void {
+  const pkg = join(dir, 'node_modules', '@strutvane', 'cli')
+  writeFile(
+    join(pkg, 'package.json'),
+    JSON.stringify({ name: '@strutvane/cli', version, bin: './bin.mjs' }),
+  )
+  writeFile(join(pkg, 'bin.mjs'), FAKE_CLI)
+}
+
+/** A sandbox: `<base>/home/user` is "home", `<base>/tmp` is "temp". */
+function sandbox(): { base: string; home: string; tmp: string; facts: BoundaryFacts } {
+  const base = temp()
+  const home = join(base, 'home', 'user')
+  const tmp = join(base, 'tmp')
+  mkdirSync(home, { recursive: true })
+  mkdirSync(tmp, { recursive: true })
+  return { base, home, tmp, facts: { home, temp: tmp, uid: undefined } }
+}
+
+describe('project boundary (which folders may be delegated to)', () => {
+  test('a node_modules in a parent folder without a project package.json is never used', () => {
+    const { home, facts } = sandbox()
+    const parent = join(home, 'downloads')
+    plantCli(parent)
+    writeFile(join(parent, 'package.json'), '{"name":"not-a-project"}')
+    const work = join(parent, 'some', 'folder')
+    mkdirSync(work, { recursive: true })
+    expect(findLocalCli(work, facts)).toBeUndefined()
+    expect(findLocalCli(parent, facts)).toBeUndefined()
+  })
+
+  test('a package.json declaring @strutvane/cli (dependencies or devDependencies) qualifies', () => {
+    const { home, facts } = sandbox()
+    for (const [field, ok] of [
+      ['devDependencies', true],
+      ['dependencies', true],
+      ['peerDependencies', false],
+      ['optionalDependencies', false],
+    ] as const) {
+      const dir = join(home, `app-${field}`)
+      plantCli(dir, '1.2.3')
+      writeFile(join(dir, 'package.json'), JSON.stringify({ [field]: { '@strutvane/cli': '^1' } }))
+      expect(findLocalCli(dir, facts)?.version, field).toBe(ok ? '1.2.3' : undefined)
+    }
+    expect(declaresCli(undefined)).toBe(false)
+    expect(declaresCli({ devDependencies: { '@strutvane/cli': 1 } })).toBe(false)
+    expect(
+      declaresCli({ devDependencies: JSON.parse('{"__proto__":{"@strutvane/cli":"1"}}') }),
+    ).toBe(false)
+  })
+
+  test('the temp directory itself is never a project, even with a marker', () => {
+    const { tmp, facts } = sandbox()
+    plantCli(tmp)
+    writeFile(join(tmp, 'strutvane.config.ts'), '')
+    writeFile(join(tmp, 'package.json'), '{"devDependencies":{"@strutvane/cli":"*"}}')
+    const below = join(tmp, 'extracted-archive')
+    mkdirSync(below, { recursive: true })
+    expect(findLocalCli(tmp, facts)).toBeUndefined()
+    expect(findLocalCli(below, facts)).toBeUndefined()
+  })
+
+  test('folders above home are never projects; home and below are', () => {
+    const { base, home, facts } = sandbox()
+    for (const above of [base, join(base, 'home')]) {
+      plantCli(above)
+      writeFile(join(above, 'strutvane.config.ts'), '')
+      writeFile(join(above, 'package.json'), '{"devDependencies":{"@strutvane/cli":"*"}}')
+      expect(findLocalCli(above, facts)).toBeUndefined()
+      expect(findLocalCli(home, facts)).toBeUndefined()
+    }
+    const project = join(home, 'acme')
+    plantCli(project, '0.4.0')
+    writeFile(join(project, 'strutvane.config.ts'), '')
+    expect(findLocalCli(project, facts)?.version).toBe('0.4.0')
+  })
+
+  test('a file-system or drive root is never a project', () => {
+    const fsRoot = parse(temp()).root
+    expect(isForbiddenProjectDir(fsRoot, { home: temp(), temp: temp(), uid: undefined })).toBe(true)
+    expect(isForbiddenProjectDir(temp(), { home: temp(), temp: temp(), uid: undefined })).toBe(
+      false,
+    )
+  })
+
+  test('POSIX: a folder owned by another user is refused', () => {
+    const { home, facts } = sandbox()
+    const project = join(home, 'shared')
+    plantCli(project)
+    writeFile(join(project, 'strutvane.config.ts'), '')
+    expect(findLocalCli(project, facts)).toBeDefined()
+    const otherUser = { ...facts, uid: 999_999_999 }
+    expect(isOwnedByCurrentUser(project, otherUser)).toBe(false)
+    expect(findLocalCli(project, otherUser)).toBeUndefined()
+    expect(isOwnedByCurrentUser(join(project, 'missing'), otherUser)).toBe(false)
+    expect(isOwnedByCurrentUser(project, facts)).toBe(true)
+  })
+
+  test('runLauncher never runs a planted CLI (hijack matrix)', async () => {
+    const { base, home, tmp, facts } = sandbox()
+    for (const dir of [join(home, 'parent'), tmp, base]) plantCli(dir)
+    writeFile(join(home, 'parent', 'package.json'), '{}')
+    const starts = [join(home, 'parent', 'child'), join(tmp, 'x'), join(home, 'elsewhere')]
+    for (const start of starts) {
+      mkdirSync(start, { recursive: true })
+      for (const argv of [
+        ['--version'],
+        ['help'],
+        ['new', 'acme'],
+        ['routes'],
+        ['make:model', 'X'],
+      ]) {
+        const env = environment(start, { boundary: facts })
+        await runLauncher(argv, env)
+        const ranPlanted = env.captured.calls.some((c) => c.args.some((a) => a.endsWith('bin.mjs')))
+        expect(ranPlanted, `${start} ${argv.join(' ')}`).toBe(false)
+      }
+    }
+  })
+
+  test('manifest versions are printed without control characters', async () => {
+    const root = projectWithCli('1.0.0\u001b[31m\nspoofed')
+    expect(findLocalCli(root)?.version).toBe('1.0.0[31mspoofed')
+    expect(printable('a\u0007b\u009bc\r\n')).toBe('abc')
+    const env = environment(root, { version: '0.1.0' })
+    await runLauncher(['about'], env)
+    expect(env.captured.stderr).toContain('1.0.0[31mspoofed')
+    expect(env.captured.stderr.includes('\u001b')).toBe(false)
+  })
+
+  test('commandWord and isLauncherCommand', () => {
+    expect(commandWord(['--cwd', 'x', 'routes'])).toBe('routes')
+    expect(commandWord(['--json'])).toBeUndefined()
+    expect(commandWord(['--', 'routes'])).toBeUndefined()
+    expect(isLauncherCommand(['--cwd', 'help', '--version'])).toBe(true)
+    expect(isLauncherCommand(['new'])).toBe(true)
+    expect(isLauncherCommand(['make:model', '--version'])).toBe(false)
+  })
+})
+
+describe('child processes on Windows', () => {
+  test('childEnv sets NoDefaultCurrentDirectoryInExePath on win32 only', () => {
+    expect(childEnv({ A: '1' }, 'win32')).toEqual({
+      A: '1',
+      NoDefaultCurrentDirectoryInExePath: '1',
+    })
+    expect(childEnv({ A: '1' }, 'linux', { B: '2' })).toEqual({ A: '1', B: '2' })
+  })
+
+  test('delegation passes the Windows environment flag', async () => {
+    const env = environment(projectWithCli(), { platform: 'win32' })
+    await runLauncher(['routes'], env)
+    expect(env.captured.calls[0]?.env['NoDefaultCurrentDirectoryInExePath']).toBe('1')
+  })
+
+  test('resolveWindowsExecutable skips the working directory and relative PATH entries', () => {
+    const files = new Set(['C:\\proj\\npx.cmd', 'D:\\rel\\npx.cmd', 'C:\\node\\npx.cmd'])
+    const exists = (p: string): boolean => files.has(p)
+    const env = { PATH: ';C:\\Proj;.;rel;"C:\\node"', PATHEXT: '.EXE;.CMD' }
+    expect(resolveWindowsExecutable('npx', env, 'C:\\proj', exists)).toBe('C:\\node\\npx.cmd')
+    expect(resolveWindowsExecutable('npx', { Path: 'C:\\proj' }, 'C:\\proj', exists)).toBe(
+      undefined,
+    )
+    expect(resolveWindowsExecutable('npx', {}, 'C:\\proj', exists)).toBeUndefined()
+  })
+
+  test('npx runs as node npx-cli.js (no shell) when npm sits next to node', async () => {
+    const prefix = temp()
+    const winNode = join(prefix, 'node.exe')
+    const winCli = join(prefix, 'node_modules', 'npm', 'bin', 'npx-cli.js')
+    writeFile(winCli, '')
+    if (process.platform === 'win32') expect(findNpxCli(winNode, 'win32')).toBe(winCli)
+    const posixNode = join(prefix, 'bin', 'node')
+    writeFile(join(prefix, 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js'), '')
+    expect(findNpxCli(posixNode, 'linux')).toBe(
+      join(prefix, 'bin', '..', 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    )
+    expect(findNpxCli(join(temp(), 'node'), 'linux')).toBeUndefined()
+    const node = process.platform === 'win32' ? winNode : posixNode
+    const npxCli = findNpxCli(node, process.platform) ?? ''
+    const env = environment(temp(), { platform: process.platform, execPath: node })
+    await runLauncher(['new', 'acme & calc'], env)
+    expect(env.captured.calls[0]).toMatchObject({
+      command: node,
+      args: [npxCli, '--yes', 'create-strutvane@latest', 'acme & calc'],
+      shell: false,
+    })
+  })
+
+  test('without npx-cli.js: Windows refuses when npx is not on PATH', async () => {
+    const env = environment(temp(), {
+      platform: 'win32',
+      execPath: join(temp(), 'node.exe'),
+      env: { PATH: '' },
+    })
+    expect(await runLauncher(['new', 'acme'], env)).toBe(2)
+    expect(env.captured.stderr).toContain('could not find npx on PATH')
+    expect(env.captured.calls).toEqual([])
+  })
+
+  test.skipIf(process.platform !== 'win32')(
+    'Windows fallback: a planted npx.cmd in the working directory is never chosen',
+    async () => {
+      const cwd = temp()
+      writeFile(join(cwd, 'npx.cmd'), '@echo planted')
+      const real = temp()
+      writeFile(join(real, 'npx.cmd'), '@echo real')
+      const env = environment(cwd, {
+        platform: 'win32',
+        execPath: join(temp(), 'node.exe'),
+        env: { PATH: `${cwd};${real}`, PATHEXT: '.CMD' },
+      })
+      await runLauncher(['new', 'acme'], env)
+      expect(env.captured.calls[0]).toMatchObject({
+        command: `"${join(real, 'npx.cmd')}"`,
+        shell: true,
+      })
+      expect(env.captured.calls[0]?.env['NoDefaultCurrentDirectoryInExePath']).toBe('1')
+      const unsafe = environment(cwd, {
+        platform: 'win32',
+        execPath: join(temp(), 'node.exe'),
+        env: { PATH: real, PATHEXT: '.CMD' },
+      })
+      expect(await runLauncher(['new', 'acme & calc'], unsafe)).toBe(2)
+      expect(unsafe.captured.calls).toEqual([])
+    },
+  )
 })

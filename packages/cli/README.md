@@ -34,14 +34,28 @@ pnpm sv doctor
 
 Outside a project, the launcher offers `strutvane new <name>` (runs `create-strutvane`), `strutvane doctor --global`, `--version` and `help`.
 
+### Which folder is a project
+
+The launcher (before delegating) and the CLI (before loading plugins or reading `.env`) use the same rules. A folder is a project only when its `package.json` lists `@strutvane/cli` in `dependencies` or `devDependencies`, or it contains `strutvane.config.ts`. The search walks up from the working directory (or `--cwd`) but never accepts a drive or file-system root, the OS temp folder itself, or a folder above your home directory, and on macOS and Linux the folder must belong to the current user. A plain `package.json` or a stray `node_modules` higher up is ignored.
+
+The launcher always answers `--version`, `help` (and a bare `strutvane`), `new` and `create` itself, even inside a project. To list the project's commands, run `pnpm exec strutvane-cli help` (or `npx strutvane-cli help`); every other command (`strutvane make:model …`, `pnpm sv migrate`) is delegated as before.
+
+### Destructive commands and `APP_ENV`
+
+Destructive commands (`migrate:fresh`, `migrate:reset`, `migrate:rollback`, `db:wipe`, `db:restore`, and `key:generate --force` when it would replace a key) run without confirmation only when `APP_ENV` is `local`, `test`, `testing` or `development`. Anywhere else, including when `APP_ENV` is not set (the runtime then assumes production), they need `--force --i-understand`.
+
+`APP_ENV` is resolved the way the app resolves it: the process environment first (an empty value counts as unset), then `.env.<name>` when `--env <name>` is passed, then `.env`. Values are trimmed and compared case-insensitively, and quotes and `export` prefixes are understood. The command receives exactly the value the check used (`ctx.appEnv`), and `--env <name>` loads `.env.<name>` for the command, below the process environment and above `.env`.
+
+Destructive commands must be typed in full: prefixes such as `sv mi:fr` are refused with the full name suggested.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `about` | Versions of the CLI, Node.js and every installed Strutvane package |
 | `doctor [--global]` | Checks Node.js, package.json, env files, `.gitignore`, the registry, owned-file conflicts and plugin compatibility. Exits 3 on failures |
-| `env:check [--env <name>] [--strict]` | Compares `.env` with `.env.example`: missing, unknown, empty and invalid keys, and secrets committed in `.env.example`. Never prints values |
-| `key:generate [--force] [--show]` | Writes `APP_KEY` to `.env` (and an empty entry to `.env.example`). Never prints the key unless `--show` |
+| `env:check [--env <name>] [--strict]` | Compares `.env` with `.env.example`: missing, unknown, empty and invalid keys, and secrets committed in `.env.example`. Never prints values; malformed lines are reported as `file:line` only |
+| `key:generate [--force] [--show]` | Writes `APP_KEY` to `.env` (and an empty entry to `.env.example`), replacing every `APP_KEY` line. Never prints the key unless `--show`. Replacing a non-empty key needs `--force`, and outside local/test environments also `--i-understand` |
 | `make:model <Name> [fields…]` | Model, policy, factory, seeder and feature test (`--all` adds the resource). Interactive field builder when run in a terminal without fields |
 | `make:resource <Model>` | Resource with `--actions approve,send` and `--hooks beforeCreate,afterUpdate` |
 | `make:policy <Model>` | Deny-by-default policy, `--template default\|owner\|tenant-admin\|readonly` |
@@ -53,7 +67,9 @@ Outside a project, the launcher offers `strutvane new <name>` (runs `create-stru
 | `upgrade [--to <v> \| --channel <tag>]` | Bumps Strutvane packages, three-way merges owned files (ADR-0012), then runs the project's `tsc --noEmit` |
 | `migrate*`, `db:*` | Provided by `@strutvane/framework` through its `strutvane.commands` module; the CLI explains how to install it when missing |
 
-Every command supports `--json`, `--dry-run`, `--diff`, `--yes`, `--no-interactive`, `--force`, `--cwd <path>`, `--env <name>`, `--verbose`, `--quiet` and `--no-color`. `sv make model` is the same as `sv make:model`, and unique prefixes work (`sv mi:st` → `migrate:status`).
+Every command supports `--json`, `--dry-run`, `--diff`, `--yes`, `--no-interactive`, `--force`, `--cwd <path>`, `--env <name>`, `--verbose`, `--quiet` and `--no-color`. `sv make model` is the same as `sv make:model`, and unique prefixes work (`sv mi:st` → `migrate:status`) except for destructive commands, which need their full name. `--diff` output never shows values from `.env` files (they appear as `KEY=<redacted>`).
+
+On Windows, package managers are looked up on `PATH` only (never in the project folder), and child processes run with `NoDefaultCurrentDirectoryInExePath=1`.
 
 ### Field syntax
 
@@ -115,7 +131,7 @@ export default defineCommand({
 })
 ```
 
-The module must resolve inside the package's own folder in `node_modules` (symlinks included); anything else is refused without being executed. Packages whose `compat` range excludes the CLI are refused (exit 7). A plugin can never replace a built-in command.
+The module must resolve inside the package's own folder in `node_modules` (symlinks included); anything else is refused without being executed. Packages whose `compat` range excludes the CLI are refused (exit 7), and so are plugins (anything outside `@strutvane/`) that declare no `compat` range at all: declare the Strutvane versions your plugin supports. A plugin can never replace a built-in command. Contributed commands receive `ctx.appEnv` (the resolved `APP_ENV`) and `ctx.guardDestructive()` for operations that are only sometimes destructive.
 
 ## Development
 

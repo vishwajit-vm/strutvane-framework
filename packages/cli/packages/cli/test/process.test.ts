@@ -6,7 +6,7 @@
 import { spawnSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { mkdirSync, symlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, parse } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, test, vi } from 'vitest'
 import { defineCommand } from '../src/framework/command.ts'
@@ -18,12 +18,22 @@ import {
 } from '../src/framework/prompter.ts'
 import { runCli } from '../src/framework/run.ts'
 import {
+  childEnvironment,
   createNodeServices,
   createNodeSpawner,
   exitCodeForSignal,
   needsShell,
+  resolveWindowsCommand,
 } from '../src/framework/services.ts'
 import { main } from '../src/main.ts'
+import {
+  type BoundaryFacts,
+  declaresCli,
+  isForbiddenProjectDir,
+  isOwnedByCurrentUser,
+  processBoundary,
+  readManifest,
+} from '../src/project/boundary.ts'
 import { isInNodeModules, isInside, resolveContribution } from '../src/project/contributions.ts'
 import {
   expandPackageName,
@@ -33,7 +43,7 @@ import {
   packageManagerCommand,
   readInstalledPackage,
 } from '../src/project/project.ts'
-import { cleanupTempDirs, installFakePackage, makeProject, tempDir, write } from './helpers.ts'
+import { cleanupTempDirs, cli, installFakePackage, makeProject, tempDir, write } from './helpers.ts'
 
 afterAll(cleanupTempDirs)
 
@@ -129,14 +139,58 @@ describe('spawning', () => {
   })
 
   test('the Windows shell path refuses arguments with shell metacharacters', async () => {
-    const spawn = createNodeSpawner('win32', process.execPath)
+    const bin = tempDir()
+    write(bin, 'pnpm.cmd', '@exit /b 0')
+    const spawn = createNodeSpawner('win32', process.execPath, { PATH: bin, PATHEXT: '.CMD' })
     for (const value of ['a&b', 'x|y', '%PATH%', 'a b', '"q"', '^', '<x>']) {
-      await expect(spawn('pnpm', ['add', value], { cwd: process.cwd() })).rejects.toMatchObject({
-        code: 'UNSAFE_ARGUMENT',
-        exitCode: 2,
+      await expect(spawn('pnpm', ['add', value], { cwd: tempDir() })).rejects.toMatchObject({
+        exitCode: process.platform === 'win32' ? 2 : 1,
       })
     }
   })
+
+  test('Windows: programs are resolved from PATH, never from the working directory', async () => {
+    const files = new Set(['C:\\app\\pnpm.cmd', 'C:\\tools\\pnpm.cmd', 'C:\\tools\\git.exe'])
+    const exists = (p: string): boolean => files.has(p)
+    const env = { PATH: ';.;C:\\APP;relative;"C:\\tools"', PATHEXT: '.EXE;.CMD' }
+    expect(resolveWindowsCommand('pnpm', env, 'C:\\app', exists)).toBe('C:\\tools\\pnpm.cmd')
+    expect(resolveWindowsCommand('pnpm.cmd', env, 'C:\\app', exists)).toBe('C:\\tools\\pnpm.cmd')
+    expect(resolveWindowsCommand('git', env, 'C:\\app', exists)).toBe('C:\\tools\\git.exe')
+    expect(resolveWindowsCommand('pnpm', { Path: 'C:\\app' }, 'C:\\app', exists)).toBeUndefined()
+    expect(resolveWindowsCommand('.\\pnpm', env, 'C:\\app', exists)).toBeUndefined()
+    expect(resolveWindowsCommand('C:\\x\\y.exe', env, 'C:\\app', exists)).toBe('C:\\x\\y.exe')
+    expect(resolveWindowsCommand('pnpm', {}, 'C:\\app', exists)).toBeUndefined()
+    expect(childEnvironment('win32', { A: '1' }, { B: '2' })).toEqual({
+      A: '1',
+      B: '2',
+      NoDefaultCurrentDirectoryInExePath: '1',
+    })
+    expect(childEnvironment('linux', { A: '1' })).toEqual({ A: '1' })
+    expect(needsShell('C:\\tools\\git.exe', 'win32', 'node')).toBe(false)
+    const spawn = createNodeSpawner('win32', process.execPath, { PATH: '' })
+    await expect(spawn('pnpm', ['install'], { cwd: tempDir() })).rejects.toMatchObject({
+      code: 'COMMAND_NOT_FOUND',
+    })
+  })
+
+  test.skipIf(process.platform !== 'win32')(
+    'Windows: a planted pnpm.cmd in the project never runs; the PATH one does',
+    async () => {
+      const project = tempDir()
+      write(project, 'pnpm.cmd', '@echo planted& exit /b 7')
+      const bin = tempDir()
+      write(bin, 'pnpm.cmd', '@echo real %NoDefaultCurrentDirectoryInExePath%& exit /b 0')
+      const spawn = createNodeSpawner('win32', process.execPath, {
+        ...process.env,
+        PATH: `${project};${bin};${process.env['PATH'] ?? ''}`,
+        PATHEXT: '.CMD;.EXE',
+      })
+      const result = await spawn('pnpm', ['add', 'zod'], { cwd: project })
+      expect(result.code).toBe(0)
+      expect(result.stdout).toContain('real 1')
+      expect(result.stdout).not.toContain('planted')
+    },
+  )
 
   test('the real spawner captures output and exit codes (no shell)', async () => {
     const spawn = createNodeSpawner()
@@ -336,8 +390,79 @@ describe('contribution containment and Windows paths', () => {
     write(root, 'packages/inner/package.json', '{}')
     mkdirSync(join(root, 'packages', 'inner', 'src'), { recursive: true })
     expect(findProjectRoot(join(root, 'packages', 'inner', 'src'))).toBe(root)
+    // A package.json alone is not a project; one that declares @strutvane/cli is.
     const plain = tempDir()
     write(plain, 'package.json', '{}')
+    expect(findProjectRoot(join(plain))).toBeUndefined()
+    write(plain, 'package.json', '{"devDependencies":{"@strutvane/cli":"^0.1.0"}}')
     expect(findProjectRoot(join(plain))).toBe(plain)
+  })
+
+  /** A sandbox: `<base>/home/user` is "home", `<base>/tmp` is "temp". */
+  function sandbox(): { base: string; home: string; tmp: string; facts: BoundaryFacts } {
+    const base = tempDir()
+    const home = join(base, 'home', 'user')
+    const tmp = join(base, 'tmp')
+    mkdirSync(home, { recursive: true })
+    mkdirSync(tmp, { recursive: true })
+    return { base, home, tmp, facts: { home, temp: tmp, uid: undefined } }
+  }
+
+  test('findProjectRoot never accepts the temp dir, folders above home or a drive root', () => {
+    const { base, home, tmp, facts } = sandbox()
+    for (const dir of [tmp, base, join(base, 'home')]) {
+      write(dir, 'strutvane.config.ts', '')
+      write(dir, 'package.json', '{"devDependencies":{"@strutvane/cli":"*"}}')
+      expect(findProjectRoot(dir, facts), dir).toBeUndefined()
+    }
+    mkdirSync(join(tmp, 'x'), { recursive: true })
+    expect(findProjectRoot(join(tmp, 'x'), facts)).toBeUndefined()
+    expect(findProjectRoot(join(home, 'nowhere'), facts)).toBeUndefined()
+    expect(isForbiddenProjectDir(parse(base).root, facts)).toBe(true)
+    // A planted node_modules in a parent without a project package.json is never used.
+    write(home, 'downloads/node_modules/@strutvane/framework/package.json', '{}')
+    write(home, 'downloads/package.json', '{"name":"nope"}')
+    expect(findProjectRoot(join(home, 'downloads'), facts)).toBeUndefined()
+    const project = join(home, 'acme')
+    write(project, 'strutvane.config.ts', '')
+    expect(findProjectRoot(join(project), facts)).toBe(project)
+  })
+
+  test('findProjectRoot: POSIX ownership and manifest edge cases', () => {
+    const { home, facts } = sandbox()
+    const project = join(home, 'shared')
+    write(project, 'strutvane.config.ts', '')
+    expect(findProjectRoot(project, { ...facts, uid: 999_999_999 })).toBeUndefined()
+    expect(isOwnedByCurrentUser(join(project, 'missing'), { ...facts, uid: 1 })).toBe(false)
+    expect(declaresCli(null)).toBe(false)
+    expect(declaresCli({ dependencies: { '@strutvane/cli': '1' } })).toBe(true)
+    expect(declaresCli({ peerDependencies: { '@strutvane/cli': '1' } })).toBe(false)
+    expect(
+      declaresCli(JSON.parse('{"devDependencies":{"__proto__":{"@strutvane/cli":"1"}}}')),
+    ).toBe(false)
+    write(home, 'broken/package.json', '{ nope')
+    expect(readManifest(join(home, 'broken'))).toBeUndefined()
+    write(home, 'bom/package.json', '﻿{"devDependencies":{"@strutvane/cli":"1"}}')
+    expect(findProjectRoot(join(home, 'bom'), facts)).toBe(join(home, 'bom'))
+    expect(processBoundary().home).toBeTruthy()
+  })
+
+  test('the runner treats an unqualified folder as no project (plugins are never loaded)', async () => {
+    const { home } = sandbox()
+    const dir = join(home, 'plain')
+    write(dir, 'package.json', '{"dependencies":{"strutvane-plugin-x":"1"}}')
+    write(
+      dir,
+      'node_modules/strutvane-plugin-x/package.json',
+      '{"name":"strutvane-plugin-x","version":"1.0.0","strutvane":{"commands":"./c.mjs","compat":"*"}}',
+    )
+    write(
+      dir,
+      'node_modules/strutvane-plugin-x/c.mjs',
+      'globalThis.__planted = true; export default []',
+    )
+    const r = await cli(['routes', '--json'], { cwd: dir })
+    expect(r.json().error?.code).toBe('PROJECT_NOT_FOUND')
+    expect((globalThis as { __planted?: boolean }).__planted).toBeUndefined()
   })
 })

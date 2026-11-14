@@ -9,6 +9,11 @@ import { EXIT } from './framework/exit-codes.ts'
 import { type RunOptions, runCli } from './framework/run.ts'
 import { createNodeServices } from './framework/services.ts'
 
+/** Write resolved variables into this process's environment (see `RunOptions.applyEnv`). */
+function applyToProcessEnv(vars: ReadonlyMap<string, string>): void {
+  for (const [key, value] of vars) process.env[key] = value
+}
+
 /** Run the CLI for this process. Options other than `argv` are for tests. */
 export async function main(
   argv: readonly string[],
@@ -29,6 +34,7 @@ export async function main(
       ...options,
       argv,
       builtins: BUILTIN_COMMANDS,
+      applyEnv: options.applyEnv ?? applyToProcessEnv,
       services: { ...createNodeServices(controller.signal), ...options.services },
     })
     // Ctrl+C always reports 130 (shell convention), even when the command stopped cleanly.
