@@ -255,6 +255,7 @@ npm run ci   # lint → typecheck → tests (incl. type tests) + coverage → bu
 | `typecheck` | `tsc --noEmit` with the strictest settings |
 | `test` / `test:coverage` | Vitest on real engines (PGlite + libSQL): migrations, RLS, SQL ↔ memory property tests (fast-check), end-to-end HTTP, OpenAPI validation, upload attacks, type-level tests. Coverage thresholds: 90/90/85/90. |
 | `test:perf` | Performance budgets (`*.perf.test.ts`, today the CLI registry), kept out of the gate |
+| `test:soak` | Soak and spike (`test/soak/*.soak.ts`), kept out of the gate: a real server under mixed CRUD, auth-protected, error and aborted requests for `SOAK_MINUTES` (default 10), then `SOAK_SPIKE` (default 2,000) concurrent requests. Fails on a crash, an unexpected status, a 5xx in the spike, or steady heap, handle or database-connection growth. SQLite by default; `SOAK_DB=postgres://…` uses a throw-away Postgres database (its tables are dropped). `node test/soak/soak-driver.ts --minutes 10 --out soak.json` runs it without Vitest and prints every sample. |
 | `build` | tsdown → one entry per subpath (`dist/index.mjs`, `dist/core/index.mjs`, `dist/console/bin.mjs`, …) + `.d.mts` |
 
 This repo uses npm (>= 11.19). `.npmrc` turns on `strict-allow-scripts`, so only the install scripts approved in `package.json` `allowScripts` run (`npm approve-scripts <pkg>` after reviewing one), and third-party versions must be a day old (`min-release-age`).
