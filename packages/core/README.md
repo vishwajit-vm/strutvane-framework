@@ -109,7 +109,7 @@ Plurals use ICU syntax: `'{count, plural, =0 {No files} one {# file} other {# fi
 
 - **Errors never leak internals.** Anything that isn't a `StrutvaneError` becomes a generic 500. `toProblem` never throws: even with a broken catalog it returns a minimal problem.
 - **Env errors never contain values**, only key names and validator messages.
-- **The logger redacts** keys such as `password`, `token`, `secret`, `authorization`, `cookie` and `apiKey` at any depth. It escapes CR, LF and U+2028/2029, so one call is always one line (no log injection). A failing sink never crashes the app.
+- **The logger redacts** sensitive keys at any depth: fragments such as `password`, `passphrase`, `secret`, `salt`, `token`, `jwt`, `authorization`, `cookie`, `session`, `apiKey`, `accessKey`, `signature`, `totp`, `mfa`, `recoveryCode`, `cardNumber`, `cvv` and `iban` (`DEFAULT_SENSITIVE_KEYS`), plus short whole words such as `pin`, `ssn`, `otp`, `sid` and `sig` (`DEFAULT_SENSITIVE_WORDS`, so `shipping` is not affected). `registerSensitiveKeys(['taxNumber'])` adds application keys at runtime for every logger in the process; `@strutvane/logs` uses the same lists. It escapes CR, LF and U+2028/2029, so one call is always one line (no log injection). A failing sink never crashes the app.
 - **Parsers are bounded and fuzzed.** The message formatter (template length, nesting depth) and `Accept-Language` parsing (header length, entry count) are capped. Property tests (fast-check) check that the formatter never throws, whatever the input.
 - **The container fails closed.** Scoped services can't be resolved from the root, singletons can't capture request-scoped services, and a service can't be rebound once it has been resolved.
 

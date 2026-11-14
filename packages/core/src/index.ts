@@ -95,7 +95,11 @@ export {
 export { type CoreLogger, createLogger, type LoggerOptions, type LogSink } from './logger/logger.ts'
 export {
   DEFAULT_SENSITIVE_KEYS,
+  DEFAULT_SENSITIVE_WORDS,
+  normalizeSensitiveKey,
   REDACTED,
+  registerSensitiveKeys,
+  type SensitiveKeyMatcherOptions,
   sensitiveKeyMatcher,
   serializeError,
   toLoggable,
