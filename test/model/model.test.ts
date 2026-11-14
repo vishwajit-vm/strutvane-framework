@@ -303,6 +303,33 @@ describe('schemas', () => {
     expect(issues({ data: () => 1 })[0]?.code).toBeDefined()
   })
 
+  it('refuses NUL characters in every text kind and blank values in required text (422, not a 500)', () => {
+    const issues = (patch: Record<string, unknown>, schema = s.create) => {
+      const input = { name: 'ab', code: 'X', price: '1', ...patch }
+      return issuesFromZod(schema.safeParse(input).error?.issues ?? [], [], input)
+    }
+    // PostgreSQL text cannot hold U+0000: the insert used to fail inside the database.
+    expect(issues({ name: 'a\u0000b' })).toEqual([{ path: ['name'], code: 'invalid_format' }])
+    expect(issues({ mail: 'a\u0000@b.test' })[0]?.code).toBeDefined()
+    expect(issues({ slug: 'a\u0000' })[0]?.code).toBe('invalid_format')
+    // A required text field needs content; optional text may be empty.
+    const Note = defineModel('Note', {
+      title: field.string(),
+      body: field.text(),
+      extra: field.string().optional(),
+    })
+    const n = modelSchemas(Note.definition)
+    const noteIssues = (input: Record<string, unknown>, schema = n.create) =>
+      issuesFromZod(schema.safeParse(input).error?.issues ?? [], [], input)
+    expect(noteIssues({ title: '', body: 'x' })).toEqual([{ path: ['title'], code: 'required' }])
+    expect(noteIssues({ title: '  \t', body: 'x' })).toEqual([
+      { path: ['title'], code: 'required' },
+    ])
+    expect(noteIssues({ title: 'ok', body: ' ' })).toEqual([{ path: ['body'], code: 'required' }])
+    expect(noteIssues({ title: 'ok', body: 'x', extra: '' })).toEqual([])
+    expect(noteIssues({ title: '' }, n.update)).toEqual([{ path: ['title'], code: 'required' }])
+  })
+
   it('validates integers within 32 bits and labels fields', () => {
     const n = valueSchema(field.integer().def)
     expect(n.safeParse(2 ** 31).success).toBe(false)

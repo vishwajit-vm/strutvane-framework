@@ -17,6 +17,7 @@ import {
 } from '@strutvane/contracts'
 import type { HookRegistry } from '@strutvane/core'
 import { z } from 'zod'
+import { permissionFor } from '../http/permissions.ts'
 import {
   ACTION_PERMISSIONS,
   type ResolvedResource,
@@ -108,12 +109,13 @@ export async function buildManifest(
     const m = resource.definition
     const allowed = async (action: ResourceAction): Promise<boolean> => {
       if (!routeEnabled(resource, action)) return false
-      const d = await options.permissions.can(
-        actor,
-        `${m.permission}.${ACTION_PERMISSIONS[action]}`,
-        { type: m.permission },
-      )
-      return d.allowed
+      const permission = permissionFor(m.permission, ACTION_PERMISSIONS[action])
+      const d = await options.permissions.can(actor, permission, { type: m.permission })
+      if (d.allowed || action === 'create' || actor === null) return d.allowed
+      // Row actions: allowed on SOME rows when the row filter is not FALSE (the same rule as the
+      // API), so a member who may edit only their own records still gets an Edit button.
+      const filter = await options.permissions.filterFor(actor, permission, m.permission)
+      return filter.op !== 'false'
     }
     const capabilities: ResourceCapabilities = {
       list: await allowed('list'),

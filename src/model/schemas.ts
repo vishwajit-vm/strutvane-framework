@@ -59,11 +59,17 @@ export function valueSchema(def: FieldDef): z.ZodType {
 }
 
 function withTextBounds(schema: z.ZodString | z.ZodEmail | z.ZodURL, def: FieldDef): z.ZodType {
-  let s = schema as z.ZodString
+  // NUL characters: PostgreSQL text cannot store them (the insert would fail as a 500).
+  let s = (schema as z.ZodString).refine((v) => !v.includes(String.fromCharCode(0)), {
+    message: 'invalid_format',
+  })
   const max = def.max ?? def.length
   if (def.min !== undefined) s = s.min(def.min)
   if (max !== undefined) s = s.max(max)
   if (def.pattern) s = s.regex(new RegExp(def.pattern.source, def.pattern.flags))
+  // A required text field needs real content: "" or only whitespace is as missing as null.
+  if (def.required && (def.kind === 'string' || def.kind === 'text'))
+    return s.refine((v) => v.trim() !== '', { message: 'required' })
   return s
 }
 
@@ -227,6 +233,15 @@ export function issuesFromZod(
         break
       case 'unrecognized_keys':
         for (const key of issue.keys) out.push({ path: [...path, key], code: 'unknown_field' })
+        break
+      case 'custom':
+        out.push({
+          path,
+          code:
+            issue.message === 'required' || issue.message === 'invalid_format'
+              ? issue.message
+              : 'invalid',
+        })
         break
       default:
         out.push({ path, code: 'invalid' })

@@ -98,6 +98,33 @@ describe('conditional (record-dependent) permissions on the CRUD routes', () => 
     }
   })
 
+  it('the manifest offers row actions an owner can perform on their own rows', async () => {
+    const t = await createTestApp({ resources: [Doc], permissions: ownership })
+    try {
+      const caps = async (actor: Actor) => {
+        const r = await t
+          .actingAs(actor, { tenantId: TENANT_A })
+          .request<{ resources: { name: string; capabilities: Record<string, boolean> }[] }>(
+            'GET',
+            '/.well-known/strutvane.json',
+          )
+        return r.body.resources.find((x) => x.name === 'Doc')?.capabilities
+      }
+      expect(await caps(ALICE)).toMatchObject({
+        list: true,
+        view: true,
+        create: true,
+        update: true,
+        delete: true,
+        restore: true,
+      })
+      // No grant at all: the resource is not even listed.
+      expect(await caps(NOBODY)).toBeUndefined()
+    } finally {
+      await t.close()
+    }
+  })
+
   it('a provider whose filter allows rows but whose record check refuses still blocks the write', async () => {
     // Defence in depth: the record-level check runs for delete even when the row is in scope.
     const inconsistent: PermissionProvider = {
