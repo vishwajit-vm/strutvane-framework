@@ -74,12 +74,34 @@ interface SharedState {
   warned: boolean
 }
 
+/**
+ * Write errors on the process's own streams (EPIPE when the reader of a pipe goes away, EBADF on a
+ * closed terminal) arrive as an asynchronous `error` event, not a thrown exception. With no
+ * listener, Node turns that event into an uncaught exception and the whole app dies because its
+ * log reader did. So the default sinks listen once per stream and remember the failure; the next
+ * write throws it, which `write()` below turns into a dropped record and one warning.
+ */
+const streamFailures = new WeakMap<NodeJS.WriteStream, Error>()
+const guarded = new WeakSet<NodeJS.WriteStream>()
+
+function writeGuarded(stream: NodeJS.WriteStream, text: string): void {
+  if (!guarded.has(stream)) {
+    guarded.add(stream)
+    stream.on('error', (error: Error) => {
+      streamFailures.set(stream, error)
+    })
+  }
+  const failure = streamFailures.get(stream)
+  if (failure) throw failure
+  stream.write(text)
+}
+
 const defaultSink: LogSink = (line) => {
-  process.stdout.write(`${line}\n`)
+  writeGuarded(process.stdout, `${line}\n`)
 }
 
 const defaultWarn = (message: string): void => {
-  process.stderr.write(`${message}\n`)
+  writeGuarded(process.stderr, `${message}\n`)
 }
 
 function extractError(fields: Record<string, unknown>): LogError | undefined {
