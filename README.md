@@ -118,17 +118,20 @@ discovers everything by convention, so there is nothing to wire by hand:
 | `app/resources/*.resource.ts` | `defineResource(Invoice, { … })` replaces a model's default resource config. |
 | `app/http/routes/*.ts` | `export default [route.get('/hello', { public: true, handler })]`. A route needs `permission`, or `public: true`, or else a signed-in actor (deny-by-default). Handlers get the app's services (see below) and may set `bodyLimit` (bytes) for uploads. |
 | `config/filesystems.ts` | `{ default: 'local', disks: { local: { driver: 'local', root: 'storage/app' } } }` (`local` or `memory`; that disk is the default when the file is missing). Disks sign temporary links with `APP_KEY` (`config/app.ts` `key`, an HKDF subkey) and the app serves them at `/storage/<disk>/…`. |
-| `dist/web/` | `sv start` serves the built UI (`sv build`) next to the API: files, then `index.html` for client-side routes (never for the API base path, `/_strutvane`, `/storage` or discovery documents), with a page CSP. `sv dev` serves the API only. |
+| `dist/web/` | `sv start` serves the built UI (`sv build`) next to the API: files, then `index.html` for client-side routes (never for the API base path, `/_strutvane`, `/storage` or discovery documents), with a page CSP. |
+| `vite.config.*` | `sv dev` mounts the project's own Vite (resolved from the project's `node_modules`; the framework has no Vite dependency) in middleware mode on the same port, with HMR over the same server: one URL for the API and the UI, so the UI's `/api/v1` fetches and auth's `trustedOrigins: [APP_URL]` work without a proxy. Vite only gets `GET`/`HEAD` requests the API did not answer, outside the API base path and framework paths (the same rule as `dist/web`). Without a Vite config or an installed `vite`, `sv dev` serves the API only and says so. |
 | `database/migrations/` | `sv migrate` diffs the models with `snapshot.json`, writes a timestamped `.sql` file and applies it together with hand-written `.sql`/`.ts` migrations, in timestamp order (`--pretend`, `--rename old=new`, `--separate old=new`, `--allow-destructive`). |
-| `database/seeders/` | `sv db:seed` runs `database.seeder.ts`; `--class InvoiceSeeder` runs one. |
+| `database/seeders/` | `sv db:seed` runs `database.seeder.ts`, which calls the other seeders in order (`sv make:model` registers each new model's seeder there, parents before children); `--class InvoiceSeeder` runs one. When `DatabaseSeeder` runs nothing while other seeder files exist, `db:seed` warns and names them. |
+| `database/factories/` | `related('Customer')` on a `belongsTo` field reuses an existing Customer in the same tenant (children spread over the first 100 in turn) and creates one only when there is none; `related('Customer', { create: true })` always creates one. |
 
 ```ts
 // database/factories/invoice.factory.ts
 import { defineFactory } from '@strutvane/framework/testing'
 import Invoice from '../../app/models/invoice.model.ts'
-export default defineFactory(Invoice, ({ fake, sequence }) => ({
+export default defineFactory(Invoice, ({ fake, related, sequence }) => ({
   number: `INV-${sequence}`,
   amount: fake.decimal({ min: 10, max: 10_000, scale: 2 }),
+  customer: related('Customer'), // an existing customer when there is one
 }))
 
 // database/seeders/invoice.seeder.ts
@@ -136,6 +139,15 @@ import { defineSeeder } from '@strutvane/framework/database'
 import InvoiceFactory from '../factories/invoice.factory.ts'
 export default defineSeeder('InvoiceSeeder', async ({ create }) => {
   await create(InvoiceFactory, 10)
+})
+
+// database/seeders/database.seeder.ts (what `sv db:seed` runs)
+import { defineSeeder } from '@strutvane/framework/database'
+import CustomerSeeder from './customer.seeder.ts'
+import InvoiceSeeder from './invoice.seeder.ts'
+export default defineSeeder('DatabaseSeeder', async ({ call }) => {
+  await call(CustomerSeeder)
+  await call(InvoiceSeeder)
 })
 ```
 
@@ -220,7 +232,7 @@ from a model with `policySchema(Invoice)` (typed per field, so `row.stage.eq('wo
 | Locale-aware sorting, case folding beyond ASCII | Text sorts by code point and case-insensitive matching folds ASCII only, identically on every engine. |
 | `/docs` UI, custom actions, ETags, rate limiting, request timeouts | Planned. Postgres statements have a default timeout; SQLite and PGlite have none. |
 | Migration `schema` builder and rollback | Hand-written migrations run (`.sql`, or `.ts` with `defineMigration({ up({ db }) {…} })` using `db.execute`), but the `schema` builder of docs/06 §3.2 and `down()`/rollback are not built yet. |
-| Custom routes in OpenAPI, `sv dev` UI serving | Custom routes are served but not documented in `/openapi.json` yet; `sv dev` serves the API only (run Vite separately; `sv start` serves `dist/web`). |
+| Custom routes in OpenAPI | Custom routes are served but not documented in `/openapi.json` yet. |
 
 ## Installation (once released)
 

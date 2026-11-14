@@ -9,8 +9,25 @@
  * })
  * ```
  *
- * `sv db:seed` runs `database/seeders/database.seeder.ts` (which orchestrates the order);
- * `sv db:seed --class InvoiceSeeder` runs one seeder by name.
+ * `sv db:seed` runs `database/seeders/database.seeder.ts`, which calls the others in order
+ * (`sv make:model` registers each new model's seeder there, after the seeders of the models it
+ * belongs to):
+ *
+ * ```ts
+ * import { defineSeeder } from '@strutvane/framework/database'
+ * import CustomerSeeder from './customer.seeder.ts'
+ * import InvoiceSeeder from './invoice.seeder.ts'
+ * export default defineSeeder('DatabaseSeeder', async ({ call }) => {
+ *   await call(CustomerSeeder)
+ *   await call(InvoiceSeeder) // its factory's related('Customer') reuses those customers
+ * })
+ * ```
+ *
+ * `sv db:seed --class InvoiceSeeder` runs one seeder by name. When `DatabaseSeeder` runs nothing
+ * while other seeder files exist, `sv db:seed` warns and names them.
+ *
+ * The string form `defineSeeder('Name', async (ctx) => …)` is the documented shape everywhere
+ * (starter, `sv make:*`, docs); the object form `defineSeeder({ name?, run })` stays supported.
  *
  * @module
  */

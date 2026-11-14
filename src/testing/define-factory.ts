@@ -6,7 +6,7 @@
  * export default defineFactory(Invoice, ({ fake, related }) => ({
  *   number: fake.words(2),
  *   amount: fake.decimal({ min: 0, max: 10_000, scale: 2 }),
- *   customer: related('Customer'),
+ *   customer: related('Customer'), // an existing Customer when there is one, else a new one
  * }))
  *
  * await InvoiceFactory.createMany(t, 3)          // t: a test app or a seeder context
@@ -61,16 +61,41 @@ export interface Fake {
   subset<T>(values: readonly T[]): T[]
 }
 
-/** Marker for a `belongsTo` value created on demand (`related('Customer')`). */
+/** Marker for a `belongsTo` value resolved when the record is saved (`related('Customer')`). */
 export interface RelatedMarker {
   readonly __related: string
+  /** Always create a new parent instead of reusing an existing one. */
+  readonly __create?: boolean
 }
+
+/** Options for {@link FactoryHelpers.related}. */
+export interface RelatedOptions {
+  /**
+   * Always create a new parent record (with default fake values) instead of reusing one.
+   * Default `false`.
+   */
+  readonly create?: boolean
+}
+
+/** How many existing parents `related()` chooses from (the first page, in list order). */
+export const RELATED_REUSE_POOL = 100
 
 /** What a factory definition receives. */
 export interface FactoryHelpers {
   readonly fake: Fake
-  /** A parent record of `model`, created with default fake values when the record is saved. */
-  related(model: string): RelatedMarker
+  /**
+   * The parent record of a `belongsTo` field, resolved when the record is saved:
+   *
+   * - **reuses an existing** record of `model` in the same scope (tenant) when there is one,
+   *   spreading children over the first {@link RELATED_REUSE_POOL} parents in turn (record 1 → first
+   *   parent, record 2 → second, …), so a seeder that runs `CustomerSeeder` before
+   *   `InvoiceSeeder` gets invoices for those customers;
+   * - **creates one** (with default fake values) when none exists, so a factory always works on
+   *   an empty database, e.g. in a test.
+   *
+   * `related('Customer', { create: true })` always creates a fresh parent (one per record).
+   */
+  related(model: string, options?: RelatedOptions): RelatedMarker
   /** 1, 2, 3, … per factory. */
   readonly sequence: number
 }
@@ -182,7 +207,10 @@ export function defineFactory<M extends AnyModel>(
     sequence += 1
     const helpers: FactoryHelpers = {
       fake: createFake(sequence * 7919 + definition.name.length),
-      related: (name) => Object.freeze({ __related: name }),
+      related: (name, options) =>
+        Object.freeze(
+          options?.create === true ? { __related: name, __create: true } : { __related: name },
+        ),
       sequence,
     }
     return { ...build(helpers), ...overrides }
@@ -193,13 +221,26 @@ export function defineFactory<M extends AnyModel>(
     scope: Scope = {},
   ): Promise<InferModel<M>> => {
     const input = raw(overrides)
+    const position = sequence // this record's number, for spreading children over parents
+    const tenant = typeof scope.tenantId === 'string' ? { tenantId: scope.tenantId } : {}
     for (const [key, value] of Object.entries(input)) {
       if (!isRelated(value)) continue
       const parentRepo = target.repository(value.__related)
+      if (value.__create !== true) {
+        const existing = await parentRepo.list(
+          { page: { kind: 'cursor', size: RELATED_REUSE_POOL } },
+          tenant,
+        )
+        const pick = existing.data[(position - 1) % Math.max(existing.data.length, 1)]
+        if (pick !== undefined) {
+          input[key] = pick.id
+          continue
+        }
+      }
       const parent = await createFactory(
         parentRepo.model,
         (name) => target.repository(name),
-        typeof scope.tenantId === 'string' ? { tenantId: scope.tenantId } : {},
+        tenant,
       ).create()
       input[key] = (parent as unknown as DataRecord).id
     }
