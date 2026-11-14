@@ -299,7 +299,7 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
   })
   return Promise.resolve()
     .then(() => options.prepare?.(server))
-    .then(() => listen(server, options.port, hostname, bindHost))
+    .then(() => listen(server, options.port, hostname, bindHost, options.onError))
 }
 
 /**
@@ -407,10 +407,26 @@ function listen(
   requestedPort: number,
   hostname: string,
   bindHost: string,
+  onError: ((error: unknown) => void) | undefined,
 ): Promise<RunningServer> {
   return new Promise((resolve, reject) => {
-    server.once('error', (error) => reject(toListenError(error, hostname, requestedPort)))
+    const onListenError = (error: Error): void => {
+      reject(toListenError(error, hostname, requestedPort))
+    }
+    server.once('error', onListenError)
     server.listen(requestedPort, hostname, () => {
+      // A listening server can still emit 'error' (accept failures such as EMFILE when the
+      // process runs out of file descriptors; Node keeps accepting afterwards). With no listener
+      // that event is an uncaught exception that takes the whole app down, so keep one for the
+      // server's lifetime and report through onError.
+      server.off('error', onListenError)
+      server.on('error', (error) => {
+        try {
+          onError?.(error)
+        } catch {
+          // A failing reporter must not turn a recoverable accept error into a crash.
+        }
+      })
       const { port } = server.address() as AddressInfo
       resolve({
         port,
