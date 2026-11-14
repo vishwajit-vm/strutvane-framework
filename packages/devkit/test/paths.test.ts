@@ -1,6 +1,6 @@
 /** Path safety: every path a package hands to devkit must stay inside the project. */
 import { realpathSync } from 'node:fs'
-import { mkdir, symlink } from 'node:fs/promises'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
@@ -192,6 +192,38 @@ describe('protected locations', () => {
       if (!(await trySymlink(join(root, '.git', 'config'), join(root, 'settings.ini'), 'file')))
         ctx.skip()
       expect(codeOf(() => resolveInsideProject(root, 'settings.ini'))).toBe('INVALID_PATH')
+    })
+
+    test('a dangling link to a protected file that does not exist yet is refused', async (ctx) => {
+      // Writing through this link would create .git/config, so the check must follow it.
+      if (!(await trySymlink(join(root, '.git', 'new-hook'), join(root, 'notes.txt'), 'file')))
+        ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'notes.txt'))).toBe('INVALID_PATH')
+    })
+
+    test('a link to an existing protected file is refused', async (ctx) => {
+      await writeFile(join(root, '.git', 'config'), '[core]\n')
+      if (!(await trySymlink(join(root, '.git', 'config'), join(root, 'cfg'), 'file'))) ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'cfg'))).toBe('INVALID_PATH')
+    })
+
+    test('a relative dangling link that climbs into .git is refused', async (ctx) => {
+      await mkdir(join(root, 'app'), { recursive: true })
+      if (!(await trySymlink('../.git/hooks/pre-push', join(root, 'app', 'hook.sh'), 'file')))
+        ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'app/hook.sh'))).toBe('INVALID_PATH')
+    })
+
+    test('a link loop is refused instead of hanging', async (ctx) => {
+      if (!(await trySymlink(join(root, 'loop-b'), join(root, 'loop-a'), 'file'))) ctx.skip()
+      if (!(await trySymlink(join(root, 'loop-a'), join(root, 'loop-b'), 'file'))) ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'loop-a'))).toBe('INVALID_PATH')
+    })
+
+    test('a dangling link to an ordinary project file is still allowed', async (ctx) => {
+      if (!(await trySymlink(join(root, 'src', 'later.ts'), join(root, 'alias.ts'), 'file')))
+        ctx.skip()
+      expect(codeOf(() => resolveInsideProject(root, 'alias.ts'))).toBeUndefined()
     })
 
     test('a Windows 8.3 short name for .git is refused by the real-path check', (ctx) => {

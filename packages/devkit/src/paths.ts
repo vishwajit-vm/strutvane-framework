@@ -20,8 +20,8 @@
  *
  * @module
  */
-import { realpathSync } from 'node:fs'
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { DevkitError } from './errors.ts'
 
 /** Top-level folder for devkit state. Kept equal to `STATE_DIR` in `transaction.ts` (tested). */
@@ -128,22 +128,47 @@ function hasControlCharacter(text: string): boolean {
   return false
 }
 
+/** How many links {@link realPathOf} follows before giving up (the usual OS limit is 40). */
+const MAX_LINK_HOPS = 40
+
 /**
  * The real (symlink-free, long-name) path of `absolute`: the real path of its deepest existing
  * ancestor, followed by the segments that do not exist yet.
+ *
+ * A *dangling* link is followed too: `realpath` fails on it, and treating it as a plain missing
+ * file would let `settings.ini -> .git/config` pass while `.git/config` doesn't exist yet, after
+ * which a write through the link would create the protected file. So when a segment is a link,
+ * its target is resolved (relative to the link's folder) and checked instead.
  */
-function realPathOf(absolute: string): string {
+function realPathOf(absolute: string, hops = 0): string {
   let current = absolute
   const missing: string[] = []
   for (;;) {
     try {
-      return join(realpathSync.native(current), ...missing.reverse())
+      return join(realpathSync.native(current), ...[...missing].reverse())
     } catch {
+      const target = linkTarget(current)
+      if (target !== undefined) {
+        if (hops >= MAX_LINK_HOPS) {
+          throw new DevkitError('INVALID_PATH', `too many levels of links: ${absolute}`)
+        }
+        const resolved = realPathOf(resolve(dirname(current), target), hops + 1)
+        return join(resolved, ...[...missing].reverse())
+      }
       const parent = resolve(current, '..')
-      if (parent === current) return join(current, ...missing.reverse())
+      if (parent === current) return join(current, ...[...missing].reverse())
       missing.push(basename(current))
       current = parent
     }
+  }
+}
+
+/** The raw target of `path` if it is a symbolic link (dangling or not), else `undefined`. */
+function linkTarget(path: string): string | undefined {
+  try {
+    return lstatSync(path).isSymbolicLink() ? readlinkSync(path) : undefined
+  } catch {
+    return undefined
   }
 }
 
