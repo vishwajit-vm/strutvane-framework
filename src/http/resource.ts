@@ -5,7 +5,8 @@
  * @module
  */
 import type { Actor } from '@strutvane/contracts'
-import type { DataRecord, Repository } from '../data/repository.ts'
+import type { Application } from '@strutvane/core'
+import type { DataRecord, Repository, Scope } from '../data/repository.ts'
 import type { AnyModel, ModelDefinition } from '../model/define-model.ts'
 
 /** The standard actions and their permission suffixes. */
@@ -28,7 +29,17 @@ export interface ResourceContext {
   readonly tenantId: string | undefined
   readonly requestId: string
   readonly locale: string
+  /** This resource's repository. */
   readonly repository: Repository
+  /**
+   * Another model's repository (e.g. recompute an invoice's totals after a line changes). It
+   * applies only the scope you pass: use {@link ResourceContext.scope}.
+   */
+  repositoryFor(model: AnyModel | ModelDefinition | string): Repository
+  /** `{ tenantId }` of the request (tenant-scoped models refuse to run without it). */
+  readonly scope: Scope
+  /** The booted application (storage, logger, config: `app.make(Token)`). */
+  readonly app: Application
 }
 
 /** A hook may return a replacement value, or nothing to keep the original. */

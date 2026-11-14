@@ -139,7 +139,11 @@ export default defineSeeder('InvoiceSeeder', async ({ create }) => {
 })
 ```
 
-Resource hooks: `resource.beforeQuery` narrows list and row filters, `resource.serialize` shapes each
+Per-resource hooks (`defineResource(Invoice, { hooks: { afterCreate(record, ctx) {…} } })`) get
+`ctx.repository`, `ctx.repositoryFor(model)` (another model, e.g. to recompute totals), `ctx.scope`
+(`{ tenantId }`) and `ctx.app` (storage, logger, config).
+
+Global resource hooks: `resource.beforeQuery` narrows list and row filters, `resource.serialize` shapes each
 record on the way out (payload `{ resource, type, actor, record }`, `type` being the permission
 prefix such as `invoice`), and `resource.beforeWrite` (`{ resource, type, action, actor, tenantId,
 input }`) may refuse a create or update before it reaches the database. A Strutvane error thrown by

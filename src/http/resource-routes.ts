@@ -18,6 +18,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import type { Actor, Logger, PermissionProvider, QueryFilter } from '@strutvane/contracts'
 import {
+  type Application,
   type EventBus,
   ForbiddenError,
   type HookRegistry,
@@ -100,6 +101,8 @@ export interface EngineDeps {
   readonly now: () => Date
   readonly logger: Logger
   readonly basePath: string
+  /** The booted application, handed to hooks. */
+  readonly app: Application
 }
 
 const JSON_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i
@@ -195,6 +198,18 @@ export function registerResourceRoutes(
     requestId: s.requestId,
     locale: s.locale,
     repository: repo,
+    repositoryFor: (target) =>
+      repoFor(
+        deps.registry.require(
+          typeof target === 'string'
+            ? target
+            : 'definition' in target
+              ? target.definition.name
+              : target.name,
+        ),
+      ),
+    scope: s.tenantId !== undefined ? { tenantId: s.tenantId } : {},
+    app: deps.app,
   })
 
   /** Step 1: may the actor perform this action at all? */

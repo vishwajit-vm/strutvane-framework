@@ -43,7 +43,7 @@ import { createMemoryDisk } from '../../src/storage/memory-disk.ts'
 import { createTestApp } from '../../src/testing/index.ts'
 import { DatabaseToken, ModelRegistryToken, StorageManagerToken } from '../../src/tokens.ts'
 import { Customer, Invoice } from '../helpers/models.ts'
-import { TENANT_A } from '../helpers/setup.ts'
+import { TENANT_A, TENANT_B } from '../helpers/setup.ts'
 
 const rules: ListQueryRules = { fields: queryFields(Invoice.definition), includes: ['customer'] }
 const parse = (qs: string) => parseListQuery(new URLSearchParams(qs), rules)
@@ -551,6 +551,52 @@ describe('resource hooks, events and global hooks', () => {
       const res = await client.request<{ code: string }>('GET', '/api/v1/customers')
       expect(res.status).toBe(422)
       expect(res.body.code).toBe('VALIDATION_FAILED')
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('hooks reach other models, the request scope and the app (e.g. totals, storage clean-up)', async () => {
+    const t = await createTestApp({
+      resources: [
+        defineResource({
+          model: Customer,
+          hooks: {
+            afterCreate: async (record, ctx) => {
+              expect(ctx.app.make(StorageManagerToken).defaultDisk).toBeTypeOf('string')
+              await ctx.repositoryFor('Invoice').create(
+                {
+                  number: `WELCOME-${String(record['name'])}`,
+                  amount: '0.00',
+                  customer: record.id,
+                },
+                ctx.scope,
+              )
+            },
+          },
+        }),
+        Invoice,
+      ],
+    })
+    try {
+      const client = t.actingAs(
+        { id: 'u', type: 'user', roles: [], attrs: {} },
+        { tenantId: TENANT_A },
+      )
+      const res = await client.request('POST', '/api/v1/customers', {
+        body: { name: 'Acme', email: 'a@a.test' },
+      })
+      expect(res.status).toBe(201)
+      const list = await client.request<{ data: { number: string }[] }>('GET', '/api/v1/invoices')
+      expect(list.body.data.map((i) => i.number)).toEqual(['WELCOME-Acme'])
+      // The scope carries the request's tenant: another tenant sees nothing.
+      const other = t.actingAs(
+        { id: 'u', type: 'user', roles: [], attrs: {} },
+        { tenantId: TENANT_B },
+      )
+      expect(
+        (await other.request<{ data: unknown[] }>('GET', '/api/v1/invoices')).body.data,
+      ).toEqual([])
     } finally {
       await t.close()
     }

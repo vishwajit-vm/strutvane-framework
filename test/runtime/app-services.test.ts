@@ -105,9 +105,9 @@ describe('custom routes use the app (data, permissions, storage)', () => {
       const paid = await fetch(`${base}/api/v1/invoices/${invoice.id}/pay`, { method: 'POST' })
       expect(((await paid.json()) as { status: string }).status).toBe('paid')
 
-      // A 2.5 MB body: above the app's 1 MiB default (refused on a normal route) but within the
+      // A 2.2 MB body: above the app's 1 MiB default (refused on a normal route) but within the
       // upload route's own limit; the file itself is then over its 2 MB multipart limit.
-      const big = form('big.png', Buffer.concat([PNG, Buffer.alloc(2.5 * MB)]))
+      const big = form('big.png', Buffer.concat([PNG, Buffer.alloc(2.2 * MB)]))
       // Far over a limit, the server answers 413 and stops reading after a bounded discard, so a
       // client still uploading may see the connection close instead. It must never crash.
       expect([413, 'reset']).toContain((await postForm(`${base}/api/v1/echo`, big)).status)

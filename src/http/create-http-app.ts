@@ -290,6 +290,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     now: () => new Date(clock.now()),
     logger,
     basePath,
+    app,
   }
   for (const files of options.signedFiles ?? []) {
     http.on(['GET', 'HEAD'], `${signedFilePrefix(files)}/*`, (c) =>
