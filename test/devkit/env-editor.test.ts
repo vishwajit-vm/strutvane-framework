@@ -6,9 +6,9 @@ import {
   formatEnvValue,
   looksSecret,
   sectionHeader,
-} from '../src/env-editor.ts'
-import type { DevkitError } from '../src/errors.ts'
-import { createStagedFs, type StagedFs } from '../src/staged-fs.ts'
+} from '../../src/devkit/env-editor.ts'
+import type { DevkitError } from '../../src/devkit/errors.ts'
+import { createStagedFs, type StagedFs } from '../../src/devkit/staged-fs.ts'
 import { readFile, rejectionOf, tempProject, writeFiles } from './helpers.ts'
 
 let projectRoot: string

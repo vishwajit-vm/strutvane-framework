@@ -5,7 +5,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
-import { createEnvEditor, createStagedFs } from '@strutvane/devkit'
+import { createEnvEditor, createStagedFs } from '../../devkit/index.ts'
 import { type AnyCommand, defineCommand } from '../framework/command.ts'
 import { CliError, usageError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'

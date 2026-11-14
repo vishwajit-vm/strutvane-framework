@@ -11,7 +11,7 @@
  *
  * @module
  */
-import type { Logger } from '@strutvane/contracts'
+import type { Logger } from '../../contracts/index.ts'
 import type { PackageMigrationDir } from '../project/package-migrations.ts'
 import type { ExitCode } from './exit-codes.ts'
 import type { Output } from './output.ts'

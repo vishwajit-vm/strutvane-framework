@@ -1,8 +1,13 @@
 /** Generators: typed Standard Schema inputs, plain-function templates, staged writes. */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { z } from 'zod'
-import { type DevkitError, GeneratorInputError } from '../src/errors.ts'
-import { defineGenerator, type Generator, runGenerator, validateInput } from '../src/generator.ts'
+import { type DevkitError, GeneratorInputError } from '../../src/devkit/errors.ts'
+import {
+  defineGenerator,
+  type Generator,
+  runGenerator,
+  validateInput,
+} from '../../src/devkit/generator.ts'
 import { faultyIo, readFile, rejectionOf, snapshot, tempProject, writeFiles } from './helpers.ts'
 
 const modelGenerator = defineGenerator({

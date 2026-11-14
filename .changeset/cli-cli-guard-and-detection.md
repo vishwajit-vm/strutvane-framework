@@ -1,5 +1,5 @@
 ---
-"@strutvane/cli": patch
+"@strutvane/framework": patch
 ---
 
 Safer defaults across the CLI:

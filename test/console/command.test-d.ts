@@ -1,7 +1,7 @@
 // Type-level tests for the public command API: flag and argument types are inferred from the
 // declaration, and misuse fails to compile.
 import { describe, expectTypeOf, test } from 'vitest'
-import { type CommandOutcome, defineCommand } from '../src/index.ts'
+import { type CommandOutcome, defineCommand } from '../../src/console/index.ts'
 
 describe('defineCommand inference', () => {
   test('flags are typed from their declarations', () => {

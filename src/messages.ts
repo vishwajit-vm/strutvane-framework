@@ -13,7 +13,7 @@ import {
   type MessageCatalog,
   type MessageLookup,
   type Messages,
-} from '@strutvane/core'
+} from './core/index.ts'
 
 /** English messages for the framework's issue and problem codes. */
 export const FRAMEWORK_MESSAGES_EN: MessageCatalog = defineMessages('en', {

@@ -11,7 +11,7 @@
  */
 import type { Server } from 'node:http'
 import { join } from 'node:path'
-import { LoggerToken } from '@strutvane/core'
+import { LoggerToken } from '../core/index.ts'
 import type { TrustProxy } from '../http/proxy.ts'
 import { hasBuiltUi } from '../http/static-files.ts'
 import { type BootedProject, bootProject } from './boot.ts'

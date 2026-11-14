@@ -22,14 +22,14 @@
  * @module
  */
 
-import type { PageInfo, SortDirective } from '@strutvane/contracts'
+import type { PageInfo, SortDirective } from '../contracts/index.ts'
 import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
   StrutvaneError,
   ValidationError,
-} from '@strutvane/core'
+} from '../core/index.ts'
 import { frag, ident, join, render, type SqlFragment } from '../database/sql.ts'
 import type { Database, Row } from '../database/types.ts'
 import { columnName, type ModelDefinition } from '../model/define-model.ts'

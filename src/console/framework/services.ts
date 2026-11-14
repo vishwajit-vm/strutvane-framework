@@ -11,8 +11,8 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { win32 } from 'node:path'
-import type { Clock } from '@strutvane/core'
-import { systemClock } from '@strutvane/core'
+import type { Clock } from '../../core/index.ts'
+import { systemClock } from '../../core/index.ts'
 import { CliError } from './errors.ts'
 import { EXIT } from './exit-codes.ts'
 

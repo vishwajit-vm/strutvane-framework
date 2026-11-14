@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { createEventBus, createHooks, createTestClock, HookError } from '../src/index.ts'
+import { createEventBus, createHooks, createTestClock, HookError } from '../../src/core/index.ts'
 
 type Hooks = { 'resource.beforeQuery': { filters: string[] }; other: number }
 

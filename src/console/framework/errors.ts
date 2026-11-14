@@ -8,8 +8,8 @@
  *
  * @module
  */
-import type { IssueParam } from '@strutvane/contracts'
-import { type ErrorParams, StrutvaneError, ValidationError } from '@strutvane/core'
+import type { IssueParam } from '../../contracts/index.ts'
+import { type ErrorParams, StrutvaneError, ValidationError } from '../../core/index.ts'
 import { EXIT, type ExitCode } from './exit-codes.ts'
 
 /** One problem in a list (a field, a file, an env key), shaped like an RFC-0003 issue. */

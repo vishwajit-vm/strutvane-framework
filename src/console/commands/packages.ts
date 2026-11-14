@@ -23,7 +23,7 @@ import {
   type FileChange,
   type InstallResult,
   runInstaller,
-} from '@strutvane/devkit'
+} from '../../devkit/index.ts'
 import {
   type AnyCommand,
   type CommandContext,

@@ -1,8 +1,9 @@
 // Conditional permissions ("members update and delete their own records"): a PermissionProvider
 // that cannot decide `update` without the record (auth answers `record-required`) must still let
 // the owner act on their rows, never on anyone else's, and never widen what lists show.
-import type { Actor, Decision, PermissionProvider, QueryFilter } from '@strutvane/contracts'
+
 import { describe, expect, it } from 'vitest'
+import type { Actor, Decision, PermissionProvider, QueryFilter } from '../../src/contracts/index.ts'
 import { defineModel } from '../../src/model/define-model.ts'
 import { field } from '../../src/model/field.ts'
 import { createTestApp } from '../../src/testing/index.ts'

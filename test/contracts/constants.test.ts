@@ -8,7 +8,7 @@ import {
   PROBLEM_CONTENT_TYPE,
   TENANT_STRATEGIES,
   type TenantStrategy,
-} from '../src/index.ts'
+} from '../../src/contracts/index.ts'
 
 describe('FILTER_OPERATORS', () => {
   // A Record over the union forces this object to list every operator. If an operator is added

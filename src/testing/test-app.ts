@@ -13,14 +13,14 @@
  *
  * @module
  */
-import type { Actor, PermissionProvider } from '@strutvane/contracts'
+import type { Actor, PermissionProvider } from '../contracts/index.ts'
 import {
   type Application,
   createApp,
   HooksToken,
   IdGeneratorToken,
   PermissionProviderToken,
-} from '@strutvane/core'
+} from '../core/index.ts'
 import { createRepository, type Repository } from '../data/repository.ts'
 import { connectDatabase } from '../database/connect.ts'
 import type { Database, Dialect } from '../database/types.ts'

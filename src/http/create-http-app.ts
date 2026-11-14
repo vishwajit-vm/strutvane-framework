@@ -12,12 +12,15 @@
  * @module
  */
 import { OpenAPIHono } from '@hono/zod-openapi'
+import type { Context } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
+import { matchedRoutes } from 'hono/route'
 import {
   HTTP_HOOKS,
   type HttpRequestHookPayload,
   type HttpResponseHookPayload,
   MANIFEST_PATH,
-} from '@strutvane/contracts'
+} from '../contracts/index.ts'
 import {
   type Application,
   ClockToken,
@@ -31,10 +34,7 @@ import {
   runWithContext,
   StrutvaneError,
   UnauthenticatedError,
-} from '@strutvane/core'
-import type { Context } from 'hono'
-import { bodyLimit } from 'hono/body-limit'
-import { matchedRoutes } from 'hono/route'
+} from '../core/index.ts'
 import type { Database } from '../database/types.ts'
 import { registerFrameworkErrors, withFrameworkMessages } from '../messages.ts'
 import type { AnyModel } from '../model/define-model.ts'

@@ -1,13 +1,17 @@
 import { afterAll, describe, expect, test } from 'vitest'
-import { detectCaseConflicts, discover } from '../../src/registry/discover.ts'
+import { detectCaseConflicts, discover } from '../../../src/console/registry/discover.ts'
 import {
   identifierForFile,
   isValidPermission,
   modelNameFromFile,
   pageRoute,
   resourceKey,
-} from '../../src/registry/names.ts'
-import { compareCodeUnits, resolveRelativeImport, toPosix } from '../../src/registry/paths.ts'
+} from '../../../src/console/registry/names.ts'
+import {
+  compareCodeUnits,
+  resolveRelativeImport,
+  toPosix,
+} from '../../../src/console/registry/paths.ts'
 import { cleanupTempDirs, FIXTURE_DIR, project } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

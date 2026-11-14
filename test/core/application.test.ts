@@ -1,5 +1,5 @@
-import type { Logger } from '@strutvane/contracts'
 import { describe, expect, test, vi } from 'vitest'
+import type { Logger } from '../../src/contracts/index.ts'
 import {
   ClockToken,
   createApp,
@@ -14,7 +14,7 @@ import {
   MessagesToken,
   ProviderError,
   token,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 const config = { app: { name: 'acme' }, database: { default: 'postgres', pool: { max: 10 } } }
 

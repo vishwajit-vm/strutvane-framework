@@ -5,7 +5,7 @@
  * @module
  */
 import { createHash, type Hash } from 'node:crypto'
-import type { FileBody } from '@strutvane/contracts'
+import type { FileBody } from '../contracts/index.ts'
 
 /** Thrown by disks when a key does not exist. */
 export class FileNotFoundError extends Error {

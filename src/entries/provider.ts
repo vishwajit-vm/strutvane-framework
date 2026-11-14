@@ -3,7 +3,7 @@
  *
  * @module
  */
-import type { Provider } from '@strutvane/core'
+import type { Provider } from '../core/index.ts'
 import { createDefaultFrameworkProvider } from '../runtime/default-provider.ts'
 
 export { createDefaultFrameworkProvider } from '../runtime/default-provider.ts'

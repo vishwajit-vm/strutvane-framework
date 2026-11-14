@@ -12,7 +12,7 @@
  *
  * @module
  */
-import type { StandardSchemaV1 } from '@strutvane/contracts'
+import type { StandardSchemaV1 } from '../contracts/index.ts'
 import { DevkitError, GeneratorInputError, type InputIssue } from './errors.ts'
 import type { DevkitIo } from './io.ts'
 import { createStagedFs, type FileChange } from './staged-fs.ts'

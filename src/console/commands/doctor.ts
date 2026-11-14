@@ -11,7 +11,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hasConflictMarkers, nodeIo, readLock } from '@strutvane/devkit'
+import { hasConflictMarkers, nodeIo, readLock } from '../../devkit/index.ts'
 import { type AnyCommand, defineCommand, type Project } from '../framework/command.ts'
 import { CliError, toFailure } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'

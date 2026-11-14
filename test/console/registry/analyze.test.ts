@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import { compileProject } from '../../src/registry/compiler.ts'
+import { compileProject } from '../../../src/console/registry/compiler.ts'
 import { cleanupTempDirs, FIXTURE_DIR, project } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

@@ -1,5 +1,5 @@
-import type { Actor } from '@strutvane/contracts'
 import { describe, expect, it } from 'vitest'
+import type { Actor } from '../../src/contracts/index.ts'
 import {
   canonicalBigInt,
   canonicalDate,

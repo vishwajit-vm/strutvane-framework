@@ -3,14 +3,14 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Actor } from '@strutvane/contracts'
-import { defineProvider, HooksToken, PermissionProviderToken } from '@strutvane/core'
 import { afterEach, describe, expect, test } from 'vitest'
 import commands, {
   type CommandContextLike,
   commandAppEnv,
   renameAnswers,
 } from '../../src/commands.ts'
+import type { Actor } from '../../src/contracts/index.ts'
+import { defineProvider, HooksToken, PermissionProviderToken } from '../../src/core/index.ts'
 import { connectDatabase } from '../../src/database/connect.ts'
 import { firstAppEnv, normaliseAppEnv } from '../../src/runtime/app-env.ts'
 import { apiBasePath, bootProject, mergeResources } from '../../src/runtime/boot.ts'

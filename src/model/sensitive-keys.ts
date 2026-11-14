@@ -8,7 +8,7 @@
  *
  * @module
  */
-import { registerSensitiveKeys } from '@strutvane/core'
+import { registerSensitiveKeys } from '../core/index.ts'
 import type { ModelDefinition } from './define-model.ts'
 
 /** The keys of every `sensitive` or `hidden` field, as API keys and as column names. */

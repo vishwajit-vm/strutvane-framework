@@ -15,8 +15,8 @@
  * @module
  */
 import type { OpenAPIHono } from '@hono/zod-openapi'
-import { LIST_QUERY_LIMITS, MANIFEST_PATH, PROBLEM_CONTENT_TYPE } from '@strutvane/contracts'
 import { z } from 'zod'
+import { LIST_QUERY_LIMITS, MANIFEST_PATH, PROBLEM_CONTENT_TYPE } from '../contracts/index.ts'
 import {
   ACTION_PERMISSIONS,
   type ResolvedResource,

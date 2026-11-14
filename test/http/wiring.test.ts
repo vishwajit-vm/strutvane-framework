@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Actor } from '@strutvane/contracts'
+import { describe, expect, it, vi } from 'vitest'
+import type { Actor } from '../../src/contracts/index.ts'
 import {
   createApp,
   createMessages,
@@ -13,8 +14,7 @@ import {
   LoggerToken,
   PermissionProviderToken,
   ValidationError,
-} from '@strutvane/core'
-import { describe, expect, it, vi } from 'vitest'
+} from '../../src/core/index.ts'
 import { connectDatabase, NotImplementedError } from '../../src/database/connect.ts'
 import { type PgClientLike, type PgPoolLike, pgDatabase } from '../../src/database/drivers.ts'
 import { createHttpApp } from '../../src/http/create-http-app.ts'

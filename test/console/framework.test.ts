@@ -1,26 +1,39 @@
-import { EnvValidationError, ProviderError, StrutvaneError, ValidationError } from '@strutvane/core'
-import { DevkitError } from '@strutvane/devkit'
 import { describe, expect, test } from 'vitest'
-import { type AnyCommand, commandProblems, defineCommand } from '../src/framework/command.ts'
-import { CliError, toFailure } from '../src/framework/errors.ts'
-import { EXIT } from '../src/framework/exit-codes.ts'
-import { scanCommandLine } from '../src/framework/globals.ts'
-import { renderCommandHelp, renderGlobalHelp, renderGroupHelp } from '../src/framework/help.ts'
+import {
+  type AnyCommand,
+  commandProblems,
+  defineCommand,
+} from '../../src/console/framework/command.ts'
+import { CliError, toFailure } from '../../src/console/framework/errors.ts'
+import { EXIT } from '../../src/console/framework/exit-codes.ts'
+import { scanCommandLine } from '../../src/console/framework/globals.ts'
+import {
+  renderCommandHelp,
+  renderGlobalHelp,
+  renderGroupHelp,
+} from '../../src/console/framework/help.ts'
 import {
   createOutput,
   createStyle,
   formatTable,
   shouldUseColor,
   stripAnsi,
-} from '../src/framework/output.ts'
-import { camelCase, parseCommandLine, usageLine } from '../src/framework/parse.ts'
+} from '../../src/console/framework/output.ts'
+import { camelCase, parseCommandLine, usageLine } from '../../src/console/framework/parse.ts'
 import {
   createCommandTable,
   editDistance,
   resolveCommand,
   suggest,
-} from '../src/framework/router.ts'
-import { renderMessages } from '../src/framework/run.ts'
+} from '../../src/console/framework/router.ts'
+import { renderMessages } from '../../src/console/framework/run.ts'
+import {
+  EnvValidationError,
+  ProviderError,
+  StrutvaneError,
+  ValidationError,
+} from '../../src/core/index.ts'
+import { DevkitError } from '../../src/devkit/index.ts'
 
 const cmd = (name: string, extra: Partial<AnyCommand> = {}): AnyCommand =>
   defineCommand({ name, description: `${name} command`, run: () => ({}), ...extra }) as AnyCommand

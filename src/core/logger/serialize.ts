@@ -7,7 +7,7 @@
  *
  * @module
  */
-import type { LogError } from '@strutvane/contracts'
+import type { LogError } from '../../contracts/index.ts'
 
 /**
  * Key **fragments** that mark a value as sensitive. A key matches when its normalised form

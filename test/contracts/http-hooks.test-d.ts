@@ -1,7 +1,11 @@
 // Type-level tests for the HTTP hook protocol.
 import { describe, expectTypeOf, test } from 'vitest'
-import type { Actor, HttpRequestHookPayload, HttpResponseHookPayload } from '../src/index.ts'
-import { HTTP_HOOKS } from '../src/index.ts'
+import type {
+  Actor,
+  HttpRequestHookPayload,
+  HttpResponseHookPayload,
+} from '../../src/contracts/index.ts'
+import { HTTP_HOOKS } from '../../src/contracts/index.ts'
 
 describe('HttpRequestHookPayload', () => {
   test('clientAddress is an optional string (undefined when the server cannot tell)', () => {

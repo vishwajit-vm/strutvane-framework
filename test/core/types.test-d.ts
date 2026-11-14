@@ -1,7 +1,8 @@
 // Type-level tests: misuse must fail to compile.
-import type { Logger } from '@strutvane/contracts'
+
 import { describe, expectTypeOf, test } from 'vitest'
 import { z } from 'zod'
+import type { Logger } from '../../src/contracts/index.ts'
 import {
   createApp,
   createContainer,
@@ -12,7 +13,7 @@ import {
   defineProvider,
   LoggerToken,
   token,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 describe('container tokens', () => {
   test('make() returns the token type', () => {

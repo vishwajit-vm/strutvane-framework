@@ -12,7 +12,7 @@
  *
  * @module
  */
-import type { FilterOperator } from '@strutvane/contracts'
+import type { FilterOperator } from '../contracts/index.ts'
 
 /** Every field kind. `hasMany` is a relation, not a column (see {@link HasManyBuilder}). */
 export type FieldKind =

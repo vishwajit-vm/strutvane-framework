@@ -9,9 +9,13 @@
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { createBiomeCliFormatter, type Formatter, tryFormat } from '../../src/merge/format.ts'
-import { mergeThreeWay } from '../../src/merge/merge.ts'
-import { planUpgrade, recordEjection } from '../../src/merge/upgrade.ts'
+import {
+  createBiomeCliFormatter,
+  type Formatter,
+  tryFormat,
+} from '../../../src/devkit/merge/format.ts'
+import { mergeThreeWay } from '../../../src/devkit/merge/merge.ts'
+import { planUpgrade, recordEjection } from '../../../src/devkit/merge/upgrade.ts'
 import { tempProject, writeFiles } from '../helpers.ts'
 
 const biomeBin = createRequire(import.meta.url).resolve('@biomejs/biome/bin/biome')

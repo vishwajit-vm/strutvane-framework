@@ -10,7 +10,7 @@
  *
  * @module
  */
-import { type Application, defineProvider, type Provider } from '@strutvane/core'
+import { type Application, defineProvider, type Provider } from '../core/index.ts'
 import { frameworkProvider } from '../provider.ts'
 import { ProjectModelsToken, ProjectSignedFilesToken } from '../tokens.ts'
 import { type AppDatabaseConfig, databaseConfigFrom } from './database-config.ts'

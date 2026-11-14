@@ -8,8 +8,9 @@
  *
  * @module
  */
-import { defineGenerator, type Generator } from '@strutvane/devkit'
+
 import { z } from 'zod'
+import { defineGenerator, type Generator } from '../../devkit/index.ts'
 import {
   type FieldSpec,
   FieldSpecError,

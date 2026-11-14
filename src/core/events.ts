@@ -11,7 +11,7 @@
  *
  * @module
  */
-import type { ActorStamp, DomainEvent } from '@strutvane/contracts'
+import type { ActorStamp, DomainEvent } from '../contracts/index.ts'
 import { type Clock, systemClock } from './clock.ts'
 import { type UuidGenerator, uuidv7 } from './uuid.ts'
 

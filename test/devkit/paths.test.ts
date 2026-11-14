@@ -4,13 +4,13 @@ import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { DevkitError } from '../src/errors.ts'
+import { DevkitError } from '../../src/devkit/errors.ts'
 import {
   normaliseRelativePath,
   recoveryRefusal,
   resolveInsideProject,
   toProjectPath,
-} from '../src/paths.ts'
+} from '../../src/devkit/paths.ts'
 import { tempProject, trySymlink } from './helpers.ts'
 
 function codeOf(fn: () => unknown): string | undefined {

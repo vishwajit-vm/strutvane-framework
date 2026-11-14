@@ -8,13 +8,13 @@
 import { mkdirSync, readFileSync, realpathSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import { BUILTIN_COMMANDS } from '../src/commands/builtins.ts'
-import { type AnyCommand, defineCommand } from '../src/framework/command.ts'
+import { BUILTIN_COMMANDS } from '../../src/console/commands/builtins.ts'
+import { type AnyCommand, defineCommand } from '../../src/console/framework/command.ts'
 import {
   enabledPackages,
   packageMigrations,
   packageOfSpecifier,
-} from '../src/project/package-migrations.ts'
+} from '../../src/console/project/package-migrations.ts'
 import {
   addDependencies,
   cleanupTempDirs,

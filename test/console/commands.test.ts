@@ -3,12 +3,12 @@
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { recordEjection } from '@strutvane/devkit'
 import { afterAll, describe, expect, test } from 'vitest'
-import { checkNode } from '../src/commands/doctor.ts'
-import { generateAppKey } from '../src/commands/env.ts'
-import type { RouteRow } from '../src/commands/inspect.ts'
-import type { checkEnv } from '../src/project/env-check.ts'
+import { checkNode } from '../../src/console/commands/doctor.ts'
+import { generateAppKey } from '../../src/console/commands/env.ts'
+import type { RouteRow } from '../../src/console/commands/inspect.ts'
+import type { checkEnv } from '../../src/console/project/env-check.ts'
+import { recordEjection } from '../../src/devkit/index.ts'
 import {
   addDependencies,
   cleanupTempDirs,

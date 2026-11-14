@@ -16,9 +16,9 @@ import type {
   Permission,
   PermissionProvider,
   QueryFilter,
-} from '@strutvane/contracts'
-import type { Application } from '@strutvane/core'
-import { PermissionProviderToken } from '@strutvane/core'
+} from '../contracts/index.ts'
+import type { Application } from '../core/index.ts'
+import { PermissionProviderToken } from '../core/index.ts'
 
 /** A provider that allows everything. Only for local development or an explicit public API. */
 export function allowAllPermissions(): PermissionProvider {

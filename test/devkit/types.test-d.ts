@@ -1,5 +1,8 @@
 // Type-level tests: a line marked `@ts-expect-error` FAILS the run if it ever starts compiling,
 // which proves the public API rejects that misuse.
+
+import { describe, expectTypeOf, test } from 'vitest'
+import { z } from 'zod'
 import type {
   InstallConfig,
   InstallContext,
@@ -7,9 +10,7 @@ import type {
   InstallEnv,
   Installer,
   InstallFs,
-} from '@strutvane/contracts'
-import { describe, expectTypeOf, test } from 'vitest'
-import { z } from 'zod'
+} from '../../src/contracts/index.ts'
 import {
   type ConfigPatcher,
   type DepsEditor,
@@ -24,7 +25,7 @@ import {
   type RecoveryPlan,
   recoverTransactions,
   type StagedFs,
-} from '../src/index.ts'
+} from '../../src/devkit/index.ts'
 
 describe('contract compatibility', () => {
   test('devkit editors can be used wherever the contracts expect the plain interfaces', () => {

@@ -12,7 +12,7 @@
  *
  * @module
  */
-import type { SortDirective } from '@strutvane/contracts'
+import type { SortDirective } from '../contracts/index.ts'
 import { type FilterValue, filterValue, ValueError } from '../data/values.ts'
 import { frag, join, type SqlFragment } from '../database/sql.ts'
 import type { Dialect } from '../database/types.ts'

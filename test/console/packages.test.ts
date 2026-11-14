@@ -4,9 +4,9 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { REDACTED, recordEjection } from '@strutvane/devkit'
 import { afterAll, describe, expect, test } from 'vitest'
-import { installSpec, packageArgument } from '../src/commands/packages.ts'
+import { installSpec, packageArgument } from '../../src/console/commands/packages.ts'
+import { REDACTED, recordEjection } from '../../src/devkit/index.ts'
 import {
   addDependencies,
   cleanupTempDirs,

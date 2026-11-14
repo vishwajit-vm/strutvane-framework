@@ -1,8 +1,9 @@
 /**
  * End-to-end HTTP through the real Hono app (`app.request`), on a real database.
  */
-import type { Actor, PermissionProvider, QueryFilter } from '@strutvane/contracts'
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { Actor, PermissionProvider, QueryFilter } from '../../src/contracts/index.ts'
 import { defineResource } from '../../src/http/resource.ts'
 import { createTestApp, type TestApp } from '../../src/testing/index.ts'
 import { DIALECTS } from '../helpers/engines.ts'

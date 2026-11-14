@@ -20,7 +20,7 @@ import type {
   StandardSchemaV1,
   StandardSchemaV1Issue,
   StandardSchemaV1PathSegment,
-} from '@strutvane/contracts'
+} from '../contracts/index.ts'
 import { type DeepReadonly, deepFreeze } from './config.ts'
 
 /** One problem with one environment variable. */

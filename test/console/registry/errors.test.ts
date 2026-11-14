@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import { compileProject, RegistryCompiler } from '../../src/registry/compiler.ts'
-import { type Diagnostic, formatDiagnostic } from '../../src/registry/errors.ts'
+import { compileProject, RegistryCompiler } from '../../../src/console/registry/compiler.ts'
+import { type Diagnostic, formatDiagnostic } from '../../../src/console/registry/errors.ts'
 import { cleanupTempDirs, modelSource, project } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

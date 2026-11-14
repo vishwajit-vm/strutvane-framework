@@ -20,8 +20,8 @@
  * @module
  */
 import type { OpenAPIHono } from '@hono/zod-openapi'
-import type { Actor, Permission, PermissionProvider, QueryFilter } from '@strutvane/contracts'
-import { type Application, ForbiddenError, UnauthenticatedError } from '@strutvane/core'
+import type { Actor, Permission, PermissionProvider, QueryFilter } from '../contracts/index.ts'
+import { type Application, ForbiddenError, UnauthenticatedError } from '../core/index.ts'
 import { createRepository, type Repository, type Scope } from '../data/repository.ts'
 import type { Database } from '../database/types.ts'
 import type { AnyModel, ModelDefinition } from '../model/define-model.ts'

@@ -19,7 +19,7 @@ import {
   planUpgrade,
   renderUpgradePreview,
   type TemplateOutput,
-} from '@strutvane/devkit'
+} from '../../devkit/index.ts'
 import {
   type AnyCommand,
   type CommandContext,

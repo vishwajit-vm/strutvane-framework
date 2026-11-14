@@ -14,7 +14,7 @@ import {
   toLoggable,
   uuidV7Timestamp,
   uuidv7,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 const capture = () => {
   const lines: string[] = []

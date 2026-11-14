@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { HTTP_HOOKS } from '../src/index.ts'
+import { HTTP_HOOKS } from '../../src/contracts/index.ts'
 
 describe('HTTP_HOOKS', () => {
   test('names the request and response hooks the framework runs', () => {

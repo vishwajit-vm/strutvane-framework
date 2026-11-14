@@ -9,7 +9,7 @@
  *
  * @module
  */
-import type { IssueParam } from '@strutvane/contracts'
+import type { IssueParam } from '../../contracts/index.ts'
 
 /** Parameters rendered into messages. Primitives only (no objects that could carry secrets). */
 export type ErrorParams = Readonly<Record<string, IssueParam>>

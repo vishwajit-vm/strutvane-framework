@@ -20,7 +20,9 @@
  * @module
  */
 import type { OpenAPIHono } from '@hono/zod-openapi'
-import type { Actor, Logger, PermissionProvider, QueryFilter } from '@strutvane/contracts'
+import type { Context } from 'hono'
+import { z } from 'zod'
+import type { Actor, Logger, PermissionProvider, QueryFilter } from '../contracts/index.ts'
 import {
   type Application,
   type EventBus,
@@ -30,9 +32,7 @@ import {
   StrutvaneError,
   UnauthenticatedError,
   ValidationError,
-} from '@strutvane/core'
-import type { Context } from 'hono'
-import { z } from 'zod'
+} from '../core/index.ts'
 import {
   createRepository,
   type DataRecord,

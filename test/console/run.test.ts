@@ -3,11 +3,11 @@
  * exit codes, project detection, contributed commands and the production guard.
  */
 import { afterAll, describe, expect, test } from 'vitest'
-import { BUILTIN_COMMANDS } from '../src/commands/builtins.ts'
-import { defineCommand } from '../src/framework/command.ts'
-import { CliError } from '../src/framework/errors.ts'
-import { EXIT } from '../src/framework/exit-codes.ts'
-import { JSON_SCHEMA_VERSION, runCli } from '../src/framework/run.ts'
+import { BUILTIN_COMMANDS } from '../../src/console/commands/builtins.ts'
+import { defineCommand } from '../../src/console/framework/command.ts'
+import { CliError } from '../../src/console/framework/errors.ts'
+import { EXIT } from '../../src/console/framework/exit-codes.ts'
+import { JSON_SCHEMA_VERSION, runCli } from '../../src/console/framework/run.ts'
 import {
   addDependencies,
   cleanupTempDirs,

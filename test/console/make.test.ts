@@ -4,9 +4,9 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { recordEjection } from '@strutvane/devkit'
 import { afterAll, describe, expect, test } from 'vitest'
-import { compileProject } from '../src/registry/compiler.ts'
+import { compileProject } from '../../src/console/registry/compiler.ts'
+import { recordEjection } from '../../src/devkit/index.ts'
 import {
   cleanupTempDirs,
   cli,

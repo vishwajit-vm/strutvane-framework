@@ -1,10 +1,15 @@
 import fc from 'fast-check'
 import { describe, expect, test } from 'vitest'
-import { names, pluralize, quote, words } from '../src/make/names.ts'
-import { channelSpec, releaseChannel } from '../src/project/channel.ts'
-import { parseEnv } from '../src/project/env-file.ts'
-import { compareVersions, parseRange, parseVersion, satisfies } from '../src/project/semver.ts'
-import { CLI_VERSION, readPackageVersion } from '../src/version.ts'
+import { names, pluralize, quote, words } from '../../src/console/make/names.ts'
+import { channelSpec, releaseChannel } from '../../src/console/project/channel.ts'
+import { parseEnv } from '../../src/console/project/env-file.ts'
+import {
+  compareVersions,
+  parseRange,
+  parseVersion,
+  satisfies,
+} from '../../src/console/project/semver.ts'
+import { CLI_VERSION, ownManifest, readPackageVersion } from '../../src/console/version.ts'
 
 describe('names', () => {
   test('every spelling from any input style', () => {
@@ -195,7 +200,22 @@ describe('version', () => {
   test('reads the package version, falling back to 0.0.0', () => {
     expect(CLI_VERSION).toMatch(/^\d+\.\d+\.\d+/)
     expect(readPackageVersion(new URL('file:///definitely/missing/package.json'))).toBe('0.0.0')
-    expect(readPackageVersion(new URL('../../../tsconfig.json', import.meta.url))).toBe('0.0.0')
+    expect(readPackageVersion(new URL('../../tsconfig.json', import.meta.url))).toBe('0.0.0')
+  })
+
+  test('reads the version from the package that ships the CLI (the nearest package.json above it)', () => {
+    // The CLI now lives in src/console/ of @strutvane/framework, two levels below the package root.
+    const root = new URL('../../package.json', import.meta.url)
+    expect(ownManifest(new URL('../../src/console/version.ts', import.meta.url)).href).toBe(
+      root.href,
+    )
+    expect(CLI_VERSION).toBe(readPackageVersion(root))
+  })
+
+  test('falls back to ../package.json when no package.json exists above the module', () => {
+    expect(ownManifest(new URL('file:///definitely/missing/version.mjs')).href).toBe(
+      'file:///definitely/package.json',
+    )
   })
 })
 

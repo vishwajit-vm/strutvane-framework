@@ -5,7 +5,7 @@ import {
   type LogLevel,
   PROBLEM_CODES,
   type ProblemCode,
-} from '../src/index.ts'
+} from '../../src/contracts/index.ts'
 
 describe('LOG_LEVELS / LOG_LEVEL_SEVERITY', () => {
   const every: Record<LogLevel, true> = {

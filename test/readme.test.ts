@@ -2,8 +2,9 @@
  * The README examples, executed (only the database URL differs: in-memory instead of a file).
  * Update this file and README.md together.
  */
-import { createApp, PermissionProviderToken } from '@strutvane/core'
+
 import { describe, expect, it } from 'vitest'
+import { createApp, PermissionProviderToken } from '../src/core/index.ts'
 import {
   allowAllPermissions,
   createHttpApp,

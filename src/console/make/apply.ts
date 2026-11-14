@@ -22,7 +22,7 @@ import {
   nodeIo,
   readLock,
   runGenerator,
-} from '@strutvane/devkit'
+} from '../../devkit/index.ts'
 import type { CommandContext } from '../framework/command.ts'
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'

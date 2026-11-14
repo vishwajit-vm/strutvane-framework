@@ -1,10 +1,15 @@
 /** Secret env files: recognised everywhere, and their values never shown in a diff by default. */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { createEnvEditor } from '../src/env-editor.ts'
-import { defineInstaller, runInstaller } from '../src/installer.ts'
-import { renderUpgradePreview } from '../src/merge/upgrade.ts'
-import { isSecretEnvFile, REDACTED, redactEnvLine, unifiedPatch } from '../src/secret-files.ts'
-import { createStagedFs } from '../src/staged-fs.ts'
+import { createEnvEditor } from '../../src/devkit/env-editor.ts'
+import { defineInstaller, runInstaller } from '../../src/devkit/installer.ts'
+import { renderUpgradePreview } from '../../src/devkit/merge/upgrade.ts'
+import {
+  isSecretEnvFile,
+  REDACTED,
+  redactEnvLine,
+  unifiedPatch,
+} from '../../src/devkit/secret-files.ts'
+import { createStagedFs } from '../../src/devkit/staged-fs.ts'
 import { readFile, tempProject, writeFiles } from './helpers.ts'
 
 /** Distinctive values that must never appear in diff output. */

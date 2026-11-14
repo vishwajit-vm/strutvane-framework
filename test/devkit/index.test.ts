@@ -1,6 +1,6 @@
 /** The public entry point exports exactly the documented runtime API. */
 import { expect, test } from 'vitest'
-import * as devkit from '../src/index.ts'
+import * as devkit from '../../src/devkit/index.ts'
 
 test('runtime exports', () => {
   expect(Object.keys(devkit).sort()).toEqual(

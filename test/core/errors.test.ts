@@ -1,5 +1,5 @@
-import { PROBLEM_CODES } from '@strutvane/contracts'
 import { describe, expect, test } from 'vitest'
+import { PROBLEM_CODES } from '../../src/contracts/index.ts'
 import {
   BUILTIN_ERRORS,
   ConflictError,
@@ -17,7 +17,7 @@ import {
   toProblem,
   UnauthenticatedError,
   ValidationError,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 describe('error classes', () => {
   test('carry stable codes, statuses, params and headers', () => {

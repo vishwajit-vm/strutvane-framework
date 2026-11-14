@@ -9,7 +9,7 @@
  *
  * @module
  */
-import type { FileListPage, StorageDisk, StoredFile } from '@strutvane/contracts'
+import type { FileListPage, StorageDisk, StoredFile } from '../contracts/index.ts'
 import { assertTenantId } from '../database/types.ts'
 import { assertSafeKey, assertSafePrefix } from './keys.ts'
 

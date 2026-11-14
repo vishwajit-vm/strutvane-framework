@@ -3,10 +3,21 @@
  * hook widening, query cost, filter injection, reference probing, anonymous discovery, proxy
  * headers and client addresses. Every test is named after the attack it proves impossible.
  */
-import type { Actor, PermissionProvider, QueryFilter, ResourceRef } from '@strutvane/contracts'
-import { HTTP_HOOKS } from '@strutvane/contracts'
-import { createApp, createLogger, HooksToken, PermissionProviderToken } from '@strutvane/core'
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type {
+  Actor,
+  PermissionProvider,
+  QueryFilter,
+  ResourceRef,
+} from '../../src/contracts/index.ts'
+import { HTTP_HOOKS } from '../../src/contracts/index.ts'
+import {
+  createApp,
+  createLogger,
+  HooksToken,
+  PermissionProviderToken,
+} from '../../src/core/index.ts'
 import { DEFAULT_STATEMENT_TIMEOUT_MS, pgPoolOptions } from '../../src/database/connect.ts'
 import { createHttpApp } from '../../src/http/create-http-app.ts'
 import { allowAllPermissions } from '../../src/http/permissions.ts'

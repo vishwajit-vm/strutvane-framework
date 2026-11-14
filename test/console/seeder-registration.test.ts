@@ -16,7 +16,7 @@ import {
   type RegistrationResult,
   registerSeeder,
   type SeederRegistration,
-} from '../src/make/seeder-registration.ts'
+} from '../../src/console/make/seeder-registration.ts'
 import { cleanupTempDirs, cli, makeProject, read, write } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

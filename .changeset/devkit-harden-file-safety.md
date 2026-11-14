@@ -1,5 +1,5 @@
 ---
-'@strutvane/devkit': patch
+"@strutvane/framework": patch
 ---
 
 Harden file safety in transactions, recovery, previews and env handling.

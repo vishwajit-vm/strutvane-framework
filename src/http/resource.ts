@@ -4,8 +4,8 @@
  *
  * @module
  */
-import type { Actor } from '@strutvane/contracts'
-import type { Application } from '@strutvane/core'
+import type { Actor } from '../contracts/index.ts'
+import type { Application } from '../core/index.ts'
 import type { DataRecord, Repository, Scope } from '../data/repository.ts'
 import type { AnyModel, ModelDefinition } from '../model/define-model.ts'
 

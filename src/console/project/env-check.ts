@@ -17,7 +17,7 @@
  * @module
  */
 import { join } from 'node:path'
-import { looksSecret } from '@strutvane/devkit'
+import { looksSecret } from '../../devkit/index.ts'
 import { ENV_KEY, type EnvFile, readEnvFile } from './env-file.ts'
 
 /** Kinds of env problem. */

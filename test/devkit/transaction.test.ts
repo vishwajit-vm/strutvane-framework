@@ -1,14 +1,14 @@
 /** Multi-file transactions: all or nothing, rollback, crash recovery. */
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { type DevkitError, TransactionAbortedError } from '../src/errors.ts'
-import { type DevkitIo, nodeIo } from '../src/io.ts'
+import { type DevkitError, TransactionAbortedError } from '../../src/devkit/errors.ts'
+import { type DevkitIo, nodeIo } from '../../src/devkit/io.ts'
 import {
   commitTransaction,
   hasInterruptedTransaction,
   recoverTransactions,
   stagingDir,
-} from '../src/transaction.ts'
+} from '../../src/devkit/transaction.ts'
 import {
   failingWriteIo,
   faultyIo,

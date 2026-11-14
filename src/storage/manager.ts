@@ -4,7 +4,7 @@
  *
  * @module
  */
-import type { StorageDisk } from '@strutvane/contracts'
+import type { StorageDisk } from '../contracts/index.ts'
 import { tenantDisk } from './tenant-disk.ts'
 
 /** Named disks. */

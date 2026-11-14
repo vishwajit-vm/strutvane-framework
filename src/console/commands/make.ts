@@ -8,7 +8,7 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { GeneratedFile } from '@strutvane/devkit'
+import type { GeneratedFile } from '../../devkit/index.ts'
 import { type AnyCommand, type CommandContext, defineCommand } from '../framework/command.ts'
 import { CliError, usageError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'

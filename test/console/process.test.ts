@@ -9,14 +9,14 @@ import { mkdirSync, symlinkSync } from 'node:fs'
 import { join, parse } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, test, vi } from 'vitest'
-import { defineCommand } from '../src/framework/command.ts'
-import { EXIT } from '../src/framework/exit-codes.ts'
+import { defineCommand } from '../../src/console/framework/command.ts'
+import { EXIT } from '../../src/console/framework/exit-codes.ts'
 import {
   type ClackApi,
   createInteractivePrompter,
   createNonInteractivePrompter,
-} from '../src/framework/prompter.ts'
-import { runCli } from '../src/framework/run.ts'
+} from '../../src/console/framework/prompter.ts'
+import { runCli } from '../../src/console/framework/run.ts'
 import {
   childEnvironment,
   createNodeServices,
@@ -24,8 +24,8 @@ import {
   exitCodeForSignal,
   needsShell,
   resolveWindowsCommand,
-} from '../src/framework/services.ts'
-import { main } from '../src/main.ts'
+} from '../../src/console/framework/services.ts'
+import { main } from '../../src/console/main.ts'
 import {
   type BoundaryFacts,
   declaresCli,
@@ -33,8 +33,12 @@ import {
   isOwnedByCurrentUser,
   processBoundary,
   readManifest,
-} from '../src/project/boundary.ts'
-import { isInNodeModules, isInside, resolveContribution } from '../src/project/contributions.ts'
+} from '../../src/console/project/boundary.ts'
+import {
+  isInNodeModules,
+  isInside,
+  resolveContribution,
+} from '../../src/console/project/contributions.ts'
 import {
   expandPackageName,
   findProjectRoot,
@@ -42,12 +46,12 @@ import {
   isValidPackageName,
   packageManagerCommand,
   readInstalledPackage,
-} from '../src/project/project.ts'
+} from '../../src/console/project/project.ts'
 import { cleanupTempDirs, cli, installFakePackage, makeProject, tempDir, write } from './helpers.ts'
 
 afterAll(cleanupTempDirs)
 
-const BIN = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
+const BIN = fileURLToPath(new URL('../../src/console/bin.ts', import.meta.url))
 
 describe('the real executable (child process)', () => {
   const run = (cwd: string, args: string[]) =>

@@ -6,6 +6,8 @@
  *
  * @module
  */
+
+import { z } from 'zod'
 import {
   type Actor,
   type FieldDescriptor,
@@ -14,9 +16,8 @@ import {
   type ResourceCapabilities,
   type ResourceDescriptor,
   type ResourceManifest,
-} from '@strutvane/contracts'
-import type { HookRegistry } from '@strutvane/core'
-import { z } from 'zod'
+} from '../contracts/index.ts'
+import type { HookRegistry } from '../core/index.ts'
 import { permissionFor } from '../http/permissions.ts'
 import {
   ACTION_PERMISSIONS,

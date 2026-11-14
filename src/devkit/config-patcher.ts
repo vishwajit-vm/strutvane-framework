@@ -27,8 +27,9 @@
  *
  * @module
  */
-import type { InstallConfig } from '@strutvane/contracts'
+
 import { parseModule } from 'magicast'
+import type { InstallConfig } from '../contracts/index.ts'
 import { DevkitError, describeError } from './errors.ts'
 import { fromLines, shapeOf, toLines } from './text.ts'
 

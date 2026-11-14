@@ -30,7 +30,7 @@ import type {
   PutOptions,
   StorageDisk,
   StoredFile,
-} from '@strutvane/contracts'
+} from '../contracts/index.ts'
 import { FileNotFoundError, measuring, toStream } from './body.ts'
 import { assertSafeKey, assertSafePrefix, UnsafeKeyError } from './keys.ts'
 import { signUrl } from './signing.ts'

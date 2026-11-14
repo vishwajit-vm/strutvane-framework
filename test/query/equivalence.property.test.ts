@@ -3,9 +3,10 @@
  * engines. fast-check generates filter trees over every comparable kind, NULLs, wildcard and
  * case-tricky text, and actor references; each is run as SQL and in memory and compared.
  */
-import type { Actor, QueryFilter } from '@strutvane/contracts'
+
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { Actor, QueryFilter } from '../../src/contracts/index.ts'
 import type { DataRecord, Repository } from '../../src/data/repository.ts'
 import { defineModel } from '../../src/model/define-model.ts'
 import { field } from '../../src/model/field.ts'

@@ -5,7 +5,7 @@
  *
  * @module
  */
-import type { Logger, PermissionProvider } from '@strutvane/contracts'
+import type { Logger, PermissionProvider } from '../contracts/index.ts'
 import type { Clock } from './clock.ts'
 import { type Token, token } from './container.ts'
 import type { ErrorRegistry } from './errors/registry.ts'

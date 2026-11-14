@@ -14,8 +14,8 @@
  *
  * @module
  */
-import type { StorageDisk } from '@strutvane/contracts'
-import { defineProvider, ErrorRegistryToken, type Provider } from '@strutvane/core'
+import type { StorageDisk } from './contracts/index.ts'
+import { defineProvider, ErrorRegistryToken, type Provider } from './core/index.ts'
 import { connectDatabase, type DatabaseConfig } from './database/connect.ts'
 import type { Database } from './database/types.ts'
 import { registerFrameworkErrors } from './messages.ts'

@@ -8,7 +8,7 @@ import {
   formatMessage,
   localeChain,
   negotiateLocale,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 describe('formatMessage', () => {
   test('substitutes params and formats numbers for the locale', () => {

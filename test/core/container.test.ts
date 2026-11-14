@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { ContainerError, createContainer, token } from '../src/index.ts'
+import { ContainerError, createContainer, token } from '../../src/core/index.ts'
 
 const Num = token<number>('num')
 const Str = token<string>('str')

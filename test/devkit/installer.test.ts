@@ -1,12 +1,12 @@
 /** The installer runtime: transactional, previewable, idempotent, reversible. */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import type { DevkitError } from '../src/errors.ts'
+import type { DevkitError } from '../../src/devkit/errors.ts'
 import {
   checkIdempotent,
   type DevkitInstaller,
   defineInstaller,
   runInstaller,
-} from '../src/installer.ts'
+} from '../../src/devkit/installer.ts'
 import { faultyIo, readFile, rejectionOf, snapshot, tempProject, writeFiles } from './helpers.ts'
 
 const CONFIG = `import { defineConfig } from '@strutvane/core'

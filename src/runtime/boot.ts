@@ -4,7 +4,7 @@
  *
  * @module
  */
-import { type Application, createApp } from '@strutvane/core'
+import { type Application, createApp } from '../core/index.ts'
 import { createHttpApp, type HttpApp } from '../http/create-http-app.ts'
 import type { TrustProxy } from '../http/proxy.ts'
 import type { ResourceConfig } from '../http/resource.ts'

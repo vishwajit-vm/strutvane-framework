@@ -14,7 +14,7 @@ import type {
   QueryFilter,
   ResourceManifest,
   StandardSchemaV1,
-} from '../src/index.ts'
+} from '../../src/contracts/index.ts'
 
 describe('Permission', () => {
   test('accepts resource.action, resource wildcards and the global wildcard', () => {

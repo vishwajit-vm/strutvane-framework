@@ -5,7 +5,6 @@
  */
 import { existsSync, readdirSync, readFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import { runGenerator } from '@strutvane/devkit'
 import fc from 'fast-check'
 import { parseSync } from 'oxc-parser'
 import { afterAll, describe, expect, test } from 'vitest'
@@ -15,11 +14,12 @@ import {
   modifierInfo,
   parseFieldSpec,
   typeInfo,
-} from '../src/make/fields.ts'
-import { FieldSchema, factoryGenerator, modelGenerator } from '../src/make/generators.ts'
-import { names, WINDOWS_RESERVED } from '../src/make/names.ts'
-import { factoryTemplate, fieldBuilder, modelTemplate } from '../src/make/templates.ts'
-import { assertNoLink, UnsafeOutputPathError } from '../src/registry/compiler.ts'
+} from '../../src/console/make/fields.ts'
+import { FieldSchema, factoryGenerator, modelGenerator } from '../../src/console/make/generators.ts'
+import { names, WINDOWS_RESERVED } from '../../src/console/make/names.ts'
+import { factoryTemplate, fieldBuilder, modelTemplate } from '../../src/console/make/templates.ts'
+import { assertNoLink, UnsafeOutputPathError } from '../../src/console/registry/compiler.ts'
+import { runGenerator } from '../../src/devkit/index.ts'
 import { cleanupTempDirs, cli, makeProject, tempDir, write } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

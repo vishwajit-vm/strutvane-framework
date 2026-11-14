@@ -1,5 +1,5 @@
-import { NotFoundError, ValidationError } from '@strutvane/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { NotFoundError, ValidationError } from '../../src/core/index.ts'
 import { PolicyViolationError, TenantRequiredError } from '../../src/data/repository.ts'
 import { defineModel } from '../../src/model/define-model.ts'
 import { field } from '../../src/model/field.ts'

@@ -8,7 +8,7 @@
  */
 import fc from 'fast-check'
 import { describe, expect, test } from 'vitest'
-import { hasConflictMarkers, mergeThreeWay } from '../../src/merge/merge.ts'
+import { hasConflictMarkers, mergeThreeWay } from '../../../src/devkit/merge/merge.ts'
 
 const { PROPERTY_RUNS } = process.env
 const RUNS = Number(PROPERTY_RUNS ?? 400)

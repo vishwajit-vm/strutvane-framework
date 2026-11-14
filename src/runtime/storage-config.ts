@@ -24,7 +24,7 @@
  * @module
  */
 import { isAbsolute, join } from 'node:path'
-import type { StorageDisk } from '@strutvane/contracts'
+import type { StorageDisk } from '../contracts/index.ts'
 import { createLocalDisk } from '../storage/local-disk.ts'
 import { createMemoryDisk } from '../storage/memory-disk.ts'
 import type { SignedFileOptions } from '../storage/serve-signed.ts'

@@ -1,8 +1,8 @@
 /** `package.json` editing: never replace the developer's choice, never commit a local-only spec. */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { createDepsEditor, detectIndent } from '../src/deps-editor.ts'
-import type { DevkitError } from '../src/errors.ts'
-import { createStagedFs, type StagedFs } from '../src/staged-fs.ts'
+import { createDepsEditor, detectIndent } from '../../src/devkit/deps-editor.ts'
+import type { DevkitError } from '../../src/devkit/errors.ts'
+import { createStagedFs, type StagedFs } from '../../src/devkit/staged-fs.ts'
 import { rejectionOf, tempProject, writeFiles } from './helpers.ts'
 
 let projectRoot: string

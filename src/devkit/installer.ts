@@ -11,7 +11,7 @@
  *
  * @module
  */
-import type { InstallContext, Installer, InstallLogger } from '@strutvane/contracts'
+import type { InstallContext, Installer, InstallLogger } from '../contracts/index.ts'
 import { type ConfigPatcher, createConfigPatcher } from './config-patcher.ts'
 import { createDepsEditor, type DepsEditor } from './deps-editor.ts'
 import { createEnvEditor, type EnvEditor } from './env-editor.ts'

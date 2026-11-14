@@ -12,7 +12,7 @@
  *
  * @module
  */
-import type { Actor, FilterOperator, QueryFilter } from '@strutvane/contracts'
+import type { Actor, FilterOperator, QueryFilter } from '../contracts/index.ts'
 import { type FilterValue, filterValue, ValueError } from '../data/values.ts'
 import { operatorsFor } from '../model/field.ts'
 import type { QueryField } from './fields.ts'

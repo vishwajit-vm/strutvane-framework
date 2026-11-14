@@ -13,7 +13,7 @@ import {
   registerSensitiveKeys,
   sensitiveKeyMatcher,
   toLoggable,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 const CANARY = 'canary-value-0001'
 

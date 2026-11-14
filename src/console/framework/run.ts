@@ -17,8 +17,8 @@
  */
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { Logger } from '@strutvane/contracts'
-import { createLogger, type ErrorParams } from '@strutvane/core'
+import type { Logger } from '../../contracts/index.ts'
+import { createLogger, type ErrorParams } from '../../core/index.ts'
 import {
   envFileOverlay,
   isSafeAppEnv,

@@ -3,8 +3,9 @@
  * when chosen, authenticated elsewhere, absent when the document is off), as script-free HTML
  * whose every document value is escaped.
  */
-import type { Actor } from '@strutvane/contracts'
+
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Actor } from '../../src/contracts/index.ts'
 import { DOCS_PAGE_CSP, escapeHtml, renderDocsPage } from '../../src/http/docs-page.ts'
 import { createTestApp, type TestApp } from '../../src/testing/index.ts'
 import { Customer, Invoice } from '../helpers/models.ts'

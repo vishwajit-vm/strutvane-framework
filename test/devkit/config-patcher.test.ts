@@ -1,8 +1,8 @@
 /** `strutvane.config.ts` patching with magicast: comments survive, unknown shapes are refused. */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { createConfigPatcher, providerLocalName } from '../src/config-patcher.ts'
-import type { DevkitError } from '../src/errors.ts'
-import { createStagedFs, type StagedFs } from '../src/staged-fs.ts'
+import { createConfigPatcher, providerLocalName } from '../../src/devkit/config-patcher.ts'
+import type { DevkitError } from '../../src/devkit/errors.ts'
+import { createStagedFs, type StagedFs } from '../../src/devkit/staged-fs.ts'
 import { rejectionOf, tempProject, writeFiles } from './helpers.ts'
 
 const CONFIG = `// Strutvane project configuration. Edited by hand AND by \`sv add\`.

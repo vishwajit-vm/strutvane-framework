@@ -15,7 +15,7 @@ import {
   token,
   toProblem,
   ValidationError,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 test('README quick start', async () => {
   // --- README: Quick start ---

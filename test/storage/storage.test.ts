@@ -1,9 +1,9 @@
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { StorageDisk } from '@strutvane/contracts'
 import fc from 'fast-check'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { StorageDisk } from '../../src/contracts/index.ts'
 import { FileNotFoundError } from '../../src/storage/body.ts'
 import {
   assertSafeKey,

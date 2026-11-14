@@ -14,8 +14,8 @@
  *
  * @module
  */
-import type { StorageDisk } from '@strutvane/contracts'
-import { ForbiddenError, NotFoundError, StrutvaneError } from '@strutvane/core'
+import type { StorageDisk } from '../contracts/index.ts'
+import { ForbiddenError, NotFoundError, StrutvaneError } from '../core/index.ts'
 import { FileNotFoundError } from './body.ts'
 import { assertSafeKey } from './keys.ts'
 import { ACTIVE_CONTENT } from './mime.ts'

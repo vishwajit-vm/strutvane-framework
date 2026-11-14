@@ -20,7 +20,7 @@
  *
  * @module
  */
-import type { InstallFs } from '@strutvane/contracts'
+import type { InstallFs } from '../contracts/index.ts'
 import { DevkitError } from './errors.ts'
 import { type DevkitIo, nodeIo } from './io.ts'
 import { normaliseRelativePath, resolveInsideProject } from './paths.ts'

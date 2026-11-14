@@ -16,8 +16,8 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import { RegistryCompiler } from '../../src/registry/compiler.ts'
-import { discover } from '../../src/registry/discover.ts'
+import { RegistryCompiler } from '../../../src/console/registry/compiler.ts'
+import { discover } from '../../../src/console/registry/discover.ts'
 import { cleanupTempDirs, median, modelSource, stressProject } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

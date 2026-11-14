@@ -4,12 +4,12 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { createTestClock } from '@strutvane/core'
-import { BUILTIN_COMMANDS } from '../src/commands/builtins.ts'
-import type { AnyCommand } from '../src/framework/command.ts'
-import type { Prompter } from '../src/framework/prompter.ts'
-import { type JsonEnvelope, runCli } from '../src/framework/run.ts'
-import type { Spawner, SpawnOptions, SpawnResult } from '../src/framework/services.ts'
+import { BUILTIN_COMMANDS } from '../../src/console/commands/builtins.ts'
+import type { AnyCommand } from '../../src/console/framework/command.ts'
+import type { Prompter } from '../../src/console/framework/prompter.ts'
+import { type JsonEnvelope, runCli } from '../../src/console/framework/run.ts'
+import type { Spawner, SpawnOptions, SpawnResult } from '../../src/console/framework/services.ts'
+import { createTestClock } from '../../src/core/index.ts'
 import { tempDir, writeFiles } from './registry/helpers.ts'
 
 export {

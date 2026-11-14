@@ -6,7 +6,7 @@
  *
  * @module
  */
-import { PROBLEM_CONTENT_TYPE, type Problem } from '@strutvane/contracts'
+import { PROBLEM_CONTENT_TYPE, type Problem } from '../contracts/index.ts'
 import {
   type ErrorRegistry,
   type IssueInput,
@@ -14,7 +14,7 @@ import {
   StrutvaneError,
   toProblem,
   ValidationError,
-} from '@strutvane/core'
+} from '../core/index.ts'
 import { FilterError } from '../query/bind.ts'
 import { CursorError, SortError } from '../query/sort.ts'
 

@@ -24,8 +24,8 @@ import {
   type ListQuery,
   type QueryFilter,
   type SortDirective,
-} from '@strutvane/contracts'
-import type { IssueInput } from '@strutvane/core'
+} from '../contracts/index.ts'
+import type { IssueInput } from '../core/index.ts'
 import { filterValue, ValueError } from '../data/values.ts'
 import type { QueryField } from '../query/fields.ts'
 

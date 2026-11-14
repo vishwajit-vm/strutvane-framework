@@ -4,7 +4,7 @@
  * @module
  */
 
-export { HTTP_HOOKS } from '@strutvane/contracts'
+export { HTTP_HOOKS } from '../contracts/index.ts'
 export type {
   HttpRequestHookPayload,
   HttpResponseHookPayload,

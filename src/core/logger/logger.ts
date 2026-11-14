@@ -21,7 +21,7 @@ import {
   type Logger,
   type LogLevel,
   type LogRecord,
-} from '@strutvane/contracts'
+} from '../../contracts/index.ts'
 import { type Clock, systemClock } from '../clock.ts'
 import { currentContext, type RequestContext } from '../context.ts'
 import {

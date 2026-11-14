@@ -1,6 +1,6 @@
-import type { StandardSchemaV1 } from '@strutvane/contracts'
 import { describe, expect, test } from 'vitest'
 import { z } from 'zod'
+import type { StandardSchemaV1 } from '../../src/contracts/index.ts'
 import {
   currentContext,
   deepFreeze,
@@ -9,7 +9,7 @@ import {
   EnvValidationError,
   getConfigValue,
   runWithContext,
-} from '../src/index.ts'
+} from '../../src/core/index.ts'
 
 describe('config', () => {
   test('defineConfig deep-freezes, including arrays and nested objects', () => {

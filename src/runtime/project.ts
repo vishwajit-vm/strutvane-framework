@@ -16,7 +16,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Provider } from '@strutvane/core'
+import type { Provider } from '../core/index.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import { isRouteDefinition, type RouteDefinition } from '../http/route.ts'
 import type { AnyModel } from '../model/define-model.ts'

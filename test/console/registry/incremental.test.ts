@@ -1,7 +1,7 @@
 import { renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import { RegistryCompiler } from '../../src/registry/compiler.ts'
+import { RegistryCompiler } from '../../../src/console/registry/compiler.ts'
 import { cleanupTempDirs, copyFixture, modelSource } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

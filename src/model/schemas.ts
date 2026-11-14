@@ -12,8 +12,9 @@
  *
  * @module
  */
-import type { IssueInput } from '@strutvane/core'
+
 import { z } from 'zod'
+import type { IssueInput } from '../core/index.ts'
 import { columnName, type ModelDefinition } from './define-model.ts'
 import { type FieldDef, isNumericKind, isTextKind } from './field.ts'
 

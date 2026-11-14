@@ -5,10 +5,10 @@
  * installed in the project (the framework has no Vite of its own, by design).
  */
 import { connect } from 'node:net'
-import { HTTP_HOOKS } from '@strutvane/contracts'
-import { HooksToken } from '@strutvane/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { projectViteBin } from '../../src/commands.ts'
+import { HTTP_HOOKS } from '../../src/contracts/index.ts'
+import { HooksToken } from '../../src/core/index.ts'
 import {
   FRAMEWORK_PATHS,
   isExcludedPath,

@@ -1,8 +1,15 @@
 /** Text shape helpers and template headers. */
 import { describe, expect, test } from 'vitest'
-import { formatHeader, parseHeader } from '../src/merge/header.ts'
-import { hasConflictMarkers, mergeThreeWay, mergeTwoWay } from '../src/merge/merge.ts'
-import { fromLines, lineKey, matchLineEndings, mergeShapes, shapeOf, toLines } from '../src/text.ts'
+import { formatHeader, parseHeader } from '../../src/devkit/merge/header.ts'
+import { hasConflictMarkers, mergeThreeWay, mergeTwoWay } from '../../src/devkit/merge/merge.ts'
+import {
+  fromLines,
+  lineKey,
+  matchLineEndings,
+  mergeShapes,
+  shapeOf,
+  toLines,
+} from '../../src/devkit/text.ts'
 
 describe('shapeOf / toLines / fromLines', () => {
   test('detects line endings, BOM and final newline', () => {

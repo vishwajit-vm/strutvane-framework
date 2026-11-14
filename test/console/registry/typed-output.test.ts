@@ -7,7 +7,7 @@ import { writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import { RegistryCompiler } from '../../src/registry/compiler.ts'
+import { RegistryCompiler } from '../../../src/console/registry/compiler.ts'
 import { cleanupTempDirs, copyFixture } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

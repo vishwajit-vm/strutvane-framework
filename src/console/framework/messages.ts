@@ -9,7 +9,12 @@
  *
  * @module
  */
-import { createMessages, defineMessages, type MessageCatalog, type Messages } from '@strutvane/core'
+import {
+  createMessages,
+  defineMessages,
+  type MessageCatalog,
+  type Messages,
+} from '../../core/index.ts'
 
 /** English messages for every CLI error code. */
 export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {

@@ -2,8 +2,8 @@
 import { symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { DevkitError } from '../src/errors.ts'
-import { createStagedFs } from '../src/staged-fs.ts'
+import { DevkitError } from '../../src/devkit/errors.ts'
+import { createStagedFs } from '../../src/devkit/staged-fs.ts'
 import { faultyIo, readFile, rejectionOf, snapshot, tempProject, writeFiles } from './helpers.ts'
 
 let projectRoot: string

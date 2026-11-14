@@ -4,7 +4,7 @@
  *
  * @module
  */
-import { type Token, token } from '@strutvane/core'
+import { type Token, token } from './core/index.ts'
 import type { Database } from './database/types.ts'
 import type { AnyModel } from './model/define-model.ts'
 import type { ModelRegistry } from './model/registry.ts'

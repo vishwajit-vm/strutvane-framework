@@ -20,7 +20,7 @@
  * @module
  */
 import { randomBytes } from 'node:crypto'
-import type { EnvVar, InstallEnv } from '@strutvane/contracts'
+import type { EnvVar, InstallEnv } from '../contracts/index.ts'
 import { DevkitError } from './errors.ts'
 import { ENV_LINE_KEY } from './secret-files.ts'
 import { fromLines, shapeOf, type TextShape, toLines } from './text.ts'

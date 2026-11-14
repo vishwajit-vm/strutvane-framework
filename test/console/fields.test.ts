@@ -9,7 +9,7 @@ import {
   formatFieldSpec,
   parseFieldSpec,
   parseFieldSpecs,
-} from '../src/make/fields.ts'
+} from '../../src/console/make/fields.ts'
 
 /** Assert that parsing fails with a given code at a given column. */
 function fails(spec: string, code: string, column?: number): FieldSpecError {

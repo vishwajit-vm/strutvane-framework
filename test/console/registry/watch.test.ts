@@ -6,8 +6,8 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import type { WriteResult } from '../../src/registry/compiler.ts'
-import { watchProject } from '../../src/registry/watch.ts'
+import type { WriteResult } from '../../../src/console/registry/compiler.ts'
+import { watchProject } from '../../../src/console/registry/watch.ts'
 import { cleanupTempDirs, copyFixture, modelSource, waitFor, writeFiles } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

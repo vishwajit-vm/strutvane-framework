@@ -9,7 +9,7 @@
  *
  * @module
  */
-import type { IssueParam, Problem, ValidationIssue } from '@strutvane/contracts'
+import type { IssueParam, Problem, ValidationIssue } from '../../contracts/index.ts'
 import { createMessages, type MessageOverrides, type Messages } from '../messages/catalog.ts'
 import { type IssueInput, StrutvaneError, ValidationError } from './errors.ts'
 import { createErrorRegistry, type ErrorRegistry } from './registry.ts'

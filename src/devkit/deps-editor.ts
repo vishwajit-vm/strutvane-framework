@@ -11,7 +11,7 @@
  *
  * @module
  */
-import type { InstallDeps } from '@strutvane/contracts'
+import type { InstallDeps } from '../contracts/index.ts'
 import { DevkitError, describeError } from './errors.ts'
 import { shapeOf } from './text.ts'
 

@@ -8,7 +8,7 @@
  *
  * @module
  */
-import type { ProblemCode } from '@strutvane/contracts'
+import type { ProblemCode } from '../../contracts/index.ts'
 
 /** What a problem code means. */
 export interface ErrorDefinition {

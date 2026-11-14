@@ -1,7 +1,7 @@
 {
   "name": "@strutvane/framework",
   "version": "0.1.0-next.0",
-  "description": "The Strutvane backend and database core: model DSL, migrations, data access with tenant isolation, an automatic CRUD API with OpenAPI, storage and uploads, and testing helpers.",
+  "description": "The Strutvane backend and database core: model DSL, migrations, data access with tenant isolation, an automatic CRUD API with OpenAPI, storage and uploads, and testing helpers, plus the kernel (core), shared contracts, the CLI (console) and the installer/generator SDK (devkit).",
   "keywords": [
     "strutvane",
     "typescript",
@@ -51,7 +51,27 @@
       "types": "./dist/testing/index.d.mts",
       "default": "./dist/testing/index.mjs"
     },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.mts",
+      "default": "./dist/contracts/index.mjs"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.mts",
+      "default": "./dist/core/index.mjs"
+    },
+    "./devkit": {
+      "types": "./dist/devkit/index.d.mts",
+      "default": "./dist/devkit/index.mjs"
+    },
+    "./console": {
+      "types": "./dist/console/index.d.mts",
+      "default": "./dist/console/index.mjs"
+    },
     "./package.json": "./package.json"
+  },
+  "bin": {
+    "strutvane": "dist/console/bin.mjs",
+    "strutvane-cli": "dist/console/bin.mjs"
   },
   "files": [
     "dist",
@@ -61,7 +81,6 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@12.18.0",
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -76,16 +95,20 @@
     "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "test:perf": "vitest run --config vitest.perf.config.ts"
   },
   "dependencies": {
+    "@clack/prompts": "1.9.0",
     "@hono/zod-openapi": "1.6.3",
-    "@strutvane/contracts": "0.1.0-next.0",
-    "@strutvane/core": "0.1.0-next.0",
     "busboy": "1.6.0",
+    "diff": "9.0.0",
     "drizzle-kit": "0.31.11",
     "drizzle-orm": "0.45.4",
     "hono": "4.13.18",
+    "magicast": "0.5.5",
+    "node-diff3": "3.2.1",
+    "oxc-parser": "0.158.0",
     "zod": "4.6.7"
   },
   "peerDependencies": {
@@ -123,5 +146,10 @@
   "strutvane": {
     "commands": "./dist/commands.mjs",
     "compat": "^0.1.0-next.0"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
   }
 }

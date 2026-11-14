@@ -3,8 +3,9 @@
  * queries (GET filters/sort/search, `POST /query`, cursors) may only reference the fields it
  * returns. Without the method, the model's own allow-lists apply unchanged.
  */
-import type { Actor, PermissionProvider } from '@strutvane/contracts'
+
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Actor, PermissionProvider } from '../../src/contracts/index.ts'
 import { defineModel } from '../../src/model/define-model.ts'
 import { field } from '../../src/model/field.ts'
 import { narrowQueryFields, queryFields } from '../../src/query/fields.ts'

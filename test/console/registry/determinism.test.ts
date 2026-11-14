@@ -2,8 +2,8 @@ import { readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import { compileProject } from '../../src/registry/compiler.ts'
-import { verifyContentHash } from '../../src/registry/emit.ts'
+import { compileProject } from '../../../src/console/registry/compiler.ts'
+import { verifyContentHash } from '../../../src/console/registry/emit.ts'
 import { cleanupTempDirs, copyFixture, FIXTURE_DIR, project } from './helpers.ts'
 
 afterAll(cleanupTempDirs)

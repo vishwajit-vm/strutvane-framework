@@ -2,7 +2,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { type DevkitIo, nodeIo } from '../src/io.ts'
+import { type DevkitIo, nodeIo } from '../../src/devkit/io.ts'
 
 /** A fresh temp directory and its cleanup. */
 export async function tempProject(): Promise<{ root: string; cleanup: () => Promise<void> }> {

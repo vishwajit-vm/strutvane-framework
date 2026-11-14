@@ -1,5 +1,5 @@
 /** Create a migrated database for a set of models. */
-import { createUuidV7Generator } from '@strutvane/core'
+import { createUuidV7Generator } from '../../src/core/index.ts'
 import { createRepository, type Repository } from '../../src/data/repository.ts'
 import type { Database, Dialect } from '../../src/database/types.ts'
 import { migrationSource } from '../../src/migrations/files.ts'

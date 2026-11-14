@@ -4,17 +4,17 @@
  */
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { DevkitError, TransactionAbortedError } from '../../src/errors.ts'
-import { nodeIo, sha256 } from '../../src/io.ts'
-import { basePathOf, LOCK_PATH, readLock } from '../../src/merge/lock.ts'
+import { DevkitError, TransactionAbortedError } from '../../../src/devkit/errors.ts'
+import { nodeIo, sha256 } from '../../../src/devkit/io.ts'
+import { basePathOf, LOCK_PATH, readLock } from '../../../src/devkit/merge/lock.ts'
 import {
   applyUpgrade,
   planUpgrade,
   recordEjection,
   renderUpgradePreview,
   type TemplateOutput,
-} from '../../src/merge/upgrade.ts'
-import { recoverTransactions } from '../../src/transaction.ts'
+} from '../../../src/devkit/merge/upgrade.ts'
+import { recoverTransactions } from '../../../src/devkit/transaction.ts'
 import {
   CONTROLLER_V1,
   CONTROLLER_V2,

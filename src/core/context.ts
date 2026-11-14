@@ -9,7 +9,7 @@
  * @module
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Actor, TenantContext } from '@strutvane/contracts'
+import type { Actor, TenantContext } from '../contracts/index.ts'
 
 /** Data about the current request. Every field is optional. */
 export interface RequestContext {

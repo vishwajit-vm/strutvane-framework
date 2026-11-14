@@ -9,7 +9,7 @@ import type {
   StorageDisk,
   StoredFile,
   ValidationIssue,
-} from '../src/index.ts'
+} from '../../src/contracts/index.ts'
 
 describe('ValidationIssue / Problem.issues (RFC-0003)', () => {
   test('issues carry a path, a stable code, params and a rendered message', () => {

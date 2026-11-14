@@ -16,7 +16,7 @@ import {
   type MergeOptions,
   mergeThreeWay,
   mergeTwoWay,
-} from '../../src/merge/merge.ts'
+} from '../../../src/devkit/merge/merge.ts'
 import {
   CONTROLLER_V1,
   CONTROLLER_V2,
