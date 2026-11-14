@@ -10,7 +10,8 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { readdir, readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createUuidV7Generator } from '@strutvane/core'
 import { connectDatabase } from './database/connect.ts'
@@ -18,6 +19,7 @@ import { answersResolver } from './migrations/files.ts'
 import type { RenameDecision } from './migrations/planner.ts'
 import { createModelRegistry } from './model/registry.ts'
 import { firstAppEnv } from './runtime/app-env.ts'
+import { findViteConfig, projectPackageManifest } from './runtime/dev-ui.ts'
 import { migrateProject, migrationTarget, projectMigrationStatus } from './runtime/migrations.ts'
 import { importDefault, type LoadedProject, loadProject } from './runtime/project.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
@@ -151,6 +153,41 @@ const statusCommand: ContributedCommand = {
   },
 }
 
+/** `invoice-line.seeder.ts` → `InvoiceLineSeeder` (the `--class` naming rule, reversed). */
+export function seederClassName(file: string): string {
+  const base = file.replace(/\.seeder\.ts$/, '')
+  const pascal = base
+    .split(/[-_.]/)
+    .filter((part) => part !== '')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')
+  return `${pascal}Seeder`
+}
+
+/** Seeder files in `dir` other than `database.seeder.ts`, sorted. Missing folder → none. */
+export async function seederFiles(dir: string): Promise<string[]> {
+  try {
+    return (await readdir(dir))
+      .filter((f) => f.endsWith('.seeder.ts') && f !== 'database.seeder.ts')
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The seeder files `sv db:seed` should warn about: when `DatabaseSeeder` ran nothing besides
+ * itself while other seeder files exist, every one of them (it ran "successfully" and seeded no
+ * rows, which looks like a broken seeder rather than an unregistered one). Empty otherwise.
+ */
+export function idleSeeders(
+  ran: readonly string[],
+  files: readonly string[],
+): { readonly file: string; readonly name: string }[] {
+  if (ran.some((name) => name !== 'DatabaseSeeder')) return []
+  return files.map((file) => ({ file, name: seederClassName(file) }))
+}
+
 const seedCommand: ContributedCommand = {
   name: 'db:seed',
   description: 'Run the database seeders',
@@ -181,6 +218,21 @@ const seedCommand: ContributedCommand = {
         ids: createUuidV7Generator(),
       })
       for (const name of ran) ctx.out.success(`Seeded ${name}`)
+      if (!cls) {
+        const unregistered = idleSeeders(ran, await seederFiles(dir))
+        if (unregistered.length > 0) {
+          ctx.out.warn(
+            `DatabaseSeeder ran no other seeder, but ${dir} has ${unregistered.map((u) => u.file).join(', ')}.`,
+          )
+          ctx.out.warn(
+            `Register them in database.seeder.ts, parents before children: ${unregistered
+              .map((u) => `await call(${u.name})`)
+              .join(
+                '; ',
+              )} (sv make:model does this for new models), or run one with sv db:seed --class ${unregistered[0]?.name ?? ''}.`,
+          )
+        }
+      }
       return { data: { ran } }
     } finally {
       await db.close()
@@ -195,7 +247,7 @@ const serverFlags = {
 
 const startCommand: ContributedCommand = {
   name: 'start',
-  description: 'Start the app server',
+  description: 'Start the app server (the API, and the built UI from dist/web when present)',
   flags: serverFlags,
   async run(ctx) {
     const root = ctx.requireProject().root
@@ -216,7 +268,8 @@ const startCommand: ContributedCommand = {
 
 const devCommand: ContributedCommand = {
   name: 'dev',
-  description: 'Start the app server and restart it when app/, config/ or .env change',
+  description:
+    "Serve the API and the web UI (the project's Vite, with HMR) on one port; restart on app/, config/ or .env changes",
   flags: serverFlags,
   async run(ctx) {
     const root = ctx.requireProject().root
@@ -241,6 +294,24 @@ const devCommand: ContributedCommand = {
   },
 }
 
+/**
+ * The project's Vite CLI script, when the project has a `vite.config.*` and `vite` installed
+ * (resolved from the project root, the same rule `sv dev` uses; never this package's).
+ */
+export async function projectViteBin(root: string): Promise<string | undefined> {
+  if (findViteConfig(root) === undefined) return undefined
+  const manifest = projectPackageManifest(root, 'vite')
+  if (manifest === undefined) return undefined
+  const pkg = JSON.parse(await readFile(manifest, 'utf8')) as { bin?: unknown }
+  const bin =
+    typeof pkg.bin === 'string'
+      ? pkg.bin
+      : typeof pkg.bin === 'object' && pkg.bin !== null
+        ? (pkg.bin as Record<string, unknown>)['vite']
+        : undefined
+  return typeof bin === 'string' ? join(dirname(manifest), bin) : undefined
+}
+
 const buildCommand: ContributedCommand = {
   name: 'build',
   description: 'Check that the app boots (models, config, routes) and build the web UI with Vite',
@@ -251,8 +322,8 @@ const buildCommand: ContributedCommand = {
     ctx.out.success(
       `Project loads: ${project.models.length} model(s), ${project.routes.length} route(s)`,
     )
-    const vite = join(root, 'node_modules', 'vite', 'bin', 'vite.js')
-    if (!existsSync(join(root, 'vite.config.ts')) || !existsSync(vite)) return undefined
+    const vite = await projectViteBin(root)
+    if (vite === undefined) return undefined
     const code = await new Promise<number>((resolve) => {
       spawn(process.execPath, [vite, 'build'], { cwd: root, stdio: 'inherit' }).on('exit', (c) =>
         resolve(c ?? 1),

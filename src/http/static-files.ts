@@ -22,6 +22,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
+import { isExcludedPath } from './ui-paths.ts'
 
 /** Options for {@link createStaticFiles}. */
 export interface StaticFilesOptions {
@@ -134,7 +135,7 @@ export function createStaticFiles(options: StaticFilesOptions): StaticFilesHandl
   return async (request) => {
     if (request.method !== 'GET' && request.method !== 'HEAD') return undefined
     const { pathname } = new URL(request.url)
-    if (exclude.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return undefined
+    if (isExcludedPath(pathname, exclude)) return undefined
     const segments = safeSegments(pathname)
     if (segments === undefined) return undefined
     const direct = segments.length === 0 ? undefined : await fileAt(segments)

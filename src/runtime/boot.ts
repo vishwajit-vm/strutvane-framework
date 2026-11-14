@@ -62,6 +62,8 @@ export async function bootProject(
     readonly env?: string
     /** Serve this built UI folder (e.g. `dist/web`) next to the API (`sv start`). */
     readonly web?: string
+    /** Let unmatched UI requests fall through to the dev server (`sv dev` with Vite). */
+    readonly uiFallthrough?: boolean
   } = {},
 ): Promise<BootedProject> {
   const appConfig = project.config['app'] as
@@ -81,6 +83,7 @@ export async function bootProject(
         ? app.make(ProjectSignedFilesToken)
         : [],
       ...(options.web ? { staticFiles: { root: options.web } } : {}),
+      ...(options.uiFallthrough === true ? { uiFallthrough: true } : {}),
       basePath: apiBasePath(api),
       env,
       openapi: api?.docs !== false,

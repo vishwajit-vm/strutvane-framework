@@ -12,12 +12,16 @@
  *   choice. The request URL is built from the bind address (never from the `Host` header), or
  *   from `publicUrl` when configured; forwarded headers count only with `trustProxy`.
  *
+ * - **A dev UI on the same port.** `prepare(server)` runs before listening (Vite attaches its HMR
+ *   websocket to the server there), and `fallback` gets the Node request and response for
+ *   requests the app marked as unanswered UI requests (`sv dev` passes Vite's middleware).
+ *
  * The handler receives a second argument, {@link ServeBindings}, with the Node request and the
  * resolved client address; Hono exposes it as `c.env` (compatible with `@hono/node-server`).
  *
  * @module
  */
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import {
   clientAddressOf,
@@ -26,6 +30,7 @@ import {
   type TrustProxy,
   trustedHops,
 } from '../http/proxy.ts'
+import { UI_FALLTHROUGH_HEADER } from '../http/ui-paths.ts'
 
 /** What the adapter passes to the handler next to the request (Hono's `c.env`). */
 export interface ServeBindings {
@@ -72,7 +77,27 @@ export interface ServeOptions {
    * when a proxy you control always overwrites them.
    */
   readonly trustProxy?: TrustProxy
+  /**
+   * Runs once the Node server exists and before it listens: the place to attach things that need
+   * the server itself, such as Vite's HMR websocket (`hmr: { server }`), which listens for
+   * `upgrade` events on the same port.
+   */
+  readonly prepare?: (server: Server) => void | Promise<void>
+  /**
+   * A Connect-style Node handler for requests the app marked as UI requests it did not answer
+   * (`createHttpApp({ uiFallthrough: true })`; `sv dev` passes Vite's middleware). It owns the
+   * response, or calls `next()` and the app's own 404 problem is sent. `next(error)` is reported
+   * to `onError` and answered with a bare 500.
+   */
+  readonly fallback?: NodeFallback
 }
+
+/** A Connect-style Node request handler (`vite.middlewares`). */
+export type NodeFallback = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: (error?: unknown) => void,
+) => void
 
 /** Most bytes read and discarded after the app stopped reading a body, before the socket closes. */
 export const MAX_DISCARD_BYTES: number = 1024 * 1024
@@ -183,7 +208,8 @@ async function send(
 ): Promise<void> {
   const cookies = response.headers.getSetCookie()
   const headers: Record<string, string | string[]> = {}
-  for (const [name, value] of response.headers) if (name !== 'set-cookie') headers[name] = value
+  for (const [name, value] of response.headers)
+    if (name !== 'set-cookie' && name !== UI_FALLTHROUGH_HEADER) headers[name] = value
   if (cookies.length > 0) headers['set-cookie'] = cookies
   res.writeHead(response.status, headers)
   const body = response.body
@@ -258,7 +284,12 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
     res.once('finish', () => body?.abandon())
     Promise.resolve()
       .then(() => handler(toRequest(req, origin, controller.signal, body?.stream), bindings))
-      .then((response) => send(res, response, method, controller.signal))
+      .then((response) => {
+        const fallback = options.fallback
+        if (fallback === undefined || !response.headers.has(UI_FALLTHROUGH_HEADER))
+          return send(res, response, method, controller.signal)
+        return handOver(fallback, req, res, () => send(res, response, method, controller.signal))
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return // the client left; nothing to report to it
         options.onError?.(error)
@@ -266,9 +297,53 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
         res.end()
       })
   })
+  return Promise.resolve()
+    .then(() => options.prepare?.(server))
+    .then(() => listen(server, options.port, hostname, bindHost))
+}
+
+/**
+ * Hand a request to a Connect-style handler. Resolves once it answered (the response finished or
+ * the client left) or after `next()` and the app's own response were sent; rejects on
+ * `next(error)` so the caller reports it and answers 500.
+ */
+function handOver(
+  fallback: NodeFallback,
+  req: IncomingMessage,
+  res: ServerResponse,
+  sendOwn: () => Promise<void>,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let passed = false
+    const done = (): void => {
+      if (!passed) resolve()
+    }
+    res.once('close', done)
+    try {
+      fallback(req, res, (error) => {
+        if (passed) return
+        passed = true
+        res.off('close', done)
+        if (error !== undefined && error !== null) reject(error)
+        else sendOwn().then(resolve, reject)
+      })
+    } catch (error) {
+      passed = true
+      res.off('close', done)
+      reject(error)
+    }
+  })
+}
+
+function listen(
+  server: Server,
+  requestedPort: number,
+  hostname: string,
+  bindHost: string,
+): Promise<RunningServer> {
   return new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(options.port, hostname, () => {
+    server.listen(requestedPort, hostname, () => {
       const { port } = server.address() as AddressInfo
       resolve({
         port,

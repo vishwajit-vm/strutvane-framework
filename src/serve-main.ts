@@ -1,6 +1,7 @@
 /**
  * Process entry for `sv dev`: `node --watch-path=… serve-main.mjs <root> <port> <host>`.
- * Node restarts this process when project files change.
+ * Node restarts this process when project files change (Vite, mounted inside it, watches `web/`
+ * itself and hot-reloads the UI without a restart).
  *
  * @module
  */
@@ -10,8 +11,10 @@ const [root = process.cwd(), port, hostname] = process.argv.slice(2)
 try {
   const started = await startServer({
     root,
-    // A dev UI comes from Vite; a stale dist/web from an earlier build must not shadow it.
+    // The dev UI comes from the project's Vite (same port, HMR); a stale dist/web from an
+    // earlier build must not shadow it.
     web: false,
+    vite: true,
     ...(port ? { port: Number(port) } : {}),
     ...(hostname ? { hostname } : {}),
   })

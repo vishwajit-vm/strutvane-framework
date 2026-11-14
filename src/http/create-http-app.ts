@@ -71,6 +71,7 @@ import {
 import { type RouteDefinition, registerCustomRoutes, routePattern } from './route.ts'
 import { acceptRequestId, securityHeaders } from './security.ts'
 import { createStaticFiles, type StaticFilesOptions } from './static-files.ts'
+import { isUiRequest, UI_FALLTHROUGH_HEADER, uiExcludedPaths } from './ui-paths.ts'
 
 /** Options for {@link createHttpApp}. */
 export interface HttpAppOptions {
@@ -129,6 +130,14 @@ export interface HttpAppOptions {
    * problem+json 404).
    */
   readonly staticFiles?: StaticFilesOptions
+  /**
+   * Development: mark a not-found `GET`/`HEAD` outside the API and framework paths (the rule in
+   * `ui-paths.ts`) with an internal header, so the Node adapter (`serve({ fallback })`) can hand it
+   * to the project's Vite middleware. The response is still the problem+json 404, sent as is when
+   * nothing else answers; the adapter strips the marker. Such requests are not reported to
+   * `http.onResponse` (the dev server answers them, not the app). Default `false`.
+   */
+  readonly uiFallthrough?: boolean
 }
 
 /**
@@ -256,7 +265,8 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       requestId,
       ...(route !== undefined ? { route } : {}),
     }
-    await hooks.run(HTTP_HOOKS.response, done)
+    // A dev UI request (handed to Vite by the adapter) is not the app's response to report.
+    if (!c.res.headers.has(UI_FALLTHROUGH_HEADER)) await hooks.run(HTTP_HOOKS.response, done)
     return undefined
   })
   const tooLarge = () => {
@@ -360,20 +370,10 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     return c.json({ status: ready ? 'ready' : 'unavailable', checks: results }, ready ? 200 : 503)
   })
 
+  // One rule for what the UI may answer, shared by the built UI and the dev fallthrough.
+  const uiExclude = uiExcludedPaths(basePath, options.staticFiles?.exclude ?? [])
   const staticFiles = options.staticFiles
-    ? createStaticFiles({
-        ...options.staticFiles,
-        exclude: [
-          basePath,
-          '/_strutvane',
-          '/storage',
-          '/openapi.json',
-          '/health',
-          '/ready',
-          '/.well-known',
-          ...(options.staticFiles.exclude ?? []),
-        ],
-      })
+    ? createStaticFiles({ ...options.staticFiles, exclude: uiExclude })
     : undefined
 
   http.notFound(async (c) => {
@@ -387,7 +387,12 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       traceId: s?.requestId ?? ids(),
       instance: new URL(c.req.url).pathname,
     })
-    return problemResponse(problem)
+    const response = problemResponse(problem)
+    // `sv dev`: the adapter hands this request to Vite instead (and sends this 404 if Vite
+    // passes). Only UI requests are marked: API paths keep their problem+json 404.
+    if (options.uiFallthrough === true && isUiRequest(c.req.raw, uiExclude))
+      response.headers.set(UI_FALLTHROUGH_HEADER, '1')
+    return response
   })
 
   http.onError((raw, c) => {
