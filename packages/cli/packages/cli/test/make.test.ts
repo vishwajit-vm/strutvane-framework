@@ -346,6 +346,33 @@ describe('other generators', () => {
     )
   })
 
+  test('make:policy templates use the role vocabulary of config/auth.ts (docs/07 §2.7)', async () => {
+    const root = await withModel()
+    const roleNames = (source: string): string[] =>
+      [...source.matchAll(/role: (\[[^\]]*\]|'[^']*')/g)].flatMap((m) =>
+        [...(m[1] ?? '').matchAll(/'([^']+)'/g)].map((r) => r[1] ?? ''),
+      )
+    const seen = new Set<string>()
+    for (const template of ['default', 'owner', 'tenant-admin', 'readonly']) {
+      expect(
+        (await cli(['make:policy', 'Invoice', '--template', template, '--force'], { cwd: root }))
+          .code,
+      ).toBe(0)
+      const source = read(root, 'app/policies/invoice.policy.ts')
+      for (const role of roleNames(source)) seen.add(role)
+      if (template === 'tenant-admin') {
+        // Tenant administration is the admin or owner role held INSIDE the tenant.
+        expect(source).toContain(
+          "{ role: ['viewer', 'member', 'admin', 'owner'], scope: 'tenant' }",
+        )
+        expect(source).toMatch(/role: \['admin', 'owner'\],\s+scope: 'tenant'/)
+      }
+      if (template === 'owner')
+        expect(source).toMatch(/role: 'member',\s+when: \(\{ actor, row \}\) => row\.ownerId\.eq/)
+    }
+    expect([...seen].sort()).toEqual(['admin', 'member', 'owner', 'viewer'])
+  })
+
   test('make:factory reads the model fields back (golden)', async () => {
     const root = await withModel()
     expect((await cli(['make:factory', 'Invoice'], { cwd: root })).code).toBe(0)

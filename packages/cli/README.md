@@ -58,7 +58,7 @@ Destructive commands must be typed in full: prefixes such as `sv mi:fr` are refu
 | `key:generate [--force] [--show]` | Writes `APP_KEY` to `.env` (and an empty entry to `.env.example`), replacing every `APP_KEY` line. Never prints the key unless `--show`. Replacing a non-empty key needs `--force`, and outside local/test environments also `--i-understand` |
 | `make:model <Name> [fields…]` | Model, policy, factory, seeder and feature test (`--all` adds the resource). Interactive field builder when run in a terminal without fields |
 | `make:resource <Model>` | Resource with `--actions approve,send` and `--hooks beforeCreate,afterUpdate` |
-| `make:policy <Model>` | Deny-by-default policy, `--template default\|owner\|tenant-admin\|readonly` |
+| `make:policy <Model>` | Deny-by-default policy, `--template default\|owner\|tenant-admin\|readonly`. Rules use the role names of `config/auth.ts`: `admin`, `member`, `viewer`, and `owner` (a tenant's creator); `tenant-admin` grants writes to `admin`/`owner` with `scope: 'tenant'` |
 | `make:migration <name>` | Hand-written migration stub (`--sql`, `--table`) |
 | `make:seeder <Name>` / `make:factory <Model>` / `make:test <name>` | Seeder (`--model`, `--count`), factory from the model's field types, feature/unit/e2e test |
 | `registry:build [--check]` / `registry:watch` | Compiles conventions into the typed `.strutvane/registry.gen.ts` without running app code (ADR-0010). `--check` exits 6 when stale |
