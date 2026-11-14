@@ -41,8 +41,8 @@ for n in contracts core devkit cli; do
   for f in packages/$n/.changeset/*.md packages/$n/.changeset/pre/*.md; do
     [ -e "$f" ] || continue
     b=$(basename $f); [ "$b" = README.md ] && continue
-    # pre/ holds the inert records of what 0.1.0-next.0 shipped (changesets only reads the top
-    # level), exactly like the framework's own .changeset/pre/, so they stay inert there.
+    # pre/ holds the records of what 0.1.0-next.0 shipped; convert.mjs moves them to
+    # docs/changelogs/released/ (changesets would reject them: their packages are gone).
     case "$f" in */pre/*) git mv "$f" ".changeset/pre/$n-$b" ;; *) git mv "$f" ".changeset/$n-$b" ;; esac
   done
 done

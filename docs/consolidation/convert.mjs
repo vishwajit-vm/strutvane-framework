@@ -9,7 +9,15 @@
 // Usage: node convert.mjs <framework worktree> <dir with node_modules/typescript> <original packages dir>
 // Then: npx biome check --write . && npm install --ignore-scripts && npm approve-scripts esbuild
 // (the replay of commit "refactor: one @strutvane/framework package" in CONSOLIDATION.md).
-import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, posix, resolve } from 'node:path'
 
@@ -196,11 +204,16 @@ pkg.exports = {
 }
 pkg.scripts = { ...pkg.scripts, 'test:perf': 'vitest run --config vitest.perf.config.ts' }
 pkg.description = `${pkg.description.replace(/\.$/, '')}, plus the kernel (core), shared contracts, the CLI (console) and the installer/generator SDK (devkit).`
+// npm >= 11.19 is required: older npm ignores .npmrc's strict-allow-scripts and min-release-age.
+// fsevents (macOS only, via vite/tsx) has an install script that pnpm never ran: deny it explicitly.
+pkg.devEngines = { packageManager: { name: 'npm', version: '>=11.19.0', onFail: 'error' } }
+pkg.allowScripts = { ...pkg.allowScripts, 'fsevents@2.3.3': false }
 const ordered = {}
 for (const [k, v] of Object.entries(pkg)) {
-  if (k === 'bin') continue
+  if (k === 'bin' || k === 'devEngines') continue
   ordered[k] = v
   if (k === 'exports') ordered.bin = pkg.bin
+  if (k === 'engines') ordered.devEngines = pkg.devEngines
 }
 writeJson('package.json', ordered)
 
@@ -280,3 +293,17 @@ for (const f of readdirSync(cs)) {
 }
 process.stdout.write(`[convert] ${JSON.stringify(report, null, 2)}
 `)
+
+// Changesets reads .changeset/pre/*.md too and refuses records for packages that are not in this
+// repo, so the absorbed pre/ records (what 0.1.0-next.0 shipped) become plain docs. An empty
+// changeset (contracts shipped with one) makes `changeset status` fail, so it goes.
+const released = join(repo, 'docs', 'changelogs', 'released')
+mkdirSync(released, { recursive: true })
+for (const f of readdirSync(join(cs, 'pre'))) {
+  if (/^(contracts|core|devkit|cli)-.*.md$/.test(f))
+    renameSync(join(cs, 'pre', f), join(released, f))
+}
+for (const f of readdirSync(cs)) {
+  const p = join(cs, f)
+  if (f.endsWith('.md') && statSync(p).size === 0) rmSync(p)
+}

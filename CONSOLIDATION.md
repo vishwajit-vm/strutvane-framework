@@ -14,11 +14,13 @@
 | `strutvane-core` / `@strutvane/core` | `src/core/` | `test/core/` | `@strutvane/framework/core` |
 | `strutvane-devkit` / `@strutvane/devkit` | `src/devkit/` | `test/devkit/` | `@strutvane/framework/devkit` |
 | `strutvane-cli` / `@strutvane/cli` (`packages/cli`) | `src/console/` | `test/console/` | `@strutvane/framework/console` |
-| `strutvane-cli` / `strutvane` launcher (`packages/launcher`) | retired, history only | not carried over (46 tests) | use the framework's `strutvane` bin |
+| `strutvane-cli` / `strutvane` launcher (`packages/launcher`) | retired, history only | not carried over (46 tests) | inside an app, the framework's `strutvane` bin. The launcher's own features, `strutvane new` / `strutvane create` and delegating to the project's CLI version, are gone (blueprint §3.2) |
 
 - **Bins:** `strutvane` (the v2 name) and `strutvane-cli` (the name `@strutvane/cli` used). Both run `dist/console/bin.mjs`. The alias exists because generated apps' `sv` script calls `strutvane-cli`, so swapping the dependency changes nothing for them.
 - **Changelogs:** `docs/changelogs/<part>.md` (plus `launcher.md`). **Old READMEs:** `docs/absorbed/<part>.md`.
-- **Changesets:** the 18 pending ones are `.changeset/<part>-*.md` and now target `@strutvane/framework`, keeping the highest bump when one file named several packages. The inert `pre/` records of what `0.1.0-next.0` shipped went to `.changeset/pre/<part>-*.md`, next to the framework's own.
+- **Changesets:** the 17 pending ones are `.changeset/<part>-*.md` and now target `@strutvane/framework`, keeping the highest bump when one file named several packages. `npx changeset status` passes.
+  - One empty changeset from contracts was dropped. It already made `changeset status` fail in the contracts repo, and its text shipped in `0.1.0-next.0`.
+  - The absorbed `pre/` records of what `0.1.0-next.0` shipped are in `docs/changelogs/released/`. Changesets reads `.changeset/pre/` too, and refuses records for packages that are not in the repo.
 - **Inside the repo,** the parts import each other by relative `.ts` path, never through the package name, so tests run straight from source.
 - **Layering** (it used to be the repo boundary): `contracts` imports nothing of ours; `core` and `devkit` import only `contracts`; `console` may use `contracts`, `core` and `devkit`; the framework's own modules use `contracts` and `core`. Nothing enforces this yet (see §7).
 - **Left the tree, kept in history:** each absorbed repo's synced configs, `pnpm-lock.yaml`, CI workflows, `CLAUDE.md`, `.claude/` agents and skills, issue templates, and the launcher package.
@@ -50,6 +52,7 @@ Branch commits on top of `main` (`62355a1`):
 | 4 × `chore: import strutvane-<name> history (staged under packages/<name>/)` | the merges |
 | `refactor: fold contracts, core, devkit and cli into the framework tree (pure renames)` | renames only |
 | `refactor: one @strutvane/framework package (imports, exports, bin, build, tests); pnpm to npm` | the codemod, the config and npm |
+| `fix: keep changesets and the npm guards working in the consolidated repo` | review fixes: the changesets layout, fsevents, the npm version |
 | `docs: CONSOLIDATION.md, replay scripts and docs for the consolidated framework` | this file, `docs/consolidation/`, README, CLAUDE.md, CONTRIBUTING |
 
 ## 4. What changed besides renames
@@ -64,7 +67,7 @@ All mechanical, done by `docs/consolidation/convert.mjs` and then Biome's safe f
 - **Docs** *(by hand):* README (quick start import, install line, development section, package table), CLAUDE.md, CONTRIBUTING.md and `.changeset/README.md` now describe the consolidated package and npm.
 
 **Where this differs from the dry run:**
-- Absorbed `pre/` changesets stay inert in `.changeset/pre/`. The dry run flattened them into pending changesets, which would have listed `0.1.0-next.0`'s notes a second time.
+- The absorbed `pre/` changesets are kept as docs in `docs/changelogs/released/`. The dry run flattened them into pending changesets, which would have listed `0.1.0-next.0`'s notes a second time. Leaving them in `.changeset/pre/` breaks Changesets.
 - The absorbed READMEs are kept in `docs/absorbed/`.
 - The `strutvane-cli` alias bin and the `test:perf` script were added.
 - The npm supply-chain guards (B11) are added now, not in a follow-up, because `npm install` now runs in this repo for real.
@@ -77,9 +80,10 @@ The v1 repos use pnpm. The blueprint moves to npm (§7), and anything new uses n
 
 | pnpm (`pnpm-workspace.yaml`) | npm 11.19+ (`.npmrc` + `package.json`) |
 |---|---|
-| `allowBuilds: { esbuild: true }` | `strict-allow-scripts=true`, plus `allowScripts` with esbuild's three versions pinned (`npm approve-scripts esbuild`). Any other install script fails the install. |
+| `allowBuilds: { esbuild: true }` | `strict-allow-scripts=true`, plus `allowScripts` with esbuild's three versions pinned (`npm approve-scripts esbuild`) and `fsevents@2.3.3: false`. That optional macOS dependency of vite/tsx has an install script pnpm never ran. Any other install script fails the install. |
 | `minimumReleaseAge` (default 1 day), `minimumReleaseAgeExclude: ["@strutvane/*"]` | `min-release-age=1`, `min-release-age-exclude[]=@strutvane/*` |
 | (none) | `allow-git=none`, `engine-strict=true` |
+| `packageManager: pnpm@12.18.0` | `devEngines.packageManager`: npm `>=11.19.0`, `onFail: error`. An older npm would silently ignore the guards above. |
 
 - **Gate:** `npm install` (or `npm ci`), then `npm run ci`. The `ci` script itself is unchanged: Biome, `tsc --noEmit`, `vitest run --coverage`, `tsdown`.
 - **Caveat:** the synced CI workflow (`.github/workflows/ci.yml`) still sets up pnpm from `packageManager`, which is now gone. The canonical workflows must move to npm in `strutvane-tooling` **before this branch is pushed or merged** (§7). Synced files were not edited here.
@@ -141,7 +145,7 @@ These ran on throw-away clones in an uncommitted umbrella folder that links the 
 - Update the synced `strutvane-contribute` skill and `ECOSYSTEM.md`, which still say `corepack pnpm@12.18.0`.
 
 **This repo, one reviewed PR each (they change behaviour, so they are not in this branch):**
-- **B6:** the CLI still calls itself `@strutvane/cli`: `CLI_PACKAGE`, the generator header, `about`, the doctor check and hint, project detection in `boundary.ts` and the help text. An app that depends only on `@strutvane/framework` and has no `strutvane.config.ts` is not detected as a project. Make the framework the CLI's identity and accept it (or `strut.js`) in detection.
+- **B6 (do it before the first publish of this layout):** the CLI still calls itself `@strutvane/cli`. Its version is now the framework's, so `sv about` and generated headers show `@strutvane/cli <framework version>`, and the doctor hint tells apps to `pnpm add -D @strutvane/cli`, which would bring back a second kernel. Places that still say `@strutvane/cli` or describe the launcher: `CLI_PACKAGE`, the generator header, `about`, the doctor check and hint, project detection in `boundary.ts` and the help text. An app that depends only on `@strutvane/framework` and has no `strutvane.config.ts` is not detected as a project. There are also TSDoc lines that still mention the launcher. Make the framework the CLI's identity and accept it (or `strut.js`) in detection. Decide whether `@strutvane/cli`'s `./bin` export needs a `./console/bin` successor (nothing in the dependents uses it).
 - **B10:** the package-migration gate refuses migrations whose realpath leaves `node_modules`. That includes npm workspace links (junctions on Windows), so it also refuses them in a workspace app or the umbrella. Allow realpaths inside the declared workspace root.
 - Add a module-boundary lint rule for the layering in §1.
 - Before the first release, run `npx changeset status` and check that the merged changesets read well as one framework changelog (B16). Two of them, `cli-launcher-project-detection.md` and `cli-launcher-release-channel.md`, now target the framework but describe the retired launcher: drop them or reword them.
@@ -160,6 +164,7 @@ These ran on throw-away clones in an uncommitted umbrella folder that links the 
 - **CI is red until tooling moves to npm.** The synced workflow needs pnpm's `packageManager` field (§5).
 - **Two copies of the kernel during the transition.** A dependent still on the published `@strutvane/core` gets a second kernel next to `@strutvane/framework/core`. Container tokens and `instanceof` checks then break across them. Retarget dependents together with the framework release, and peer-depend (B9).
 - **Freeze window.** Commits that land in the old repos after this branch was cut are not included. The old repos were clean on `main` when it was cut; their tips are in `commit-map.txt`.
+- **`strutvane-cli` is declared by two packages during the upgrade.** An app that depends on both `@strutvane/framework` and the old `@strutvane/cli` gets two packages declaring the same bin, and which one `sv` runs depends on npm's linking. The upgrade guide must say "remove `@strutvane/cli`", and doctor should flag a project that has both (B6).
 - **Generated apps still name `@strutvane/core` and `@strutvane/cli`** (template strings, by design). They keep working only while those packages stay installable. Deprecated is fine; unpublished is not.
 - **`npm audit`:** 4 moderate findings, all `esbuild <= 0.24.2` through `drizzle-kit → @esbuild-kit/*` (GHSA-67mh-4wv8-2f99, dev server only). They existed under pnpm too (B15).
 - **History tool.** `git filter-repo` was not installed, and installing it needs the owner's approval. `git filter-branch` was used instead. It is slower, but the result is the same and deterministic.
@@ -181,8 +186,9 @@ cd "$S/fw" && npx biome check --write .
 # 4. npm: the .npmrc from this branch, then install without scripts, approve esbuild, rebuild.
 git show v2/consolidate:.npmrc > .npmrc
 npm install --ignore-scripts && npm approve-scripts esbuild && npm rebuild esbuild
+npx changeset status
 # 5. The two version tests and the docs are hand edits: take them from this branch's last two commits.
 npm run ci
 ```
 
-The replay was checked on 2026-11-15 from fresh clones. The rewritten histories came out byte-identical. The rename commit's tree was identical. After step 4, the tree differed from this branch only in the hand-written parts: `.npmrc`, the lockfile, `allowScripts` and the two version tests.
+The replay was checked on 2026-11-15 from fresh clones. The rewritten histories came out byte-identical. The rename commit's tree was identical. After step 4, the tree differed from this branch only in the hand-written parts: the docs, `.npmrc`, the lockfile, esbuild's `allowScripts` entries and the two version tests.

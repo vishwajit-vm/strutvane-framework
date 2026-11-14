@@ -52,7 +52,8 @@ It is one repo of the **Strutvane** ecosystem. On branch `v2/consolidate` it als
 ## Boundaries (non-negotiable)
 
 - Internal layering (was the repo boundary): `src/contracts` imports nothing of ours; `src/core` imports only `contracts`; `src/devkit` only `contracts`; `src/console` may use `contracts`, `core` and `devkit`. It must never import `@strutvane/auth` or `@strutvane/ui`; it cooperates with them only through contracts resolved from the container.
-- Cooperation with other Strutvane packages happens **only through `@strutvane/contracts`**, resolved at runtime via the core container.
+- The framework's own modules (everything outside `contracts/`, `core/`, `devkit/` and `console/`) use only `contracts` and `core`.
+- Cooperation with other Strutvane packages happens **only through the contracts (`@strutvane/framework/contracts`)**, resolved at runtime via the core container.
 - Public API changes need a changeset, docs and tests. Contract changes need an RFC.
 
 ## Conventions (apply once code exists)
