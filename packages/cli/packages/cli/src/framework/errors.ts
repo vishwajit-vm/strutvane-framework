@@ -118,6 +118,54 @@ function issuesOf(value: unknown): CliIssue[] {
   return out
 }
 
+/** The shape of core's `EnvValidationError` that the CLI relies on. */
+interface EnvValidationLike extends Error {
+  readonly problems: readonly unknown[]
+}
+
+/**
+ * `true` for core's `EnvValidationError` (thrown by `defineEnv` when the app's `.env` does not match
+ * its schema). Matched structurally, by the stable `name` core sets plus its documented `problems`
+ * list, rather than with `instanceof`: a contributed command may bundle its own copy of core, whose
+ * class is a different object. Never by message text.
+ */
+function isEnvValidationError(value: unknown): value is EnvValidationLike {
+  return (
+    value instanceof Error &&
+    value.name === 'EnvValidationError' &&
+    'problems' in value &&
+    Array.isArray(value.problems)
+  )
+}
+
+/**
+ * Find an env validation error in `error` or its `cause` chain. Loading an app wraps failures
+ * (core's `ProviderError` keeps the original as `cause`), and an invalid `.env` is still a
+ * configuration error when it arrives wrapped. Bounded and cycle-safe.
+ */
+function findEnvValidationError(error: unknown): EnvValidationLike | undefined {
+  const seen = new Set<unknown>()
+  let current: unknown = error
+  for (let depth = 0; depth < 8 && current instanceof Error && !seen.has(current); depth++) {
+    if (isEnvValidationError(current)) return current
+    seen.add(current)
+    current = current.cause
+  }
+  return undefined
+}
+
+/** One env problem as an issue keyed by the variable name. Never includes the value (core's rule). */
+function envIssues(problems: readonly unknown[]): CliIssue[] {
+  const out: CliIssue[] = []
+  for (const item of problems) {
+    if (typeof item !== 'object' || item === null) continue
+    const key = 'key' in item && typeof item.key === 'string' ? item.key : ''
+    const message = 'message' in item && typeof item.message === 'string' ? item.message : 'Invalid'
+    out.push({ path: key === '' ? [] : [key], message })
+  }
+  return out
+}
+
 function stringParams(params: ErrorParams, extra: Record<string, IssueParam>): ErrorParams {
   return { ...params, ...extra }
 }
@@ -133,6 +181,20 @@ export function toFailure(error: unknown): CliFailure {
       error,
       unexpected: false,
       ...(error.data === undefined ? {} : { data: error.data }),
+    }
+  }
+  // An invalid .env is the user's configuration, not a bug: list the problems and how to fix them,
+  // without the "report the bug" hint, and exit with the validation code (docs/09 §1.4: config, env).
+  const envError = findEnvValidationError(error)
+  if (envError !== undefined) {
+    const issues = envIssues(envError.problems)
+    return {
+      code: 'ENV_INVALID',
+      exitCode: EXIT.VALIDATION,
+      params: { count: issues.length },
+      issues,
+      error,
+      unexpected: false,
     }
   }
   if (error instanceof ValidationError) {

@@ -1,4 +1,4 @@
-import { StrutvaneError, ValidationError } from '@strutvane/core'
+import { EnvValidationError, ProviderError, StrutvaneError, ValidationError } from '@strutvane/core'
 import { DevkitError } from '@strutvane/devkit'
 import { describe, expect, test } from 'vitest'
 import { type AnyCommand, commandProblems, defineCommand } from '../src/framework/command.ts'
@@ -320,6 +320,67 @@ describe('errors', () => {
       unexpected: false,
     })
     expect(new CliError('Y').exitCode).toBe(EXIT.FAILURE)
+  })
+
+  test('an invalid .env is a configuration error (exit 3), not an unexpected one', () => {
+    const env = new EnvValidationError([
+      { key: 'DATABASE_URL', message: 'Invalid URL' },
+      { key: '', message: 'Expected object' },
+    ])
+    const failure = toFailure(env)
+    expect(failure).toMatchObject({
+      code: 'ENV_INVALID',
+      exitCode: EXIT.VALIDATION,
+      params: { count: 2 },
+      issues: [
+        { path: ['DATABASE_URL'], message: 'Invalid URL' },
+        { path: [], message: 'Expected object' },
+      ],
+      unexpected: false,
+    })
+    const rendered = renderMessages(failure)
+    expect(rendered.message).toBe('Invalid environment: 2 problems.')
+    expect(rendered.hint).toContain('Fix: set these keys in your .env file')
+    expect(rendered.hint).not.toContain('report the bug')
+  })
+
+  test('env errors are matched structurally: another copy of core, or wrapped as a cause', () => {
+    // A contributed command may bundle its own core, so instanceof would miss it.
+    const foreign = Object.assign(new Error('Invalid environment: 1 problem(s)'), {
+      name: 'EnvValidationError',
+      problems: [{ key: 'APP_KEY', message: 'Required' }, 'junk', { key: 3 }],
+    })
+    expect(toFailure(foreign)).toMatchObject({
+      code: 'ENV_INVALID',
+      exitCode: 3,
+      issues: [
+        { path: ['APP_KEY'], message: 'Required' },
+        { path: [], message: 'Invalid' },
+      ],
+    })
+    // Booting the app wraps provider failures; the cause still decides.
+    const wrapped = new ProviderError('app', 'register', foreign)
+    expect(toFailure(wrapped)).toMatchObject({ code: 'ENV_INVALID', exitCode: 3 })
+    expect(toFailure(new StrutvaneError('BOOT', { cause: wrapped }))).toMatchObject({
+      code: 'ENV_INVALID',
+    })
+    // An explicit CliError keeps its own classification.
+    expect(toFailure(new CliError('X', { cause: foreign }))).toMatchObject({ code: 'X' })
+  })
+
+  test('a lookalike without the documented problems list, or a cause cycle, stays unexpected', () => {
+    const lookalike = Object.assign(new Error('Invalid environment'), {
+      name: 'EnvValidationError',
+    })
+    expect(toFailure(lookalike)).toMatchObject({ code: 'INTERNAL_ERROR', unexpected: true })
+    // Matching is by name and shape, never by message text.
+    expect(toFailure(new Error('Invalid environment: 1 problem(s)'))).toMatchObject({
+      code: 'INTERNAL_ERROR',
+    })
+    const a = new Error('a')
+    const b = new Error('b', { cause: a })
+    Object.assign(a, { cause: b })
+    expect(toFailure(a)).toMatchObject({ code: 'INTERNAL_ERROR' })
   })
 
   test('devkit errors map by code (even from another copy of devkit)', () => {

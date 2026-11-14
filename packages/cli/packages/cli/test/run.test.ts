@@ -356,6 +356,48 @@ export default [
     )
   })
 
+  test('a plugin command failing on an invalid .env reports a configuration error', async () => {
+    const root = makeProject()
+    addDependencies(root, { 'strutvane-plugin-envy': '1.0.0' })
+    // Shaped like core's EnvValidationError from a bundled copy of core (not this CLI's class).
+    const commands = `
+export default [{
+  name: 'envy:run',
+  description: 'Needs a valid env',
+  run() {
+    const error = new Error('Invalid environment: 2 problem(s)')
+    error.name = 'EnvValidationError'
+    error.problems = [
+      { key: 'APP_KEY', message: 'Required' },
+      { key: 'DATABASE_URL', message: 'Invalid URL' },
+    ]
+    throw error
+  },
+}]
+`
+    installFakePackage(root, 'strutvane-plugin-envy', {
+      strutvane: { commands: './c.mjs', compat: '*' },
+      files: { 'c.mjs': commands },
+    })
+    const text = await cli(['envy:run'], { cwd: root })
+    expect(text.code).toBe(EXIT.VALIDATION)
+    expect(text.stderr).toContain('Invalid environment: 2 problems.')
+    expect(text.stderr).toContain('  - APP_KEY: Required')
+    expect(text.stderr).toContain('  - DATABASE_URL: Invalid URL')
+    expect(text.stderr).toContain('Fix: set these keys in your .env file')
+    expect(text.stderr).not.toContain('Unexpected error')
+    expect(text.stderr).not.toContain('report the bug')
+    const json = await cli(['envy:run', '--json'], { cwd: root })
+    expect(json.code).toBe(EXIT.VALIDATION)
+    expect(json.json().error).toMatchObject({
+      code: 'ENV_INVALID',
+      issues: [
+        { path: ['APP_KEY'], message: 'Required' },
+        { path: ['DATABASE_URL'], message: 'Invalid URL' },
+      ],
+    })
+  })
+
   test('a plugin that throws on import does not break other commands', async () => {
     const root = makeProject()
     addDependencies(root, { 'strutvane-plugin-broken': '1.0.0' })

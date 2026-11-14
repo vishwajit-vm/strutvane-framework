@@ -51,6 +51,10 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.error.REGISTRY_STALE': '{path} is out of date.',
   'cli.hint.REGISTRY_STALE': 'Run `sv registry:build` and commit the result.',
   'cli.error.ENV_PROBLEMS': '{count, plural, one {# env problem} other {# env problems}} found.',
+  'cli.error.ENV_INVALID':
+    'Invalid environment: {count, plural, one {# problem} other {# problems}}.',
+  'cli.hint.ENV_INVALID':
+    'Fix: set these keys in your .env file (see .env.example for every key and its meaning), then run the command again. `sv env:check` compares the two.',
   'cli.error.ENV_EXAMPLE_MISSING': '{path} does not exist, so there is nothing to compare with.',
   'cli.hint.ENV_EXAMPLE_MISSING': 'Create .env.example listing every variable the app reads.',
   'cli.error.KEY_EXISTS': 'APP_KEY is already set in {path}.',
