@@ -1,6 +1,7 @@
 import { compileErrors, validate } from '@readme/openapi-parser'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { defineResource } from '../../src/http/resource.ts'
+import { route } from '../../src/http/route.ts'
 import { createTestApp, type TestApp } from '../../src/testing/index.ts'
 import { Customer, Invoice } from '../helpers/models.ts'
 
@@ -16,6 +17,17 @@ describe('OpenAPI document', () => {
         defineResource({ model: Customer, includes: ['invoices'] }),
         defineResource({ model: Invoice, routes: { restore: false } }),
       ],
+      http: {
+        routes: [
+          route.post('/invoices/:id/mark-paid', {
+            name: 'invoices.markPaid',
+            permission: 'invoice.markPaid',
+            handler: () => ({}),
+          }),
+          route.get('/hello', { public: true, handler: () => ({ hi: true }) }),
+          route.get('/me/summary', { handler: () => ({}) }),
+        ],
+      },
     })
     // Outside APP_ENV=local the document is served to identified callers only.
     expect((await t.request<Json>('GET', '/openapi.json')).status).toBe(401)
@@ -37,7 +49,16 @@ describe('OpenAPI document', () => {
   })
 
   it('documents every enabled route with Strutvane extensions', () => {
-    expect(Object.keys(doc.paths).sort()).toEqual(
+    expect(
+      Object.keys(doc.paths)
+        .filter(
+          (p) =>
+            !Object.values(doc.paths[p] as Record<string, Json>).some((op: Json) =>
+              op.tags?.includes('Custom routes'),
+            ),
+        )
+        .sort(),
+    ).toEqual(
       [
         '/api/v1/customers',
         '/api/v1/customers/query',
@@ -60,6 +81,20 @@ describe('OpenAPI document', () => {
     expect(doc.paths['/api/v1/customers/{id}'].delete['x-strutvane-permission']).toBe(
       'customer.delete',
     )
+  })
+
+  it('documents custom routes: path params, access and problems', () => {
+    const paid = doc.paths['/api/v1/invoices/{id}/mark-paid']?.post
+    expect(paid?.operationId).toBe('invoicesMarkPaid')
+    expect(paid?.['x-strutvane-permission']).toBe('invoice.markPaid')
+    expect(paid?.parameters?.map((p: Json) => p.name)).toEqual(['id'])
+    expect(Object.keys(paid?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '401', '403', '422']),
+    )
+    const hello = doc.paths['/api/v1/hello']?.get
+    expect(hello?.description).toContain('Public')
+    expect(hello?.responses?.['401']).toBeUndefined()
+    expect(doc.paths['/api/v1/me/summary']?.get?.description).toContain('signed-in')
   })
 
   it('documents the list protocol and problem+json errors', () => {

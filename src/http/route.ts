@@ -26,6 +26,7 @@ import { createRepository, type Repository, type Scope } from '../data/repositor
 import type { Database } from '../database/types.ts'
 import type { AnyModel, ModelDefinition } from '../model/define-model.ts'
 import type { ModelRegistry } from '../model/registry.ts'
+import { documentCustomRoute } from '../openapi/document.ts'
 import { type BoundFilter, bindFilter } from '../query/bind.ts'
 import { queryFields } from '../query/fields.ts'
 import type { StorageManager } from '../storage/manager.ts'
@@ -247,6 +248,8 @@ export function registerCustomRoutes(
     const key = `${r.method} ${r.path}`
     if (seen.has(key)) throw new TypeError(`Duplicate route: ${key.toUpperCase()}`)
     seen.add(key)
+    // Custom routes are documented in /openapi.json next to the CRUD routes.
+    documentCustomRoute(http, r, deps.basePath)
     http.on(r.method.toUpperCase(), `${deps.basePath}${r.path}`, async (c) => {
       const s = c.get('sv')
       if (r.permission !== undefined) {

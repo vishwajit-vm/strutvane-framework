@@ -416,3 +416,57 @@ function valueSchema(kind: string, values: readonly string[] | undefined): Json 
       return { type: 'string' }
   }
 }
+
+/** What {@link documentCustomRoute} needs from a custom route definition. */
+export interface CustomRouteDoc {
+  readonly method: 'get' | 'post' | 'put' | 'patch' | 'delete'
+  readonly path: string
+  readonly name?: string
+  readonly permission?: string
+  readonly public?: boolean
+}
+
+/**
+ * Document a custom route (`app/http/routes/*.ts`) in `/openapi.json`: its path (`:id` →
+ * `{id}`), parameters, who may call it (`x-strutvane-permission`, or public, or any signed-in
+ * caller) and the problem responses every route can return. Handlers return free-form JSON, so the
+ * success body is documented as any JSON value.
+ */
+export function documentCustomRoute(
+  app: OpenAPIHono<HttpEnv>,
+  route: CustomRouteDoc,
+  basePath: string,
+): void {
+  const names = [...route.path.matchAll(/:([A-Za-z0-9_]+)/g)].map((m) => m[1] as string)
+  const path = `${basePath}${route.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`
+  const access = route.permission
+    ? `Requires the \`${route.permission}\` permission.`
+    : route.public
+      ? 'Public: no sign-in needed.'
+      : 'Requires a signed-in caller.'
+  app.openAPIRegistry.registerPath({
+    method: route.method,
+    path,
+    operationId:
+      route.name?.replace(/[^A-Za-z0-9]+(.)?/g, (_m, c: string | undefined) =>
+        c ? c.toUpperCase() : '',
+      ) ??
+      `${route.method}${path.replace(/[^A-Za-z0-9]+(.)?/g, (_m, c: string | undefined) => (c ? c.toUpperCase() : ''))}`,
+    summary: route.name ?? `${route.method.toUpperCase()} ${route.path}`,
+    description: `Custom route. ${access}`,
+    tags: ['Custom routes'],
+    ...(names.length > 0
+      ? { request: { params: z.object(Object.fromEntries(names.map((n) => [n, z.string()]))) } }
+      : {}),
+    ...(route.permission ? { 'x-strutvane-permission': route.permission } : {}),
+    responses: {
+      200: { description: 'JSON result', content: { 'application/json': { schema: z.unknown() } } },
+      204: { description: 'No content' },
+      400: problem('Malformed request'),
+      ...(route.public && !route.permission ? {} : { 401: problem('Sign-in required') }),
+      ...(route.permission ? { 403: problem('Not allowed') } : {}),
+      404: problem('Not found'),
+      422: problem('Validation failed'),
+    },
+  })
+}
