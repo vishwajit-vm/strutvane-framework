@@ -39,7 +39,12 @@ import type { ModelDefinition } from '../model/define-model.ts'
 import type { ModelRegistry } from '../model/registry.ts'
 import { issuesFromZod, modelLabels, modelSchemas } from '../model/schemas.ts'
 import { andAll, type BoundFilter, bindFilter } from '../query/bind.ts'
-import { clientQueryFields, queryFields } from '../query/fields.ts'
+import {
+  clientQueryFields,
+  narrowQueryFields,
+  type QueryField,
+  queryFields,
+} from '../query/fields.ts'
 import { normalizeError } from './errors.ts'
 import { type ParsedListQuery, parseListQuery, serializeListParams } from './list-query.ts'
 import { permissionFor } from './permissions.ts'
@@ -389,10 +394,27 @@ export function registerResourceRoutes(
     return found
   }
 
+  /**
+   * The fields this actor may reference in a list query: {@link clientQueryFields} intersected
+   * with `PermissionProvider.filterableFields` when the provider implements it (field-level
+   * read rules, e.g. from @strutvane/auth). Resolved once per request, never per field.
+   * `allowed` is undefined when the provider does not narrow.
+   */
+  const clientFieldsFor = async (
+    s: RequestState,
+  ): Promise<{
+    readonly fields: ReadonlyMap<string, QueryField>
+    readonly allowed: ReadonlySet<string> | undefined
+  }> => {
+    const allowed = await deps.permissions.filterableFields?.(s.actor, model.permission)
+    return { fields: narrowQueryFields(fields, allowed), allowed }
+  }
+
   const runList = async (
     c: Context<HttpEnv>,
     query: ParsedListQuery,
     where: 'query' | 'body',
+    client: Awaited<ReturnType<typeof clientFieldsFor>>,
   ): Promise<Response> => {
     const s = state(c)
     await authorize(s, 'list')
@@ -400,7 +422,7 @@ export function registerResourceRoutes(
     await resource.hooks?.beforeList?.(ctxOf(s))
     try {
       const userFilter = query.filter
-        ? bindFilter(query.filter, { fields, operators: 'declared', actor: s.actor })
+        ? bindFilter(query.filter, { fields: client.fields, operators: 'declared', actor: s.actor })
         : undefined
       const scope = await scopeFor(s, ACTION_PERMISSIONS.list)
       const page = await repo.list(
@@ -409,6 +431,7 @@ export function registerResourceRoutes(
           ...(query.search !== undefined ? { search: query.search } : {}),
           ...(query.sort ? { sort: query.sort } : {}),
           ...(query.page ? { page: query.page } : {}),
+          ...(client.allowed ? { allowedFields: client.allowed } : {}),
           withTotal: query.withTotal,
         },
         scope,
@@ -446,10 +469,13 @@ export function registerResourceRoutes(
 
   if (routeEnabled(resource, 'list')) {
     app.get(base, async (c) => {
-      state(c)
-      const parsed = parseListQuery(new URL(c.req.url).searchParams, listRules)
+      const client = await clientFieldsFor(state(c))
+      const parsed = parseListQuery(new URL(c.req.url).searchParams, {
+        ...listRules,
+        fields: client.fields,
+      })
       if (!parsed.ok) throw new ValidationError(parsed.issues)
-      return runList(c, parsed.query, 'query')
+      return runList(c, parsed.query, 'query', client)
     })
     app.post(`${base}/query`, async (c) => {
       state(c)
@@ -485,7 +511,7 @@ export function registerResourceRoutes(
         ...(b.include ? { include: [...new Set(b.include)] } : {}),
         withTotal: b.total === true,
       }
-      return runList(c, query, 'body')
+      return runList(c, query, 'body', await clientFieldsFor(state(c)))
     })
   }
 

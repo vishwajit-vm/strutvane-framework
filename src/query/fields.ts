@@ -40,6 +40,22 @@ export function clientQueryFields(model: ModelDefinition): ReadonlyMap<string, Q
   return new Map([...queryFields(model)].filter(([, f]) => !f.def.hidden))
 }
 
+/**
+ * Narrow client query fields to those an actor may filter, sort and search on: the
+ * intersection of `fields` with `allowed` (from `PermissionProvider.filterableFields`).
+ * `undefined` means the provider does not narrow, so `fields` is returned unchanged.
+ *
+ * Why: a filter, sort order or search hit on a field the actor may not read is a value oracle
+ * (it reveals the field's contents one query at a time), even if the field is never serialized.
+ */
+export function narrowQueryFields(
+  fields: ReadonlyMap<string, QueryField>,
+  allowed: ReadonlySet<string> | undefined,
+): ReadonlyMap<string, QueryField> {
+  if (allowed === undefined) return fields
+  return new Map([...fields].filter(([key]) => allowed.has(key)))
+}
+
 /** Every queryable field of a model, by API key. */
 export function queryFields(model: ModelDefinition): ReadonlyMap<string, QueryField> {
   const out = new Map<string, QueryField>()

@@ -42,6 +42,7 @@ import {
   encodeCursor,
   orderByClause,
   resolveSort,
+  SortError,
   type SortKey,
   seekPredicate,
 } from '../query/sort.ts'
@@ -91,6 +92,13 @@ export interface ListOptions {
   readonly search?: string
   readonly sort?: readonly SortDirective[]
   readonly page?: PageSpec
+  /**
+   * API keys the caller may sort and search on (e.g. the actor's filterable fields). When set,
+   * a sort on any other field fails with `SortError`, and search silently skips searchable
+   * fields outside it (search spans several fields, so narrowing it is not an error). Cursors
+   * are bound to the sort keys, so they are covered too. Omitted: no extra restriction.
+   */
+  readonly allowedFields?: ReadonlySet<string>
   /** Count all matching rows (costly on large tables; opt-in). */
   readonly withTotal?: boolean
 }
@@ -426,10 +434,15 @@ export function createRepository(options: RepositoryOptions): Repository {
 
     list: (opts = {}, scope = {}) =>
       inTx(scope, async (tx) => {
+        // Checked before resolveSort, which still needs `id` for its implicit tiebreaker.
+        const denied = opts.allowedFields
+          ? opts.sort?.find((d) => !opts.allowedFields?.has(d.field))
+          : undefined
+        if (denied) throw new SortError(denied.field)
         const keys: SortKey[] = resolveSort(opts.sort ?? [], fields)
         const page: PageSpec = opts.page ?? { kind: 'cursor', size: 25 }
         const conditions = scopeConditions(scope)
-        const search = searchFilter(opts.search)
+        const search = searchFilter(opts.search, opts.allowedFields)
         const userFilter = andAll([
           ...(opts.filter ? [opts.filter] : []),
           ...(search ? [search] : []),
@@ -539,7 +552,10 @@ export function createRepository(options: RepositoryOptions): Repository {
     return out
   }
 
-  function searchFilter(search: string | undefined): BoundFilter | undefined {
+  function searchFilter(
+    search: string | undefined,
+    allowed: ReadonlySet<string> | undefined,
+  ): BoundFilter | undefined {
     if (search === undefined || search.trim() === '') return undefined
     if (search.length > MAX_SEARCH || search.includes('\u0000')) {
       throw new ValidationError([
@@ -547,7 +563,10 @@ export function createRepository(options: RepositoryOptions): Repository {
       ])
     }
     // Hidden fields never take part in search: a match would reveal their contents.
-    const searchable = [...fields.values()].filter((f) => f.def.searchable && !f.def.hidden)
+    // Nor do fields the caller may not filter on (allowedFields): skipped, not an error.
+    const searchable = [...fields.values()].filter(
+      (f) => f.def.searchable && !f.def.hidden && (allowed === undefined || allowed.has(f.key)),
+    )
     if (searchable.length === 0) return undefined
     return {
       op: 'or',

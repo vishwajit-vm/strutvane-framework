@@ -170,7 +170,12 @@ export { type FrameworkProviderOptions, frameworkProvider } from './provider.ts'
 export { andAll, type BoundFilter, bindFilter, FilterError } from './query/bind.ts'
 export { compileFilter } from './query/compile.ts'
 export { evaluateFilter, MissingFieldError } from './query/evaluate.ts'
-export { clientQueryFields, type QueryField, queryFields } from './query/fields.ts'
+export {
+  clientQueryFields,
+  narrowQueryFields,
+  type QueryField,
+  queryFields,
+} from './query/fields.ts'
 export { CursorError, SortError } from './query/sort.ts'
 export { firstAppEnv, normaliseAppEnv } from './runtime/app-env.ts'
 export {
