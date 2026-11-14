@@ -97,13 +97,41 @@ export function envKeys(text: string): Set<string> {
   return keys
 }
 
-/** Format a value for an env file: bare when safe, otherwise double-quoted with escapes. */
+/**
+ * Format a value for an env file so that every loader reads it back unchanged: bare when safe,
+ * else double-quoted, else single-quoted.
+ *
+ * **Why no escapes?** The app loads `.env` with Node's own parser (`process.loadEnvFile`), which
+ * understands no escape sequence except `\n` inside double quotes: `"a\"b"` reads as `a\`, and a
+ * backslash before `n` becomes a line break. So a value is quoted only in a style that needs no
+ * escaping at all: double quotes when it has no `"` and no `\`, single quotes (taken literally)
+ * when it has no `'`. A value that fits neither, or holds a control character, is refused with
+ * `INVALID_ENV_VALUE` rather than written in a form the app would read differently.
+ */
 export function formatEnvValue(value: string): string {
   if (/[\r\n]/.test(value)) {
     throw new DevkitError('INVALID_ENV_VALUE', 'env values cannot contain line breaks')
   }
+  // Tab is allowed (quoted); every other C0 control character and DEL is refused.
+  if (hasControlCharacter(value)) {
+    throw new DevkitError('INVALID_ENV_VALUE', 'env values cannot contain control characters')
+  }
   if (value === '' || /^[A-Za-z0-9_./:@+,-]+$/.test(value)) return value
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+  if (!/["\\]/.test(value)) return `"${value}"`
+  if (!value.includes("'")) return `'${value}'`
+  throw new DevkitError(
+    'INVALID_ENV_VALUE',
+    "env values cannot contain both ' and \" (or ' and \\): no quoting keeps them unchanged for every .env loader",
+  )
+}
+
+/** True for C0 control characters other than tab, and DEL. */
+function hasControlCharacter(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i)
+    if ((c < 0x20 && c !== 0x09) || c === 0x7f) return true
+  }
+  return false
 }
 
 /** The header line of a section, e.g. `# ─── Auth ───…`. */

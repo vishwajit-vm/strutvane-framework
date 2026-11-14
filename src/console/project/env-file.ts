@@ -37,7 +37,9 @@ export interface EnvFile {
 /** Valid variable names: what shells and process managers accept everywhere. */
 export const ENV_KEY: RegExp = /^[A-Za-z_][A-Za-z0-9_]*$/
 
-const ASSIGNMENT = /^\s*(?:export\s+)?([^=\s]+)\s*=(.*)$/
+// `s`: lines are already split on CR/LF, so U+2028/U+2029 inside a value are part of it (as for
+// Node's own parser), not the end of the line.
+const ASSIGNMENT = /^\s*(?:export\s+)?([^=\s]+)\s*=(.*)$/s
 
 function unquote(raw: string): string {
   const value = raw.trim()
