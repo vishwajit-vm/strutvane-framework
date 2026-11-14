@@ -5,10 +5,12 @@ The Strutvane command line: diagnostics (`doctor`, `env:check`), generators (`ma
 Add it to a project as a dev dependency and run it through the `strutvane` launcher or a `sv` script:
 
 ```bash
-pnpm add -D @strutvane/cli
+pnpm add -D @strutvane/cli@next   # until 1.0 (`latest` is only a name placeholder); from 1.0: pnpm add -D @strutvane/cli
 pnpm exec strutvane-cli help    # list every command (the launcher answers `help` itself)
 pnpm sv make:model Invoice
 ```
+
+`sv add <package>` installs Strutvane packages from the CLI's own release channel (`@strutvane/auth@next` while the CLI is a `-next` pre-release, the bare name from 1.0); third-party plugins by their bare name.
 
 A folder counts as a project when its package.json lists `@strutvane/cli` or it has `strutvane.config.ts` (never a drive root, the temp folder or a folder above home). Destructive commands need `--force --i-understand` unless `APP_ENV` is local, test, testing or development; see the repository README.
 

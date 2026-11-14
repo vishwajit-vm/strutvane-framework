@@ -19,7 +19,8 @@
  * the commands people run outside projects, so the launcher always answers them itself.
  *
  * Without a local CLI only project-less commands run: `--version`, `help`, `new <name>` (via
- * `create-strutvane`) and `doctor --global` (via `@strutvane/cli` matching this launcher).
+ * `create-strutvane` from this launcher's release channel, see {@link releaseChannel}) and
+ * `doctor --global` (via `@strutvane/cli` matching this launcher).
  *
  * The launcher has zero dependencies and does no parsing beyond what delegation needs; it is
  * deliberately tiny so it never has to change when the CLI does. The project boundary rules are
@@ -291,6 +292,47 @@ export interface LauncherEnvironment {
   readonly boundary?: BoundaryFacts
 }
 
+/**
+ * Strict semver (npm's grammar), capturing the prerelease part. The same expression as the
+ * release script's `distTagFor` (`.github/scripts/publish-if-new.mjs`), which decides the dist-tag
+ * every version is published under.
+ */
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/
+/** A dist-tag the release script can publish to: lowercase, starts with a letter. */
+const DIST_TAG = /^[a-z][a-z0-9-]{0,63}$/
+
+/**
+ * The npm dist-tag this launcher was released under, so the packages it fetches come from the
+ * same release channel: `1.2.3` → `latest`; `0.1.0-next.4` → `next`; `0.2.0-canary.7` → `canary`.
+ *
+ * **Why a channel and not a pinned version.** Before 1.0 every Strutvane version is published
+ * under a prerelease dist-tag (`next`), while `latest` still points at the name placeholder
+ * (`0.0.0-reserved.0`, which has no executable), so `create-strutvane@latest` cannot run.
+ * Pinning `create-strutvane@<launcher version>` is not an option either: the starter lives in
+ * another repository and Changesets versions it independently, so a launcher patch would pin a
+ * starter version that may never exist. The dist-tag is the one thing both release flows share:
+ * it is derived from the prerelease id exactly as the release script derives it.
+ *
+ * The result ends up in an `npx` argument, so anything unexpected (not strict semver, a numeric
+ * or upper-case id, `latest` itself, a very long id) falls back to `latest` rather than being
+ * passed on.
+ */
+export function releaseChannel(version: string): string {
+  const pre = SEMVER.exec(version)?.[4]
+  if (pre === undefined) return 'latest'
+  const id = pre.split('.')[0] ?? ''
+  return DIST_TAG.test(id) && id !== 'latest' ? id : 'latest'
+}
+
+/**
+ * How to name `pkg` in an install command for `channel`: the bare name on `latest` (what people
+ * type anyway), `pkg@channel` otherwise (e.g. `@strutvane/cli@next`).
+ */
+export function packageSpec(pkg: string, channel: string): string {
+  return channel === 'latest' ? pkg : `${pkg}@${channel}`
+}
+
 /** Characters allowed in arguments that pass through a Windows shell (the npx.cmd fallback). */
 const SHELL_SAFE = /^[A-Za-z0-9@._/:=+,-]+$/
 /** Characters allowed in an absolute shim path that is quoted for cmd.exe. */
@@ -358,6 +400,7 @@ export function resolveWindowsExecutable(
 }
 
 function help(version: string, local: LocalCli | undefined): string {
+  const channel = releaseChannel(version)
   const lines = [`strutvane ${version}: the Strutvane command line launcher`, '']
   if (local === undefined) {
     lines.push('No project-local @strutvane/cli was found, so only these commands are available:')
@@ -371,7 +414,7 @@ function help(version: string, local: LocalCli | undefined): string {
     )
   }
   lines.push(
-    '  strutvane new <name> [flags]   Create a project (runs create-strutvane)',
+    `  strutvane new <name> [flags]   Create a project (runs create-strutvane@${channel})`,
     '  strutvane doctor --global      Check this machine (Node.js version, package managers)',
     '  strutvane --version            Print the launcher version',
     '  strutvane help                 Show this help',
@@ -483,12 +526,17 @@ export async function runLauncher(
     env.stdout(help(env.version, local))
     return 0
   }
+  const channel = releaseChannel(env.version)
   const [first, ...rest] = argv
   if (first === 'new' || first === 'create') {
-    return viaNpx(env, 'create-strutvane@latest', rest)
+    // Always name the channel explicitly (also `@latest`), so npx resolves it from the registry.
+    return viaNpx(env, `create-strutvane@${channel}`, rest)
   }
   if (first === 'doctor' && rest.includes('--global')) {
-    return viaNpx(env, `@strutvane/cli@${env.version}`, argv)
+    // @strutvane/cli is released together with the launcher (Changesets `fixed`), so the exact
+    // version exists; a version that is not strict semver is never passed to npx.
+    const cli = SEMVER.test(env.version) ? env.version : channel
+    return viaNpx(env, `@strutvane/cli@${cli}`, argv)
   }
   env.stderr(
     [
@@ -496,7 +544,7 @@ export async function runLauncher(
       `  (searched from ${start} upwards; only folders whose package.json lists @strutvane/cli`,
       '  or that contain strutvane.config.ts count, and never a drive root, the temp folder or a',
       '  folder above your home directory).',
-      '  Run it inside a project, or add the CLI to this one: pnpm add -D @strutvane/cli',
+      `  Run it inside a project, or add the CLI to this one: pnpm add -D ${packageSpec('@strutvane/cli', channel)}`,
       '  Create a new project with: strutvane new <name>',
       '',
     ].join('\n'),

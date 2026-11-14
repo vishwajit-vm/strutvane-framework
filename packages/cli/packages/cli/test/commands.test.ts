@@ -330,6 +330,18 @@ describe('doctor', () => {
     expect(human.stderr).toContain('check')
   })
 
+  test('the install hint for a missing @strutvane/cli names the release channel', async () => {
+    const root = makeProject({}, {})
+    const hint = async (version: string): Promise<string | undefined> => {
+      const r = await cli(['doctor', '--json'], { cwd: root, version })
+      const checks = (r.json().data as { checks: { id: string; hint?: string }[] }).checks
+      return checks.find((c) => c.id === 'cli-local')?.hint
+    }
+    expect(await hint('0.1.0-next.0')).toContain('(pnpm add -D @strutvane/cli@next)')
+    expect(await hint('1.0.0')).toContain('(pnpm add -D @strutvane/cli)')
+    expect(await hint('1.0.0-Weird.0')).toContain('(pnpm add -D @strutvane/cli)')
+  })
+
   test('env errors, registry state, lock conflicts and plugins', async () => {
     const root = makeProject({
       '.env.example': 'A=1\nB=2\n',

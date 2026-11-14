@@ -24,7 +24,9 @@ import {
   type LauncherEnvironment,
   NO_NOTICE_ENV,
   nodeLaunchSpawner,
+  packageSpec,
   printable,
+  releaseChannel,
   resolveWindowsExecutable,
   runLauncher,
 } from '../src/launcher.ts'
@@ -244,6 +246,46 @@ describe('runLauncher (in-process)', () => {
     })
   })
 
+  test('new/create fetch create-strutvane from the launcher release channel', async () => {
+    const cases: [version: string, spec: string][] = [
+      ['0.1.0-next.0', 'create-strutvane@next'],
+      ['0.2.0-canary.20261114', 'create-strutvane@canary'],
+      ['1.0.0', 'create-strutvane@latest'],
+      ['0.0.0', 'create-strutvane@latest'],
+      ['1.0.0-RC.1', 'create-strutvane@latest'],
+      ['not a version', 'create-strutvane@latest'],
+    ]
+    for (const [version, spec] of cases) {
+      for (const word of ['new', 'create']) {
+        const env = environment(temp(), { version })
+        expect(await runLauncher([word, 'acme', '--preset', 'api'], env)).toBe(0)
+        expect(env.captured.calls).toEqual([
+          {
+            command: 'npx',
+            args: ['--yes', spec, 'acme', '--preset', 'api'],
+            env: {},
+            shell: false,
+          },
+        ])
+      }
+    }
+  })
+
+  test('help and the no-project error name the release channel', async () => {
+    const pre = environment(temp(), { version: '0.1.0-next.0' })
+    await runLauncher(['help'], pre)
+    expect(pre.captured.stdout).toContain('Create a project (runs create-strutvane@next)')
+    const e = environment(temp(), { version: '0.1.0-next.0' })
+    expect(await runLauncher(['routes'], e)).toBe(2)
+    expect(e.captured.stderr).toContain('pnpm add -D @strutvane/cli@next\n')
+    const stable = environment(temp(), { version: '1.0.0' })
+    await runLauncher(['help'], stable)
+    expect(stable.captured.stdout).toContain('Create a project (runs create-strutvane@latest)')
+    const s = environment(temp(), { version: '1.0.0' })
+    await runLauncher(['routes'], s)
+    expect(s.captured.stderr).toContain('pnpm add -D @strutvane/cli\n')
+  })
+
   test('doctor --global runs the matching @strutvane/cli through npx', async () => {
     const env = environment(temp(), { version: '0.4.0' })
     await runLauncher(['doctor', '--global'], env)
@@ -253,6 +295,27 @@ describe('runLauncher (in-process)', () => {
       'doctor',
       '--global',
     ])
+  })
+
+  test('doctor --global pins a prerelease exactly; a non-semver version falls back to the channel', async () => {
+    const pre = environment(temp(), { version: '0.1.0-next.3' })
+    await runLauncher(['doctor', '--global'], pre)
+    expect(pre.captured.calls[0]?.args).toEqual([
+      '--yes',
+      '@strutvane/cli@0.1.0-next.3',
+      'doctor',
+      '--global',
+    ])
+    for (const version of ['0.1.0 & calc', 'v1.0.0', '']) {
+      const odd = environment(temp(), { version })
+      await runLauncher(['doctor', '--global'], odd)
+      expect(odd.captured.calls[0]?.args).toEqual([
+        '--yes',
+        '@strutvane/cli@latest',
+        'doctor',
+        '--global',
+      ])
+    }
   })
 
   test(`${CREATE_ENV} overrides the starter command; invalid values are rejected`, async () => {
@@ -567,4 +630,42 @@ describe('child processes on Windows', () => {
       expect(unsafe.captured.calls).toEqual([])
     },
   )
+})
+
+describe('releaseChannel', () => {
+  test('stable versions are on latest; a prerelease id is its own channel', () => {
+    expect(releaseChannel('1.2.3')).toBe('latest')
+    expect(releaseChannel('0.1.0')).toBe('latest')
+    expect(releaseChannel('1.2.3+build.5')).toBe('latest')
+    expect(releaseChannel('0.1.0-next.0')).toBe('next')
+    expect(releaseChannel('0.1.0-next')).toBe('next')
+    expect(releaseChannel('0.2.0-canary.20261114')).toBe('canary')
+    expect(releaseChannel('1.0.0-beta-2.1+sha.abc')).toBe('beta-2')
+  })
+
+  test('anything odd falls back to latest instead of reaching npx', () => {
+    for (const version of [
+      '',
+      '0.0',
+      'v1.0.0-next.0', // not strict semver
+      '01.0.0-next.0', // leading zero
+      '1.0.0-0', // numeric id
+      '1.0.0-1next.0', // starts with a digit
+      '1.0.0-Next.0', // upper case: npm tags are case-sensitive, ours are lowercase
+      '1.0.0-latest.1',
+      '1.0.0-next..1',
+      '1.0.0-next.0 && calc',
+      '1.0.0-next&calc.0',
+      '1.0.0-next.0\n',
+      `1.0.0-${'a'.repeat(65)}.0`,
+    ]) {
+      expect(releaseChannel(version), version).toBe('latest')
+    }
+    expect(releaseChannel(`1.0.0-${'a'.repeat(64)}.0`)).toBe('a'.repeat(64))
+  })
+
+  test('packageSpec: bare on latest, name@channel otherwise', () => {
+    expect(packageSpec('@strutvane/cli', 'latest')).toBe('@strutvane/cli')
+    expect(packageSpec('@strutvane/cli', 'next')).toBe('@strutvane/cli@next')
+  })
 })

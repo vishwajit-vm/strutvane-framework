@@ -7,6 +7,11 @@
  * installer's `uninstall()` first (while the package is still present), then removes the
  * dependency. Undeclared flags are passed to the installer as answers (`--methods email`).
  *
+ * First-party packages are installed from this CLI's release channel (`@strutvane/auth@next`
+ * while the CLI is a `next` prerelease; the bare name on `latest`), because before 1.0 a bare
+ * name resolves npm's `latest` tag, which is only the name placeholder. Third-party plugins are
+ * installed by their bare name. See `project/channel.ts`.
+ *
  * Security: package names are validated before anything runs (no paths, URLs or `file:`
  * specs), the installer module must resolve inside the package's directory in `node_modules`,
  * and a package whose `strutvane.compat` excludes this CLI is refused (exit 7).
@@ -28,6 +33,7 @@ import {
 import { CliError, usageError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
 import { refreshRegistry } from '../make/apply.ts'
+import { channelSpec } from '../project/channel.ts'
 import {
   assertCompatible,
   importFile,
@@ -43,12 +49,21 @@ import {
   packageManagerCommand,
   readInstalledPackage,
 } from '../project/project.ts'
+import { isStrutvanePackage } from './about.ts'
 
 /** Validate and expand a package argument (`auth` → `@strutvane/auth`). */
 export function packageArgument(input: string): string {
   const name = expandPackageName(input.trim())
   if (!isValidPackageName(name)) throw usageError('INVALID_PACKAGE_NAME', { name: input })
   return name
+}
+
+/**
+ * What to pass to the package manager to install `name`: first-party packages on the release
+ * channel of `cliVersion` (see `project/channel.ts`), anything else by its bare name.
+ */
+export function installSpec(name: string, cliVersion: string): string {
+  return isStrutvanePackage(name) ? channelSpec(name, cliVersion) : name
 }
 
 /** Run the package manager; a non-zero exit is a `COMMAND_FAILED` error. */
@@ -142,7 +157,7 @@ export const addCommand: AnyCommand = defineCommand({
         ctx.out.info('Dry run: the installer can only be previewed once the package is installed.')
         return { data: summary(name, false, undefined) }
       }
-      await runPackageManager(ctx, project, 'add', [name])
+      await runPackageManager(ctx, project, 'add', [installSpec(name, ctx.version)])
     }
     const fresh = loadProject(project.root)
     const installer = await loadInstaller(ctx, fresh, name)

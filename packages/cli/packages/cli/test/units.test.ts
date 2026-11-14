@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, test } from 'vitest'
 import { names, pluralize, quote, words } from '../src/make/names.ts'
+import { channelSpec, releaseChannel } from '../src/project/channel.ts'
 import { parseEnv } from '../src/project/env-file.ts'
 import { compareVersions, parseRange, parseVersion, satisfies } from '../src/project/semver.ts'
 import { CLI_VERSION, readPackageVersion } from '../src/version.ts'
@@ -195,5 +196,38 @@ describe('version', () => {
     expect(CLI_VERSION).toMatch(/^\d+\.\d+\.\d+/)
     expect(readPackageVersion(new URL('file:///definitely/missing/package.json'))).toBe('0.0.0')
     expect(readPackageVersion(new URL('../../../tsconfig.json', import.meta.url))).toBe('0.0.0')
+  })
+})
+
+describe('release channel', () => {
+  test('stable → latest, prerelease id → its channel (as the release script tags it)', () => {
+    expect(releaseChannel('1.2.3')).toBe('latest')
+    expect(releaseChannel('1.2.3+build.1')).toBe('latest')
+    expect(releaseChannel('0.1.0-next.0')).toBe('next')
+    expect(releaseChannel('0.2.0-canary.20261114')).toBe('canary')
+    expect(releaseChannel('1.0.0-rc-1.2')).toBe('rc-1')
+    expect(releaseChannel(CLI_VERSION)).toMatch(/^[a-z][a-z0-9-]*$/)
+  })
+
+  test('odd versions fall back to latest', () => {
+    for (const version of [
+      '',
+      '0.0.0-',
+      'v0.1.0-next.0',
+      '0.1.0-0',
+      '0.1.0-9next',
+      '0.1.0-NEXT.1',
+      '0.1.0-latest.1',
+      '0.1.0-next.0 & calc',
+      '0.1.0-ne%xt.0',
+      `0.1.0-${'x'.repeat(65)}`,
+    ]) {
+      expect(releaseChannel(version), version).toBe('latest')
+    }
+  })
+
+  test('channelSpec names the channel except on latest', () => {
+    expect(channelSpec('@strutvane/cli', '0.1.0-next.0')).toBe('@strutvane/cli@next')
+    expect(channelSpec('@strutvane/cli', '1.0.0')).toBe('@strutvane/cli')
   })
 })

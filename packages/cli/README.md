@@ -25,14 +25,22 @@ Strutvane CLI is part of **[Strutvane](https://github.com/vishwajit-vm/strutvane
 
 ## Quick start
 
+Until 1.0, every Strutvane package is published under the npm dist-tag `next` (`latest` only holds a name placeholder), so name the tag: `npm create strutvane@next`, `npx strutvane@next new acme`, `pnpm add -D strutvane@next @strutvane/cli@next`. From 1.0 these become `@latest` (or no tag at all).
+
 ```bash
-pnpm add -D strutvane @strutvane/cli   # create-strutvane adds both, plus the script "sv": "strutvane"
+npm create strutvane@next acme         # or: npx strutvane@next new acme
+cd acme
+pnpm add -D strutvane@next @strutvane/cli@next   # only for an existing app; create-strutvane adds both, plus the script "sv": "strutvane"
 pnpm sv make:model Invoice number:string:unique "amount:decimal(12,2):min(0)" "customer:belongsTo(Customer)"
 pnpm sv routes
 pnpm sv doctor
 ```
 
-Outside a project, the launcher offers `strutvane new <name>` (runs `create-strutvane`), `strutvane doctor --global`, `--version` and `help`.
+Outside a project, the launcher offers `strutvane new <name>`, `strutvane doctor --global`, `--version` and `help`.
+
+### Release channel
+
+The launcher and the CLI fetch other Strutvane packages from the npm dist-tag they were released under themselves: a `0.1.0-next.N` build uses `next`, a `0.2.0-canary.N` build uses `canary`, and a stable build uses `latest`. So `strutvane new` runs `create-strutvane@next` (from 1.0: `create-strutvane@latest`), `sv add auth` installs `@strutvane/auth@next` (from 1.0: `@strutvane/auth`), and install hints name the same tag. The channel is derived exactly as the release workflow derives the tag it publishes to; a version that does not fit (not strict semver, an unusual prerelease id) falls back to `latest`. `strutvane doctor --global` runs `@strutvane/cli` at the launcher's exact version, because the two are always released together. Third-party plugins are installed by their bare name.
 
 ### Which folder is a project
 
@@ -63,7 +71,7 @@ Destructive commands must be typed in full: prefixes such as `sv mi:fr` are refu
 | `make:seeder <Name>` / `make:factory <Model>` / `make:test <name>` | Seeder (`--model`, `--count`), factory from the model's field types, feature/unit/e2e test |
 | `registry:build [--check]` / `registry:watch` | Compiles conventions into the typed `.strutvane/registry.gen.ts` without running app code (ADR-0010). `--check` exits 6 when stale |
 | `routes` / `models` / `permissions` | Read the registry: CRUD, action and custom routes with permissions; models with fields and relations; every permission |
-| `add <package>` / `remove <package>` | Install a package and run its devkit installer (all-or-nothing, previewable). Unknown flags become installer answers: `sv add auth --methods email` |
+| `add <package>` / `remove <package>` | Install a package (Strutvane packages from the CLI's release channel, e.g. `@strutvane/auth@next`) and run its devkit installer (all-or-nothing, previewable). Unknown flags become installer answers: `sv add auth --methods email` |
 | `upgrade [--to <v> \| --channel <tag>]` | Bumps Strutvane packages, three-way merges owned files (ADR-0012), then runs the project's `tsc --noEmit` |
 | `migrate*`, `db:*` | Provided by `@strutvane/framework` through its `strutvane.commands` module; the CLI explains how to install it when missing |
 

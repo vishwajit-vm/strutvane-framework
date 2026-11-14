@@ -15,6 +15,7 @@ import { type AnyCommand, defineCommand, type Project } from '../framework/comma
 import { CliError, toFailure } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
 import { renderMessages } from '../framework/run.ts'
+import { channelSpec } from '../project/channel.ts'
 import { checkEnv } from '../project/env-check.ts'
 import { loadPluginCommands } from '../project/plugin-commands.ts'
 import { declaredRange, dependencyNames, readInstalledPackage } from '../project/project.ts'
@@ -48,7 +49,7 @@ export function checkNode(version: string): DoctorCheck {
     : fail('node', `Node.js ${version} is too old`, `Install Node.js ${MIN_NODE_MAJOR} or newer.`)
 }
 
-function checkPackageJson(project: Project): DoctorCheck[] {
+function checkPackageJson(project: Project, cliVersion: string): DoctorCheck[] {
   const checks: DoctorCheck[] = []
   checks.push(
     project.packageJson['type'] === 'module'
@@ -61,7 +62,9 @@ function checkPackageJson(project: Project): DoctorCheck[] {
       : warn(
           'cli-local',
           '@strutvane/cli is not in package.json',
-          'Add it (pnpm add -D @strutvane/cli) so everyone runs the same CLI version.',
+          // Named on this CLI's release channel: before 1.0, a bare name resolves `latest`, which
+          // is only the npm name placeholder (see project/channel.ts).
+          `Add it (pnpm add -D ${channelSpec('@strutvane/cli', cliVersion)}) so everyone runs the same CLI version.`,
         ),
   )
   return checks
@@ -267,7 +270,7 @@ export const doctorCommand: AnyCommand = defineCommand({
     const project = ctx.flags.global === true ? undefined : ctx.requireProject()
     if (project !== undefined) {
       checks.push(
-        ...checkPackageJson(project),
+        ...checkPackageJson(project, ctx.version),
         ...checkPackages(project),
         ...checkEnvFiles(project),
       )

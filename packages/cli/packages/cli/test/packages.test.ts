@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { REDACTED, recordEjection } from '@strutvane/devkit'
 import { afterAll, describe, expect, test } from 'vitest'
-import { packageArgument } from '../src/commands/packages.ts'
+import { installSpec, packageArgument } from '../src/commands/packages.ts'
 import {
   addDependencies,
   cleanupTempDirs,
@@ -52,7 +52,8 @@ function installDemo(root: string, extra: Record<string, unknown> = {}): void {
 /** A spawner whose `pnpm add` installs the demo package. */
 function installingSpawner(root: string) {
   return fakeSpawner((call) => {
-    if (call.args[0] === 'add' && call.args.includes('@strutvane/demo')) {
+    const demo = (x: string): boolean => x === '@strutvane/demo' || x.startsWith('@strutvane/demo@')
+    if (call.args[0] === 'add' && call.args.some(demo)) {
       installDemo(root)
       addDependencies(root, { '@strutvane/demo': '0.1.0' })
     }
@@ -61,12 +62,32 @@ function installingSpawner(root: string) {
 }
 
 describe('add', () => {
+  test('first-party packages come from the CLI release channel; others by bare name', async () => {
+    expect(installSpec('@strutvane/auth', '0.1.0-next.0')).toBe('@strutvane/auth@next')
+    expect(installSpec('@strutvane/auth', '0.2.0-canary.3')).toBe('@strutvane/auth@canary')
+    expect(installSpec('@strutvane/auth', '1.0.0')).toBe('@strutvane/auth')
+    expect(installSpec('@strutvane/auth', '1.0.0-0')).toBe('@strutvane/auth')
+    expect(installSpec('strutvane-plugin-x', '0.1.0-next.0')).toBe('strutvane-plugin-x')
+    expect(installSpec('@acme/strutvane-plugin-x', '0.1.0-next.0')).toBe('@acme/strutvane-plugin-x')
+    for (const [version, spec] of [
+      ['0.1.0-next.0', '@strutvane/demo@next'],
+      ['1.0.0', '@strutvane/demo'],
+    ] as const) {
+      const root = makeProject({ 'pnpm-lock.yaml': '', '.env.example': '' })
+      const spawn = installingSpawner(root)
+      const r = await cli(['add', 'demo', '--json'], { cwd: root, spawn, version })
+      expect(r.code, r.stdout).toBe(0)
+      expect(spawn.calls[0]?.args).toEqual(['add', spec])
+    }
+  })
+
   test('installs with the project package manager, runs the installer and refreshes the registry', async () => {
     const root = makeProject({ 'pnpm-lock.yaml': '', '.env.example': '' })
     const spawn = installingSpawner(root)
     const r = await cli(['add', 'demo', '--methods', 'email,google', '--json'], {
       cwd: root,
       spawn,
+      version: '1.0.0',
     })
     expect(r.code, r.stdout).toBe(0)
     expect(spawn.calls[0]).toMatchObject({
