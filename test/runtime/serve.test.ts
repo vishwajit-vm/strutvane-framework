@@ -158,4 +158,31 @@ describe('serve', () => {
     expect(reply).toContain('200 OK')
     expect(urls[0]).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/)
   })
+
+  it('no origin-form request target can change the request origin', async () => {
+    const urls: string[] = []
+    for (const publicUrl of [undefined, 'https://app.example.test']) {
+      server = await serve(
+        (request) => {
+          urls.push(request.url)
+          return new Response('ok')
+        },
+        { port: 0, ...(publicUrl ? { publicUrl } : {}) },
+      )
+      const expected = publicUrl ?? `http://127.0.0.1:${server.port}`
+      const targets = ['//evil.test/a', '//evil.test:99/b?q=1', '///evil.test/c', '/\\evil.test/d']
+      for (const target of targets) {
+        urls.length = 0
+        const reply = await raw(
+          server.port,
+          `GET ${target} HTTP/1.1\r\nHost: evil.test\r\nConnection: close\r\n\r\n`,
+        )
+        expect(reply).toContain('200 OK')
+        expect(urls).toHaveLength(1)
+        expect(new URL(urls[0] as string).origin).toBe(expected)
+      }
+      await server.close()
+      server = undefined
+    }
+  })
 })

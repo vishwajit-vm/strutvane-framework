@@ -178,7 +178,12 @@ function toRequest(
   const method = req.method ?? 'GET'
   // `req.url` is a path (origin-form). An absolute-form target must not change the origin.
   const path = (req.url ?? '/').startsWith('/') ? (req.url ?? '/') : '/'
-  return new Request(new URL(path, origin), {
+  // Appended to the origin, never resolved against it: resolving `//host/x` (or `/\host/x`) as a
+  // relative reference would make it a scheme-relative URL that replaces the host.
+  const url = new URL(`${origin}${path}`)
+  if (url.origin !== new URL(origin).origin)
+    throw new TypeError('request target changed the origin')
+  return new Request(url, {
     method,
     headers,
     signal,
