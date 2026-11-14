@@ -68,8 +68,9 @@ import {
   type RequestState,
   registerResourceRoutes,
 } from './resource-routes.ts'
-import { type RouteDefinition, registerCustomRoutes } from './route.ts'
+import { type RouteDefinition, registerCustomRoutes, routePattern } from './route.ts'
 import { acceptRequestId, securityHeaders } from './security.ts'
+import { createStaticFiles, type StaticFilesOptions } from './static-files.ts'
 
 /** Options for {@link createHttpApp}. */
 export interface HttpAppOptions {
@@ -121,6 +122,13 @@ export interface HttpAppOptions {
   readonly registry?: ModelRegistry
   /** Custom routes (`route.get(…)`), mounted under `basePath` before the CRUD routes. */
   readonly routes?: readonly RouteDefinition[]
+  /**
+   * Serve a built single-page UI (e.g. `dist/web`) for requests no route matched: files from
+   * `root`, and `index.html` for client-side routes. The API base path, `/_strutvane`,
+   * `/storage` and the discovery documents are always excluded (an unknown API path stays a
+   * problem+json 404).
+   */
+  readonly staticFiles?: StaticFilesOptions
 }
 
 /**
@@ -251,15 +259,26 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     await hooks.run(HTTP_HOOKS.response, done)
     return undefined
   })
-  http.use(
-    '*',
-    bodyLimit({
-      maxSize: options.bodyLimit ?? DEFAULT_BODY_LIMIT,
-      onError: () => {
-        throw new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 })
-      },
-    }),
-  )
+  const tooLarge = () => {
+    throw new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 })
+  }
+  const defaultLimit = bodyLimit({
+    maxSize: options.bodyLimit ?? DEFAULT_BODY_LIMIT,
+    onError: tooLarge,
+  })
+  // Custom routes may raise (or lower) the limit for themselves, e.g. an upload endpoint.
+  const routeLimits = (options.routes ?? [])
+    .filter((r) => r.bodyLimit !== undefined)
+    .map((r) => ({
+      method: r.method.toUpperCase(),
+      pattern: routePattern(basePath, r.path),
+      limit: bodyLimit({ maxSize: r.bodyLimit as number, onError: tooLarge }),
+    }))
+  http.use('*', (c, next) => {
+    const path = new URL(c.req.url).pathname
+    const own = routeLimits.find((r) => r.method === c.req.method && r.pattern.test(path))
+    return (own?.limit ?? defaultLimit)(c, next)
+  })
 
   const deps = {
     db,
@@ -277,7 +296,15 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       serveSignedFile(c.req.raw, files),
     )
   }
-  registerCustomRoutes(http, options.routes ?? [], { basePath, permissions })
+  registerCustomRoutes(http, options.routes ?? [], {
+    basePath,
+    permissions,
+    app,
+    db,
+    registry,
+    ids: deps.ids,
+    now: deps.now,
+  })
   for (const resource of resources) {
     registerResourceRoutes(http, resource, deps)
     documentResource(http, resource, basePath)
@@ -332,7 +359,25 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     return c.json({ status: ready ? 'ready' : 'unavailable', checks: results }, ready ? 200 : 503)
   })
 
-  http.notFound((c) => {
+  const staticFiles = options.staticFiles
+    ? createStaticFiles({
+        ...options.staticFiles,
+        exclude: [
+          basePath,
+          '/_strutvane',
+          '/storage',
+          '/openapi.json',
+          '/health',
+          '/ready',
+          '/.well-known',
+          ...(options.staticFiles.exclude ?? []),
+        ],
+      })
+    : undefined
+
+  http.notFound(async (c) => {
+    const served = staticFiles ? await staticFiles(c.req.raw) : undefined
+    if (served) return served
     const s = c.get('sv')
     const problem = toProblemBody(new StrutvaneError('NOT_FOUND', { status: 404 }), {
       messages,

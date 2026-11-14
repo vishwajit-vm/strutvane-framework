@@ -21,7 +21,17 @@
  */
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import type { Actor, Permission, PermissionProvider } from '@strutvane/contracts'
-import { ForbiddenError, UnauthenticatedError } from '@strutvane/core'
+import { type Application, ForbiddenError, UnauthenticatedError } from '@strutvane/core'
+import { createRepository, type Repository, type Scope } from '../data/repository.ts'
+import type { Database } from '../database/types.ts'
+import type { AnyModel, ModelDefinition } from '../model/define-model.ts'
+import type { ModelRegistry } from '../model/registry.ts'
+import { bindFilter } from '../query/bind.ts'
+import { queryFields } from '../query/fields.ts'
+import type { StorageManager } from '../storage/manager.ts'
+import { type MultipartLimits, type MultipartResult, parseMultipart } from '../storage/multipart.ts'
+import { StorageManagerToken } from '../tokens.ts'
+import { permissionFor } from './permissions.ts'
 import { type HttpEnv, readJsonBody } from './resource-routes.ts'
 
 /** HTTP methods a custom route may use. */
@@ -45,6 +55,38 @@ export interface RouteContext {
    * JSON); malformed JSON is a 400 `MALFORMED_REQUEST` problem.
    */
   json<T = unknown>(): Promise<T>
+  /** The booted application (container, config, logger): `app.make(Token)`. */
+  readonly app: Application
+  /**
+   * `{ tenantId }` of this request. Pass it to repository calls: a tenant-scoped model refuses
+   * (TENANT_REQUIRED) to run without it, so forgetting it fails closed.
+   */
+  readonly scope: Scope
+  /**
+   * The repository of a model (by model or name). It applies only the scope you pass: use
+   * {@link RouteContext.scope} for tenant isolation, or {@link RouteContext.scopeFor} to also
+   * apply the actor's policy filter, exactly as the CRUD routes do.
+   */
+  repository(model: AnyModel | ModelDefinition | string): Repository
+  /**
+   * The tenant scope plus the PermissionProvider's row filter for `<model>.<action>` (e.g.
+   * `scopeFor(Invoice, 'update')`): rows the actor may not touch are invisible, and writes must
+   * stay inside the filter (403 otherwise).
+   */
+  scopeFor(model: AnyModel | ModelDefinition | string, action: string): Promise<Scope>
+  /**
+   * Require a permission (e.g. `invoice.update`, optionally for one record): 401 for anonymous
+   * callers, 403 otherwise.
+   */
+  authorize(permission: string, record?: Readonly<Record<string, unknown>>): Promise<void>
+  /** The storage disks (`config/filesystems.ts`). */
+  readonly storage: StorageManager
+  /**
+   * Parse a `multipart/form-data` body with limits enforced while streaming (RFC-0002). Temp
+   * files are deleted when the handler finishes, whatever happens; call `file.store()` to keep
+   * one. The route's `bodyLimit` must allow the upload size (default 1 MiB).
+   */
+  multipart(limits?: MultipartLimits): Promise<MultipartResult>
 }
 
 /**
@@ -61,6 +103,11 @@ export interface RouteOptions {
   readonly permission?: string
   /** Allow anonymous callers. Ignored when `permission` is set. */
   readonly public?: boolean
+  /**
+   * Maximum request body in bytes for this route (e.g. an upload endpoint). Default: the app's
+   * body limit (1 MiB). Multipart limits still apply per file on top of it.
+   */
+  readonly bodyLimit?: number
   readonly handler: RouteHandler
 }
 
@@ -81,6 +128,14 @@ function define(method: RouteMethod, path: string, options: RouteOptions): Route
   }
   if (typeof options?.handler !== 'function')
     throw new TypeError(`route.${method}(${JSON.stringify(path)}): handler must be a function`)
+  if (
+    options.bodyLimit !== undefined &&
+    (!Number.isSafeInteger(options.bodyLimit) || options.bodyLimit < 1)
+  ) {
+    throw new TypeError(
+      `route.${method}(${JSON.stringify(path)}): bodyLimit must be a positive number of bytes`,
+    )
+  }
   if (options.permission !== undefined && !PERMISSION.test(options.permission)) {
     throw new TypeError(
       `route.${method}(${JSON.stringify(path)}): permission ${JSON.stringify(options.permission)} must look like "report.revenue"`,
@@ -111,12 +166,56 @@ export function isRouteDefinition(value: unknown): value is RouteDefinition {
   )
 }
 
+/** What custom routes need from the app (resolved once by `createHttpApp`). */
+export interface CustomRouteDeps {
+  readonly basePath: string
+  readonly permissions: PermissionProvider
+  readonly app: Application
+  readonly db: Database
+  readonly registry: ModelRegistry
+  readonly ids: () => string
+  readonly now: () => Date
+}
+
+/** `/notes/:id/attachments` under `/api/v1` → a RegExp matching concrete request paths. */
+export function routePattern(basePath: string, path: string): RegExp {
+  const escaped = `${basePath}${path}`
+    .split('/')
+    .map((seg) => (seg.startsWith(':') ? '[^/]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    .join('/')
+  return new RegExp(`^${escaped}/?$`)
+}
+
 /** Mount custom routes under `basePath`. */
 export function registerCustomRoutes(
   http: OpenAPIHono<HttpEnv>,
   routes: readonly RouteDefinition[],
-  deps: { readonly basePath: string; readonly permissions: PermissionProvider },
+  deps: CustomRouteDeps,
 ): void {
+  const repos = new Map<string, Repository>()
+  const definitionOf = (model: AnyModel | ModelDefinition | string): ModelDefinition =>
+    deps.registry.require(
+      typeof model === 'string'
+        ? model
+        : 'definition' in model
+          ? model.definition.name
+          : model.name,
+    )
+  const repository = (model: AnyModel | ModelDefinition | string): Repository => {
+    const def = definitionOf(model)
+    let repo = repos.get(def.name)
+    if (!repo) {
+      repo = createRepository({
+        db: deps.db,
+        model: def,
+        registry: deps.registry,
+        ids: deps.ids,
+        now: deps.now,
+      })
+      repos.set(def.name, repo)
+    }
+    return repo
+  }
   const seen = new Set<string>()
   for (const r of routes) {
     const key = `${r.method} ${r.path}`
@@ -131,7 +230,43 @@ export function registerCustomRoutes(
       } else if (r.public !== true && s.actor === null) {
         throw new UnauthenticatedError()
       }
+      const scope: Scope = s.tenantId !== undefined ? { tenantId: s.tenantId } : {}
+      const uploads: MultipartResult[] = []
       const context: RouteContext = {
+        app: deps.app,
+        scope,
+        repository,
+        storage: deps.app.make(StorageManagerToken),
+        authorize: async (permission, record) => {
+          const [prefix, ...rest] = permission.split('.')
+          const decision = await deps.permissions.can(
+            s.actor,
+            permission as Permission,
+            prefix && rest.length > 0 ? { type: prefix, ...(record ? { record } : {}) } : undefined,
+          )
+          if (!decision.allowed)
+            throw s.actor === null ? new UnauthenticatedError() : new ForbiddenError()
+        },
+        scopeFor: async (model, action) => {
+          const def = definitionOf(model)
+          const raw = await deps.permissions.filterFor(
+            s.actor,
+            permissionFor(def.permission, action),
+            def.permission,
+          )
+          // Policy filters are trusted code: any operator the field supports may be used.
+          const filter = bindFilter(raw, {
+            fields: queryFields(def),
+            operators: 'any',
+            actor: s.actor,
+          })
+          return { ...scope, filter }
+        },
+        multipart: async (limits) => {
+          const parsed = await parseMultipart(c.req.raw, limits)
+          uploads.push(parsed)
+          return parsed
+        },
         request: c.req.raw,
         params: c.req.param() as Record<string, string>,
         query: new URL(c.req.url).searchParams,
@@ -142,10 +277,15 @@ export function registerCustomRoutes(
         ...(s.clientAddress !== undefined ? { clientAddress: s.clientAddress } : {}),
         json: async <T>() => (await readJsonBody(c)) as T,
       }
-      const result = await r.handler(context)
-      if (result instanceof Response) return result
-      if (result === undefined) return c.body(null, 204)
-      return c.json(result as object)
+      try {
+        const result = await r.handler(context)
+        if (result instanceof Response) return result
+        if (result === undefined) return c.body(null, 204)
+        return c.json(result as object)
+      } finally {
+        // Temp files never outlive the request, whether the handler stored, failed or forgot them.
+        await Promise.all(uploads.map((u) => u.cleanup().catch(() => undefined)))
+      }
     })
   }
 }

@@ -9,7 +9,7 @@ import { createHttpApp, type HttpApp } from '../http/create-http-app.ts'
 import type { TrustProxy } from '../http/proxy.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import type { AnyModel } from '../model/define-model.ts'
-import { ProjectModelsToken } from '../tokens.ts'
+import { ProjectModelsToken, ProjectSignedFilesToken } from '../tokens.ts'
 import { firstAppEnv, processAppEnv } from './app-env.ts'
 import type { LoadedProject } from './project.ts'
 
@@ -58,7 +58,11 @@ export function mergeResources(
 /** Boot a loaded project. Shuts the app down again if building the HTTP app fails. */
 export async function bootProject(
   project: LoadedProject,
-  options: { readonly env?: string } = {},
+  options: {
+    readonly env?: string
+    /** Serve this built UI folder (e.g. `dist/web`) next to the API (`sv start`). */
+    readonly web?: string
+  } = {},
 ): Promise<BootedProject> {
   const appConfig = project.config['app'] as
     | { env?: string; name?: string; publicUrl?: string; trustProxy?: TrustProxy }
@@ -73,6 +77,10 @@ export async function bootProject(
     const http = createHttpApp(app, {
       resources: mergeResources(project.models, project.resources),
       routes: project.routes,
+      signedFiles: app.container.has(ProjectSignedFilesToken)
+        ? app.make(ProjectSignedFilesToken)
+        : [],
+      ...(options.web ? { staticFiles: { root: options.web } } : {}),
       basePath: apiBasePath(api),
       env,
       openapi: api?.docs !== false,

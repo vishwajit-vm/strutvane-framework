@@ -19,7 +19,6 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { Readable } from 'node:stream'
 import {
   clientAddressOf,
   forwardedProtocol,
@@ -75,7 +74,76 @@ export interface ServeOptions {
   readonly trustProxy?: TrustProxy
 }
 
-function toRequest(req: IncomingMessage, origin: string, signal: AbortSignal): Request {
+/** Most bytes read and discarded after the app stopped reading a body, before the socket closes. */
+export const MAX_DISCARD_BYTES: number = 1024 * 1024
+
+/**
+ * The request body as a web stream, with backpressure, that survives the app abandoning it.
+ *
+ * `Readable.toWeb(req)` throws an uncaught "Controller is already closed" when the consumer
+ * cancels the stream (a body limit, an aborted multipart upload) while the socket still delivers
+ * data: one oversized upload could crash the whole server. Here, once the stream is cancelled the
+ * rest of the body is read and discarded (so the client still receives the 413/422 the app chose)
+ * up to {@link MAX_DISCARD_BYTES}; beyond that the request is destroyed.
+ */
+export function requestBody(req: IncomingMessage): {
+  readonly stream: ReadableStream<Uint8Array>
+  /** Stop delivering data and discard the rest of the body (bounded). Idempotent. */
+  abandon(): void
+} {
+  let done = false
+  let discarded = 0
+  const abandon = (): void => {
+    done = true
+    if (!req.complete) req.resume()
+  }
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        req.on('data', (chunk: Buffer) => {
+          if (done) {
+            discarded += chunk.byteLength
+            if (discarded > MAX_DISCARD_BYTES) req.destroy()
+            return
+          }
+          controller.enqueue(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
+          if ((controller.desiredSize ?? 0) <= 0) req.pause()
+        })
+        req.once('end', () => {
+          if (done) return
+          done = true
+          controller.close()
+        })
+        req.once('error', (error) => {
+          if (done) return
+          done = true
+          controller.error(error)
+        })
+        req.once('close', () => {
+          if (done) return
+          // The client went away mid-body.
+          done = true
+          controller.error(new Error('request body aborted'))
+        })
+      },
+      pull() {
+        req.resume()
+      },
+      cancel() {
+        abandon() // drain (and discard) the rest, bounded above
+      },
+    },
+    { highWaterMark: 4, size: () => 1 },
+  )
+  return { stream, abandon }
+}
+
+function toRequest(
+  req: IncomingMessage,
+  origin: string,
+  signal: AbortSignal,
+  body: ReadableStream<Uint8Array> | undefined,
+): Request {
   const headers = new Headers()
   for (const [name, value] of Object.entries(req.headers)) {
     if (value === undefined) continue
@@ -83,16 +151,13 @@ function toRequest(req: IncomingMessage, origin: string, signal: AbortSignal): R
     else headers.set(name, value)
   }
   const method = req.method ?? 'GET'
-  const hasBody = method !== 'GET' && method !== 'HEAD'
   // `req.url` is a path (origin-form). An absolute-form target must not change the origin.
   const path = (req.url ?? '/').startsWith('/') ? (req.url ?? '/') : '/'
   return new Request(new URL(path, origin), {
     method,
     headers,
     signal,
-    ...(hasBody
-      ? { body: Readable.toWeb(req) as ReadableStream<Uint8Array>, duplex: 'half' as const }
-      : {}),
+    ...(body ? { body, duplex: 'half' as const } : {}),
   })
 }
 
@@ -187,8 +252,12 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
       ),
     }
     const method = req.method ?? 'GET'
+    const body = method !== 'GET' && method !== 'HEAD' ? requestBody(req) : undefined
+    // A body the app never read (an early 413 or 401) is drained after the response, so the client
+    // receives that answer instead of a connection reset (bounded by MAX_DISCARD_BYTES).
+    res.once('finish', () => body?.abandon())
     Promise.resolve()
-      .then(() => handler(toRequest(req, origin, controller.signal), bindings))
+      .then(() => handler(toRequest(req, origin, controller.signal, body?.stream), bindings))
       .then((response) => send(res, response, method, controller.signal))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return // the client left; nothing to report to it

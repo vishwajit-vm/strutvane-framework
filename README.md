@@ -116,7 +116,9 @@ discovers everything by convention, so there is nothing to wire by hand:
 | `APP_ENV` | Trimmed and lowercased; empty means unset; unset means `production`. `sv` commands run with the value the CLI resolved (process env, `.env.<--env>`, `.env`), so the CLI's guard and the command never disagree. |
 | `app/models/*.model.ts` | Every model gets its CRUD API under `config/api.ts` `prefix` + `version` (default `/api/v1`). |
 | `app/resources/*.resource.ts` | `defineResource(Invoice, { … })` replaces a model's default resource config. |
-| `app/http/routes/*.ts` | `export default [route.get('/hello', { public: true, handler })]`. A route needs `permission`, or `public: true`, or else a signed-in actor (deny-by-default). |
+| `app/http/routes/*.ts` | `export default [route.get('/hello', { public: true, handler })]`. A route needs `permission`, or `public: true`, or else a signed-in actor (deny-by-default). Handlers get the app's services (see below) and may set `bodyLimit` (bytes) for uploads. |
+| `config/filesystems.ts` | `{ default: 'local', disks: { local: { driver: 'local', root: 'storage/app' } } }` (`local` or `memory`; that disk is the default when the file is missing). Disks sign temporary links with `APP_KEY` (`config/app.ts` `key`, an HKDF subkey) and the app serves them at `/storage/<disk>/…`. |
+| `dist/web/` | `sv start` serves the built UI (`sv build`) next to the API: files, then `index.html` for client-side routes (never for the API base path, `/_strutvane`, `/storage` or discovery documents), with a page CSP. `sv dev` serves the API only. |
 | `database/migrations/` | `sv migrate` diffs the models with `snapshot.json`, writes a timestamped `.sql` file and applies it together with hand-written `.sql`/`.ts` migrations, in timestamp order (`--pretend`, `--rename old=new`, `--separate old=new`, `--allow-destructive`). |
 | `database/seeders/` | `sv db:seed` runs `database.seeder.ts`; `--class InvoiceSeeder` runs one. |
 
@@ -142,6 +144,31 @@ record on the way out (payload `{ resource, type, actor, record }`, `type` being
 prefix such as `invoice`), and `resource.beforeWrite` (`{ resource, type, action, actor, tenantId,
 input }`) may refuse a create or update before it reaches the database. A Strutvane error thrown by
 any hook handler (`ForbiddenError`, `ValidationError`, …) becomes that problem, never a 500.
+
+A custom route handler receives, besides `request`, `params`, `query`, `actor`, `tenantId` and `json()`:
+
+```ts
+route.post('/invoices/:id/mark-paid', {
+  permission: 'invoice.update',
+  handler: async (c) => {
+    const repo = c.repository(Invoice)                 // same repositories as the CRUD routes
+    const scope = await c.scopeFor(Invoice, 'update')   // tenant + the actor's policy filter
+    const paid = await repo.update(c.params.id, { status: 'paid' }, scope)
+    if (!paid) throw new NotFoundError()                // not visible to this actor = 404
+    return paid
+  },
+})
+route.post('/notes/:id/attachments', {
+  bodyLimit: 12 * 1024 * 1024,                          // per route; the app default is 1 MiB
+  handler: async (c) => {
+    const form = await c.multipart({ maxFileSize: 10 * 1024 * 1024, fileFields: ['file'] })
+    const stored = await form.file('file')?.store('notes', { storage: c.storage, id: uuidv7, tenantId: c.tenantId })
+    // temp files are deleted when the handler returns, whatever happened
+  },
+})
+```
+
+`c.scope` is `{ tenantId }` (tenant-scoped models refuse to run without it), `c.authorize(permission, record?)` throws 401/403, `c.storage` is the StorageManager and `c.app` the booted application.
 
 Other packages join the request pipeline through core hooks, never imports. `http.onRequest`
 handlers may set `actor`/`tenant`, add response `headers` (a refreshed session cookie), or answer
@@ -188,7 +215,7 @@ from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `Mo
 | Locale-aware sorting, case folding beyond ASCII | Text sorts by code point and case-insensitive matching folds ASCII only, identically on every engine. |
 | `/docs` UI, custom actions, ETags, rate limiting, request timeouts | Planned. Postgres statements have a default timeout; SQLite and PGlite have none. |
 | Migration `schema` builder and rollback | Hand-written migrations run (`.sql`, or `.ts` with `defineMigration({ up({ db }) {…} })` using `db.execute`), but the `schema` builder of docs/06 §3.2 and `down()`/rollback are not built yet. |
-| Custom routes in OpenAPI, `sv dev` UI serving | Custom routes are served but not documented in `/openapi.json` yet; `sv dev` serves the API only (run Vite separately). |
+| Custom routes in OpenAPI, `sv dev` UI serving | Custom routes are served but not documented in `/openapi.json` yet; `sv dev` serves the API only (run Vite separately; `sv start` serves `dist/web`). |
 
 ## Installation (once released)
 

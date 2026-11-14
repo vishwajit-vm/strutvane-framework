@@ -10,6 +10,8 @@ const [root = process.cwd(), port, hostname] = process.argv.slice(2)
 try {
   const started = await startServer({
     root,
+    // A dev UI comes from Vite; a stale dist/web from an earlier build must not shadow it.
+    web: false,
     ...(port ? { port: Number(port) } : {}),
     ...(hostname ? { hostname } : {}),
   })

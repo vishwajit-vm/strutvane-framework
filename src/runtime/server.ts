@@ -4,8 +4,10 @@
  *
  * @module
  */
+import { join } from 'node:path'
 import { LoggerToken } from '@strutvane/core'
 import type { TrustProxy } from '../http/proxy.ts'
+import { hasBuiltUi } from '../http/static-files.ts'
 import { type BootedProject, bootProject } from './boot.ts'
 import { loadProject } from './project.ts'
 import { type RunningServer, serve } from './serve.ts'
@@ -19,6 +21,11 @@ export interface StartServerOptions {
   readonly hostname?: string
   /** Override `APP_ENV`. */
   readonly env?: string
+  /**
+   * Serve the built UI from this folder next to the API. Default: `<root>/dist/web` when it
+   * contains an `index.html` (the output of `sv build`); `false` serves the API only.
+   */
+  readonly web?: string | false
 }
 
 /** A served project. */
@@ -31,7 +38,15 @@ export interface StartedServer {
 /** Boot the project and start listening. */
 export async function startServer(options: StartServerOptions): Promise<StartedServer> {
   const loaded = await loadProject(options.root)
-  const project = await bootProject(loaded, options.env ? { env: options.env } : {})
+  const builtUi = join(options.root, 'dist', 'web')
+  const web =
+    options.web === false
+      ? undefined
+      : (options.web ?? ((await hasBuiltUi(builtUi)) ? builtUi : undefined))
+  const project = await bootProject(loaded, {
+    ...(options.env ? { env: options.env } : {}),
+    ...(web ? { web } : {}),
+  })
   const logger = project.app.make(LoggerToken)
   const appConfig = loaded.config['app'] as
     | { port?: number; publicUrl?: string; trustProxy?: TrustProxy }
