@@ -35,6 +35,13 @@ export interface WatchOptions {
   readonly maxWaitMs?: number
   /** How often the watched folders' existence is re-checked (safety net). */
   readonly folderCheckMs?: number
+  /**
+   * Delay of one catch-up rebuild after start (default 250 ms). Native watchers start
+   * asynchronously (notably FSEvents on macOS), so a change made in the first moments after
+   * `watchProject` returns can produce no event at all; this rebuild picks it up. Rebuilds are
+   * idempotent and only write when the content changed, so it costs almost nothing.
+   */
+  readonly settleMs?: number
   /** Called after every rebuild (also the initial one). */
   readonly onResult: (result: WriteResult) => void
   /** Called if a rebuild throws unexpectedly (I/O failure). The watcher keeps running. */
@@ -130,6 +137,9 @@ export function watchProject(root: string, options: WatchOptions): WatchHandle {
 
   attach()
   rebuild()
+  // Catch changes made while the native watchers were still starting (see `settleMs`).
+  const settle = setTimeout(schedule, options.settleMs ?? 250)
+  settle.unref()
 
   return {
     rebuild,
@@ -137,6 +147,7 @@ export function watchProject(root: string, options: WatchOptions): WatchHandle {
       if (closed) return
       closed = true
       if (timer !== undefined) clearTimeout(timer)
+      clearTimeout(settle)
       clearInterval(folderCheck)
       rootWatcher.close()
       for (const watcher of watchers.values()) watcher.close()

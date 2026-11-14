@@ -15,6 +15,37 @@ afterAll(cleanupTempDirs)
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('watch mode', () => {
+  test('a change made immediately after start is picked up (native watchers start late)', async () => {
+    const root = copyFixture()
+    const results: WriteResult[] = []
+    const handle = watchProject(root, {
+      debounceMs: 20,
+      settleMs: 100,
+      onResult: (r) => results.push(r),
+    })
+    try {
+      // No pause: on macOS (FSEvents) this write can happen before events are delivered at all.
+      writeFileSync(join(root, 'app/models/early.model.ts'), modelSource('Early'))
+      await waitFor(
+        () =>
+          results.some((r) => r.result.registry?.models.some((m) => m.name === 'Early') === true),
+        10_000,
+        'early change',
+      )
+    } finally {
+      handle.close()
+    }
+  })
+
+  test('closing before the catch-up rebuild cancels it', async () => {
+    const root = copyFixture()
+    const results: WriteResult[] = []
+    const handle = watchProject(root, { settleMs: 50, onResult: (r) => results.push(r) })
+    handle.close()
+    await pause(200)
+    expect(results).toHaveLength(1) // only the initial build
+  })
+
   test('rebuilds on edit, add and folder delete; stops cleanly on close', async () => {
     const root = copyFixture()
     const results: WriteResult[] = []
