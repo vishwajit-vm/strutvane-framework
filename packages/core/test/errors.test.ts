@@ -103,6 +103,32 @@ describe('error registry', () => {
 })
 
 describe('toProblem', () => {
+  test('issue paths named after Object.prototype members still render a 422 (attack-style)', () => {
+    // Client-chosen unknown keys reach issue paths verbatim; none may resolve through the
+    // prototype, crash rendering (a 500) or pollute Object.prototype.
+    const names = [
+      '__proto__',
+      'constructor',
+      'prototype',
+      ...Object.getOwnPropertyNames(Object.prototype),
+    ]
+    const problem = toProblem(
+      new ValidationError(names.map((n) => ({ path: [n], code: 'unknown_field' }))),
+      { traceId: 't', labels: { amount: 'Amount' } },
+    )
+    expect(problem.status).toBe(422)
+    expect(problem.issues).toHaveLength(names.length)
+    const fieldErrors = problem.fieldErrors ?? {}
+    for (const n of names) {
+      expect(Object.hasOwn(fieldErrors, n)).toBe(true)
+      expect(Array.isArray(fieldErrors[n])).toBe(true)
+    }
+    expect(Object.getPrototypeOf(fieldErrors)).toBe(Object.prototype)
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined()
+    // A label map is never consulted through its prototype either.
+    expect(problem.issues?.find((i) => i.path[0] === 'toString')?.message).not.toContain('function')
+  })
+
   test('validation errors become 422 with rendered issues and fieldErrors', () => {
     const problem = toProblem(
       new ValidationError([

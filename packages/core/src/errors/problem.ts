@@ -64,8 +64,10 @@ function attributeFor(
   labels: Readonly<Record<string, string>> | undefined,
 ): string {
   const key = issuePathKey(path)
-  const label = labels?.[key]
-  if (label) return label
+  // Own keys only: a client-chosen path such as "toString" or "__proto__" must never resolve to an
+  // Object.prototype member.
+  const label = labels && Object.hasOwn(labels, key) ? labels[key] : undefined
+  if (typeof label === 'string' && label !== '') return label
   const last = [...path].reverse().find((s): s is string => typeof s === 'string')
   return last ? humanize(last) : 'This field'
 }
@@ -102,13 +104,23 @@ export function renderIssues(
 
 /** Group rendered issue messages by dotted path (the `fieldErrors` convenience map). */
 export function fieldErrorsFrom(issues: readonly ValidationIssue[]): Record<string, string[]> {
-  const out: Record<string, string[]> = {}
+  // Paths come from client input (unknown keys such as "__proto__", "constructor", "toString"):
+  // collect in a Map and define own data properties, never read or assign through the prototype.
+  const grouped = new Map<string, string[]>()
   for (const issue of issues) {
     const key = issuePathKey(issue.path)
-    const list = out[key] ?? []
+    const list = grouped.get(key) ?? []
     list.push(issue.message)
-    out[key] = list
+    grouped.set(key, list)
   }
+  const out: Record<string, string[]> = {}
+  for (const [key, list] of grouped)
+    Object.defineProperty(out, key, {
+      value: list,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
   return out
 }
 
