@@ -20,7 +20,12 @@ import type { RenameDecision } from './migrations/planner.ts'
 import { createModelRegistry } from './model/registry.ts'
 import { firstAppEnv } from './runtime/app-env.ts'
 import { findViteConfig, projectPackageManifest } from './runtime/dev-ui.ts'
-import { migrateProject, migrationTarget, projectMigrationStatus } from './runtime/migrations.ts'
+import {
+  migrateProject,
+  migrationTarget,
+  type PackageMigrationDir,
+  projectMigrationStatus,
+} from './runtime/migrations.ts'
 import { importDefault, type LoadedProject, loadProject } from './runtime/project.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
 import { assertCanListen } from './runtime/serve.ts'
@@ -36,6 +41,12 @@ export interface CommandContextLike {
    * production guard and the command always agree.
    */
   readonly appEnv?: string | undefined
+  /**
+   * The package migration folders the CLI's gate allowed (enabled in strutvane.config.ts, direct
+   * dependency, compat, real path inside the package). Absent (an older CLI) means none: package
+   * migrations then never run (fail closed).
+   */
+  packageMigrations?(): readonly PackageMigrationDir[]
   /** CLI services; `env` is the environment the command runs with (`APP_ENV` included). */
   readonly services?: { readonly env?: Readonly<Record<string, string | undefined>> }
   readonly out: {
@@ -111,7 +122,10 @@ const migrateCommand: ContributedCommand = {
   description: 'Diff models with the database, write a migration and apply it',
   flags: {
     name: { type: 'string', description: 'Name for the generated migration (default "auto")' },
-    pretend: { type: 'boolean', description: 'Write the migration but apply nothing' },
+    pretend: {
+      type: 'boolean',
+      description: 'Write the migration and list package migrations, but apply nothing',
+    },
     'allow-destructive': { type: 'boolean', description: 'Allow dropping tables or columns' },
     rename: {
       type: 'string',
@@ -128,9 +142,19 @@ const migrateCommand: ContributedCommand = {
       ...(ctx.flags['pretend'] === true ? { pretend: true } : {}),
       ...(ctx.flags['allow-destructive'] === true ? { allowDestructive: true } : {}),
       ...(Object.keys(answers).length > 0 ? { resolveRename: answersResolver(answers) } : {}),
+      packageMigrations: ctx.packageMigrations?.() ?? [],
     })
+    const sourceOf = new Map(result.packaged.map((m) => [m.name, m.source]))
+    const from = (name: string): string => {
+      const source = sourceOf.get(name)
+      return source !== undefined ? ` (from ${source})` : ''
+    }
     if (result.created) ctx.out.success(`Created migration ${result.created}.sql`)
-    for (const name of result.applied) ctx.out.success(`Applied ${name}`)
+    if (ctx.flags['pretend'] === true) {
+      for (const m of result.packaged)
+        ctx.out.info(`Package migration ${m.name}${from(m.name)}: runs if not applied yet`)
+    }
+    for (const name of result.applied) ctx.out.success(`Applied ${name}${from(name)}`)
     if (!result.created && result.applied.length === 0) ctx.out.success('Nothing to migrate.')
     return { data: result }
   },
@@ -141,13 +165,16 @@ const statusCommand: ContributedCommand = {
   description: 'Show applied, pending and drifted migrations',
   async run(ctx) {
     const project = await loadFor(ctx)
-    const status = await projectMigrationStatus(project)
+    const status = await projectMigrationStatus(project, {
+      packageMigrations: ctx.packageMigrations?.() ?? [],
+    })
+    const source = (name: string): string => status.sources[name] ?? 'app'
     ctx.out.table(
-      ['Migration', 'Status'],
+      ['Migration', 'Source', 'Status'],
       [
-        ...status.applied.map((a) => [a.name, `applied (batch ${a.batch})`]),
-        ...status.pending.map((p) => [p, 'pending']),
-        ...status.drift.map((d) => [d.name, `drift: ${d.kind}`]),
+        ...status.applied.map((a) => [a.name, source(a.name), `applied (batch ${a.batch})`]),
+        ...status.pending.map((p) => [p, source(p), 'pending']),
+        ...status.drift.map((d) => [d.name, source(d.name), `drift: ${d.kind}`]),
       ],
     )
     return status.drift.length > 0 ? { exitCode: 1, data: status } : { data: status }

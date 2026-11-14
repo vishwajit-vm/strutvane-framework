@@ -192,7 +192,11 @@ export {
   type MigrationTarget,
   migrateProject,
   migrationTarget,
+  type PackagedMigration,
+  type PackageMigrationDir,
+  type ProjectMigrationStatus,
   projectMigrationStatus,
+  readPackageMigrations,
 } from './runtime/migrations.ts'
 export {
   type LoadedProject,

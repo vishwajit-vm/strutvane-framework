@@ -203,7 +203,7 @@ describe('migrations and seeders', () => {
     expect(first.created).toMatch(/^\d{14}_create_invoices$/)
     expect(first.applied).toEqual([first.created])
     const again = await migrateProject(p)
-    expect(again).toEqual({ created: undefined, applied: [] })
+    expect(again).toEqual({ created: undefined, applied: [], packaged: [] })
     const status = await projectMigrationStatus(p)
     expect(status.applied.map((a) => a.name)).toEqual([first.created])
     expect(status.pending).toEqual([])

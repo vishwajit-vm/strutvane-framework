@@ -49,6 +49,8 @@ export interface MigrationSource {
    * migrations). Its checksum covers the file text instead.
    */
   readonly run?: (db: Database) => Promise<void>
+  /** The package that ships this migration (package migrations only); for reporting. */
+  readonly source?: string
 }
 
 /** The snapshot stored next to the migrations. */
