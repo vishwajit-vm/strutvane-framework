@@ -6,7 +6,11 @@
  * hooks.after → event → serialize`
  *
  * Authorization is two-step and deny-by-default:
- * 1. `can(actor, "<model>.<action>")` for the action as a whole: denied → 401 (anonymous) or 403.
+ * 1. Is the action allowed at all? `create`: `can(actor, "<model>.create", input)`. Row actions (list,
+ *    show, update, delete, restore): `can()` allows it, or the row filter of step 2 is not FALSE (a
+ *    conditional rule such as "members update their own records" cannot be decided without the
+ *    record). Otherwise 401 (anonymous) or 403. Update, delete and restore are re-checked with the
+ *    record itself.
  * 2. `filterFor(actor, …)` narrows which rows the action may touch; a row outside it is a 404,
  *    exactly like a row that does not exist, so ids cannot be probed.
  *
@@ -224,6 +228,29 @@ export function registerResourceRoutes(
       { type: model.permission, ...(record ? { record } : {}) },
     )
     if (!decision.allowed)
+      throw s.actor === null ? new UnauthenticatedError() : new ForbiddenError()
+  }
+
+  /**
+   * Step 1 for actions on rows (list, show, update, delete, restore): is the actor allowed to
+   * perform it on SOME rows? A record-less `can()` cannot answer that for conditional rules
+   * ("members update their own deals": auth answers `record-required`), so the action is allowed
+   * when `can()` allows it OR the row filter is not FALSE. Which rows is then decided by that
+   * filter (outside it: 404), and update/delete/restore are re-checked with the record itself.
+   */
+  const authorizeRows = async (s: RequestState, action: ResourceAction): Promise<void> => {
+    const decision = await deps.permissions.can(
+      s.actor,
+      permissionFor(model.permission, ACTION_PERMISSIONS[action]),
+      { type: model.permission },
+    )
+    if (decision.allowed) return
+    const filter = await deps.permissions.filterFor(
+      s.actor,
+      permissionFor(model.permission, ACTION_PERMISSIONS[action]),
+      model.permission,
+    )
+    if (filter.op === 'false' || s.actor === null)
       throw s.actor === null ? new UnauthenticatedError() : new ForbiddenError()
   }
 
@@ -453,7 +480,7 @@ export function registerResourceRoutes(
     client: Awaited<ReturnType<typeof clientFieldsFor>>,
   ): Promise<Response> => {
     const s = state(c)
-    await authorize(s, 'list')
+    await authorizeRows(s, 'list')
     checkListCost(query, where)
     await resource.hooks?.beforeList?.(ctxOf(s))
     try {
@@ -554,7 +581,7 @@ export function registerResourceRoutes(
   if (routeEnabled(resource, 'show')) {
     app.get(`${base}/:id`, async (c) => {
       const s = state(c)
-      await authorize(s, 'show')
+      await authorizeRows(s, 'show')
       const id = c.req.param('id')
       await resource.hooks?.beforeShow?.(id, ctxOf(s))
       const record = await findVisible(id, s, ACTION_PERMISSIONS.show)
@@ -608,7 +635,7 @@ export function registerResourceRoutes(
       const raw = await readJsonBody(c)
       const parsed = schemas.update.safeParse(raw)
       if (!parsed.success) throw new ValidationError(issuesFromZod(parsed.error.issues, [], raw))
-      await authorize(s, 'update')
+      await authorizeRows(s, 'update')
       const existing = await findVisible(c.req.param('id'), s, ACTION_PERMISSIONS.update)
       await beforeWrite('update', parsed.data as Record<string, unknown>, s)
       let patch = parsed.data as Record<string, unknown>
@@ -634,8 +661,9 @@ export function registerResourceRoutes(
   if (routeEnabled(resource, 'delete')) {
     app.delete(`${base}/:id`, async (c) => {
       const s = state(c)
-      await authorize(s, 'delete')
+      await authorizeRows(s, 'delete')
       const existing = await findVisible(c.req.param('id'), s, ACTION_PERMISSIONS.delete)
+      await authorize(s, 'delete', existing)
       await resource.hooks?.beforeDelete?.(existing, ctxOf(s))
       if (!(await repo.delete(existing.id, await scopeFor(s, ACTION_PERMISSIONS.delete)))) {
         throw new NotFoundError(model.label)
@@ -649,8 +677,9 @@ export function registerResourceRoutes(
   if (routeEnabled(resource, 'restore')) {
     app.post(`${base}/:id/restore`, async (c) => {
       const s = state(c)
-      await authorize(s, 'restore')
+      await authorizeRows(s, 'restore')
       const existing = await findVisible(c.req.param('id'), s, ACTION_PERMISSIONS.restore, 'only')
+      await authorize(s, 'restore', existing)
       await resource.hooks?.beforeRestore?.(existing, ctxOf(s))
       const restored = await repo.restore(
         existing.id,
