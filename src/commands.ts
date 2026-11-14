@@ -23,6 +23,7 @@ import { findViteConfig, projectPackageManifest } from './runtime/dev-ui.ts'
 import { migrateProject, migrationTarget, projectMigrationStatus } from './runtime/migrations.ts'
 import { importDefault, type LoadedProject, loadProject } from './runtime/project.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
+import { assertCanListen } from './runtime/serve.ts'
 import { startServer, stopOnSignals } from './runtime/server.ts'
 
 /** The parts of the CLI's command context these commands use. */
@@ -273,6 +274,18 @@ const devCommand: ContributedCommand = {
   flags: serverFlags,
   async run(ctx) {
     const root = ctx.requireProject().root
+    // Load once in this process: an invalid .env or config fails here as the CLI's config error,
+    // and a taken port is reported before the watched child starts (a child that cannot listen
+    // would leave Node's watch mode waiting for file changes instead of exiting).
+    const project = await loadFor(ctx)
+    const appConfig = project.config['app'] as { port?: unknown } | undefined
+    const flagPort = str(ctx.flags['port'])
+    const port = flagPort
+      ? Number(flagPort)
+      : typeof appConfig?.port === 'number'
+        ? appConfig.port
+        : 3000
+    await assertCanListen(port, str(ctx.flags['host']) ?? '127.0.0.1')
     const main = fileURLToPath(new URL('./serve-main.mjs', import.meta.url))
     const watch = ['app', 'config', 'strutvane.config.ts', '.env']
       .map((p) => join(root, p))

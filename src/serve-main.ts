@@ -5,6 +5,7 @@
  *
  * @module
  */
+import { ServerListenError } from './runtime/serve.ts'
 import { startServer, stopOnSignals } from './runtime/server.ts'
 
 const [root = process.cwd(), port, hostname] = process.argv.slice(2)
@@ -21,8 +22,13 @@ try {
   process.stdout.write(`Strutvane dev server: ${started.server.url}\n`)
   await stopOnSignals(started)
 } catch (error) {
-  process.stderr.write(
-    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
-  )
+  // A port clash after a restart is a configuration problem: say so plainly, no stack trace.
+  const text =
+    error instanceof ServerListenError
+      ? error.message
+      : error instanceof Error
+        ? (error.stack ?? error.message)
+        : String(error)
+  process.stderr.write(`${text}\n`)
   process.exitCode = 1
 }

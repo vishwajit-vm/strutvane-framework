@@ -22,7 +22,7 @@
  * @module
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { type AddressInfo, createServer as createNetServer } from 'node:net'
 import {
   clientAddressOf,
   forwardedProtocol,
@@ -335,6 +335,73 @@ function handOver(
   })
 }
 
+/** Why the server could not bind, as a stable code (the CLI maps these to its config exit code). */
+export type ListenErrorCode = 'PORT_IN_USE' | 'PORT_ACCESS_DENIED' | 'ADDRESS_NOT_AVAILABLE'
+
+const LISTEN_ERROR_CODES: Readonly<Record<string, ListenErrorCode>> = {
+  EADDRINUSE: 'PORT_IN_USE',
+  EACCES: 'PORT_ACCESS_DENIED',
+  EADDRNOTAVAIL: 'ADDRESS_NOT_AVAILABLE',
+}
+
+/**
+ * The server could not bind its address: a configuration problem (another process has the port,
+ * a privileged port, an interface this machine does not have), not a bug. Carries the stable
+ * `code`, the `host` and `port` it tried, and how to change them, so the CLI renders a config
+ * error (matched by `code`, never by message) instead of "Unexpected error … report the bug".
+ */
+export class ServerListenError extends Error {
+  override readonly name = 'ServerListenError'
+  readonly code: ListenErrorCode
+  readonly host: string
+  readonly port: number
+
+  constructor(code: ListenErrorCode, host: string, port: number, cause?: unknown) {
+    const where = `${host.includes(':') ? `[${host}]` : host}:${port}`
+    const what =
+      code === 'PORT_IN_USE'
+        ? `Port ${port} is already in use (${where}).`
+        : code === 'PORT_ACCESS_DENIED'
+          ? `Not allowed to listen on ${where}.`
+          : `Cannot listen on ${where}: this machine has no such address.`
+    super(
+      `${what} Choose another port with APP_PORT in .env or --port <number>` +
+        `${code === 'ADDRESS_NOT_AVAILABLE' ? ', or another interface with --host' : ''}.`,
+      cause === undefined ? undefined : { cause },
+    )
+    this.code = code
+    this.host = host
+    this.port = port
+  }
+}
+
+/**
+ * Map a `listen()` failure to a {@link ServerListenError} when it is one of the configuration
+ * problems above; any other error is returned unchanged.
+ */
+export function toListenError(error: unknown, host: string, port: number): unknown {
+  const code =
+    error instanceof Error && 'code' in error && typeof error.code === 'string'
+      ? LISTEN_ERROR_CODES[error.code]
+      : undefined
+  return code === undefined ? error : new ServerListenError(code, host, port, error)
+}
+
+/**
+ * Fail fast with a {@link ServerListenError} when `host:port` cannot be bound right now (bind,
+ * then release it). `sv dev` checks this before it starts the watched child process, because a
+ * child that fails to listen leaves Node's watch mode waiting for file changes instead of exiting.
+ * Port 0 (any free port) always passes.
+ */
+export function assertCanListen(port: number, host = '127.0.0.1'): Promise<void> {
+  if (port === 0) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const probe = createNetServer()
+    probe.once('error', (error) => reject(toListenError(error, host, port)))
+    probe.listen(port, host, () => probe.close(() => resolve()))
+  })
+}
+
 function listen(
   server: Server,
   requestedPort: number,
@@ -342,7 +409,7 @@ function listen(
   bindHost: string,
 ): Promise<RunningServer> {
   return new Promise((resolve, reject) => {
-    server.once('error', reject)
+    server.once('error', (error) => reject(toListenError(error, hostname, requestedPort)))
     server.listen(requestedPort, hostname, () => {
       const { port } = server.address() as AddressInfo
       resolve({
