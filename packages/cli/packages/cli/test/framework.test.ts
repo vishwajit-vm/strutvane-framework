@@ -368,6 +368,41 @@ describe('errors', () => {
     expect(toFailure(new CliError('X', { cause: foreign }))).toMatchObject({ code: 'X' })
   })
 
+  test('a port the server cannot bind is a configuration error naming host, port and the fix', () => {
+    // The framework's ServerListenError, matched by code + host + port (it is loaded from the app).
+    const listen = (code: string) =>
+      Object.assign(new Error('Port 3000 is already in use (127.0.0.1:3000).'), {
+        name: 'ServerListenError',
+        code,
+        host: '127.0.0.1',
+        port: 3000,
+      })
+    const failure = toFailure(listen('PORT_IN_USE'))
+    expect(failure).toMatchObject({
+      code: 'PORT_IN_USE',
+      exitCode: EXIT.VALIDATION,
+      params: { host: '127.0.0.1', port: '3000' },
+      unexpected: false,
+    })
+    const rendered = renderMessages(failure)
+    expect(rendered.message).toBe('Port 3000 on 127.0.0.1 is already in use.')
+    expect(rendered.hint).toContain('APP_PORT')
+    expect(rendered.hint).toContain('--port')
+    expect(rendered.hint).not.toContain('report the bug')
+    for (const code of ['PORT_ACCESS_DENIED', 'ADDRESS_NOT_AVAILABLE']) {
+      const f = toFailure(listen(code))
+      expect(f.exitCode, code).toBe(EXIT.VALIDATION)
+      expect(renderMessages(f).message, code).toContain('127.0.0.1:3000')
+    }
+    // Missing host/port, or an unrelated code, is not treated as a listen error.
+    expect(
+      toFailure(Object.assign(new Error('x'), { code: 'PORT_IN_USE', port: 3000 })),
+    ).toMatchObject({ unexpected: true })
+    expect(
+      toFailure(Object.assign(new Error('x'), { code: 'EADDRINUSE', host: 'h', port: 1 })),
+    ).toMatchObject({ unexpected: true })
+  })
+
   test('a lookalike without the documented problems list, or a cause cycle, stays unexpected', () => {
     const lookalike = Object.assign(new Error('Invalid environment'), {
       name: 'EnvValidationError',

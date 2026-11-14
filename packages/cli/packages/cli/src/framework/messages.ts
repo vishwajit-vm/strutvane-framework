@@ -105,6 +105,16 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.error.DEVKIT': '{detail}',
   'cli.hint.INTERRUPTED_TRANSACTION':
     'A previous run was interrupted. Run the command again; devkit recovers it first.',
+  'cli.error.PORT_IN_USE': 'Port {port} on {host} is already in use.',
+  'cli.hint.PORT_IN_USE':
+    'Stop the other process, or choose another port: set APP_PORT in .env, or pass --port <number>.',
+  'cli.error.PORT_ACCESS_DENIED': 'Not allowed to listen on {host}:{port}.',
+  'cli.hint.PORT_ACCESS_DENIED':
+    'Ports below 1024 usually need extra privileges: set a higher APP_PORT in .env, or pass --port <number>.',
+  'cli.error.ADDRESS_NOT_AVAILABLE':
+    'Cannot listen on {host}:{port}: this machine has no such address.',
+  'cli.hint.ADDRESS_NOT_AVAILABLE':
+    'Pass --host 127.0.0.1 (this machine only) or --host 0.0.0.0 (every interface).',
   'cli.error.INTERNAL_ERROR': 'Unexpected error: {detail}',
   'cli.hint.INTERNAL_ERROR': 'Run again with --verbose for the stack trace, and report the bug.',
 })

@@ -96,6 +96,38 @@ const DEVKIT_EXIT: Readonly<Record<string, ExitCode>> = {
   UNSAFE_OUTPUT_PATH: EXIT.VALIDATION,
 }
 
+/**
+ * The framework's `ServerListenError` codes (`sv dev` / `sv start` could not bind its address).
+ * A taken or forbidden port is the user's configuration, not a bug: exit with the config code and
+ * name the host, the port and how to change them. Matched by `code` plus the documented `host` and
+ * `port` fields, never with `instanceof` (the framework is loaded from the project).
+ */
+const LISTEN_CODES: ReadonlySet<string> = new Set([
+  'PORT_IN_USE',
+  'PORT_ACCESS_DENIED',
+  'ADDRESS_NOT_AVAILABLE',
+])
+
+/** The listen-error shape the CLI relies on. */
+interface ListenErrorLike extends Error {
+  readonly code: string
+  readonly host: string
+  readonly port: number
+}
+
+function isListenError(value: unknown): value is ListenErrorLike {
+  return (
+    value instanceof Error &&
+    'code' in value &&
+    typeof value.code === 'string' &&
+    LISTEN_CODES.has(value.code) &&
+    'host' in value &&
+    typeof value.host === 'string' &&
+    'port' in value &&
+    typeof value.port === 'number'
+  )
+}
+
 function isIssueList(value: unknown): value is readonly { path: unknown; message: unknown }[] {
   return Array.isArray(value)
 }
@@ -193,6 +225,17 @@ export function toFailure(error: unknown): CliFailure {
       exitCode: EXIT.VALIDATION,
       params: { count: issues.length },
       issues,
+      error,
+      unexpected: false,
+    }
+  }
+  if (isListenError(error)) {
+    return {
+      code: error.code,
+      exitCode: EXIT.VALIDATION,
+      // Strings, so the catalog never formats a port as "3,000".
+      params: { host: error.host, port: String(error.port), detail: error.message },
+      issues: [],
       error,
       unexpected: false,
     }
