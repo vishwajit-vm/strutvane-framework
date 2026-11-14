@@ -23,7 +23,7 @@
   "type": "module",
   "sideEffects": false,
   "bin": {
-    "strutvane": "./dist/bin.mjs"
+    "strutvane": "dist/bin.mjs"
   },
   "exports": {
     ".": {
