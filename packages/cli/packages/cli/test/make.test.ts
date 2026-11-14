@@ -63,6 +63,7 @@ describe('make:model', () => {
       { path: 'database/factories/invoice.factory.ts', action: 'create' },
       { path: 'database/seeders/invoice.seeder.ts', action: 'create' },
       { path: 'tests/feature/invoices.test.ts', action: 'create' },
+      { path: 'database/seeders/database.seeder.ts', action: 'create' },
     ])
     await expect(read(root, 'app/models/invoice.model.ts')).toMatchFileSnapshot(
       golden('invoice.model.ts'),
@@ -268,8 +269,11 @@ describe('make:model', () => {
     const paths = (r.json().data as { files: { path: string }[] }).files.map((f) => f.path)
     for (const p of paths) {
       expect(p).not.toContain('\\')
-      expect(p).toMatch(/invoice-line/)
+      if (p !== 'database/seeders/database.seeder.ts') expect(p).toMatch(/invoice-line/)
     }
+    expect(read(root, 'database/seeders/database.seeder.ts')).toContain(
+      "import InvoiceLineSeeder from './invoice-line.seeder.ts'",
+    )
   })
 })
 

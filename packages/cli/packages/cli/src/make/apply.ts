@@ -65,12 +65,17 @@ export function refreshRegistry(ctx: CommandContext, projectRoot: string): boole
 /**
  * Run `generator` with `input` for the current project, honouring the universal flags. `next`
  * is printed after a successful write (the follow-up command).
+ *
+ * `extra` files are edits of existing project files the command computed itself (e.g. the seeder
+ * registration in `database.seeder.ts`). They are part of the same transaction, preview and diff
+ * as the generated files, and always replace the current content (they were derived from it).
  */
 export async function applyGenerator<Input>(
   ctx: CommandContext,
   generator: Generator<Input>,
   input: Input,
   next?: string,
+  extra: readonly GeneratedFile[] = [],
 ): Promise<GenerateData> {
   const projectRoot = ctx.requireProject().root
   const force = ctx.globals.force
@@ -79,13 +84,20 @@ export async function applyGenerator<Input>(
   const wrapped: Generator<Input> = {
     ...generator,
     async files(validated) {
-      produced = [...(await generator.files(validated))]
-      return produced.map((file) => {
-        if (force && owned.has(file.path) && existsSync(join(projectRoot, file.path))) {
-          throw new CliError('OWNED_FILE', { exitCode: EXIT.CONFLICT, params: { path: file.path } })
-        }
-        return force ? { ...file, overwrite: true } : file
-      })
+      const generated = await generator.files(validated)
+      produced = [...generated, ...extra]
+      return [
+        ...generated.map((file) => {
+          if (force && owned.has(file.path) && existsSync(join(projectRoot, file.path))) {
+            throw new CliError('OWNED_FILE', {
+              exitCode: EXIT.CONFLICT,
+              params: { path: file.path },
+            })
+          }
+          return force ? { ...file, overwrite: true } : file
+        }),
+        ...extra.map((file) => ({ ...file, overwrite: true })),
+      ]
     },
   }
 

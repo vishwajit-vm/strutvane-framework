@@ -11,6 +11,20 @@
  * label:string:label("Due date, local")      # quote args containing , ( ) : or spaces
  * ```
  *
+ * **Square brackets work everywhere parentheses do** (`title:string[200]:required`,
+ * `amount:decimal[12,2]:min[0]`, `customer:belongsTo[Customer]`). They exist for Windows: in
+ * PowerShell, `corepack pnpm sv …`, `pnpm sv …` and `npx …` start `.cmd` shims, PowerShell
+ * removes the quotes around an argument without spaces, and cmd.exe then re-parses `%*` inside the
+ * shims' parenthesised `IF … ( … )` blocks, where a `)` in an argument ends the block
+ * ("… was unexpected at this time"). Nothing in the CLI runs before that happens, so it cannot be
+ * detected; the bracket spelling simply avoids it. Checked on Windows 11 with PowerShell 5.1,
+ * cmd.exe, `corepack.cmd` and an npm/pnpm-style shim: `[`, `]`, `,` and `'` reach the CLI
+ * unchanged, quoted or not; a double quote inside a PowerShell argument does not (PowerShell 5.1
+ * drops it), so bracket arguments are quoted with single quotes: `"due:date:label['Due date']"`.
+ * In zsh, quote bracket specs (`[…]` is a glob pattern there).
+ *
+ * The two spellings cannot be mixed within one argument list (`string(120]` is an error).
+ *
  * Design rules:
  * - **Precise errors.** Every error has a stable `code` and the 1-based column where the problem
  *   starts, so the CLI can underline it. Parsing stops at the first syntax error; semantic checks
@@ -252,13 +266,15 @@ function scan(spec: string): RawSegment[] {
   const error = (code: FieldErrorCode, message: string, at: number): FieldSpecError =>
     new FieldSpecError(code, message, spec, at + 1)
 
-  const readArgs = (open: number): Located<string>[] => {
+  const readArgs = (open: number, close: ')' | ']'): Located<string>[] => {
+    // Inside brackets, ( and ) are refused unquoted too: they are what the bracket spelling avoids.
+    const forbidden = close === ']' ? ['[', '(', ')', '"', "'"] : ['(', '"', "'"]
     const args: Located<string>[] = []
     const skipSpaces = (): void => {
       while (spec[i] === ' ' || spec[i] === '\t') i++
     }
     skipSpaces()
-    if (spec[i] === ')') return args
+    if (spec[i] === close) return args
     for (;;) {
       skipSpaces()
       const start = i
@@ -285,9 +301,9 @@ function scan(spec: string): RawSegment[] {
         }
         value = out
       } else {
-        while (i < spec.length && spec[i] !== ',' && spec[i] !== ')') {
+        while (i < spec.length && spec[i] !== ',' && spec[i] !== close) {
           const c = spec[i] ?? ''
-          if (c === '(' || c === '"' || c === "'") {
+          if (forbidden.includes(c)) {
             throw error(
               'UNEXPECTED_CHARACTER',
               `Unexpected "${c}" in an argument; quote arguments that contain it.`,
@@ -298,18 +314,18 @@ function scan(spec: string): RawSegment[] {
         }
         value = spec.slice(start, i).trim()
         if (value === '' && i >= spec.length) {
-          throw error('UNCLOSED_PARENTHESIS', 'Missing ")".', open)
+          throw error('UNCLOSED_PARENTHESIS', `Missing "${close}".`, open)
         }
         if (value === '') throw error('EMPTY_ARGUMENT', 'Empty argument.', start)
       }
       args.push({ value, column: start + 1 })
       skipSpaces()
-      if (i >= spec.length) throw error('UNCLOSED_PARENTHESIS', 'Missing ")".', open)
+      if (i >= spec.length) throw error('UNCLOSED_PARENTHESIS', `Missing "${close}".`, open)
       if (spec[i] === ',') {
         i++
         continue
       }
-      if (spec[i] === ')') return args
+      if (spec[i] === close) return args
       throw error('UNEXPECTED_CHARACTER', `Unexpected "${spec[i]}" after an argument.`, i)
     }
   }
@@ -326,11 +342,11 @@ function scan(spec: string): RawSegment[] {
       throw error('UNEXPECTED_CHARACTER', `Unexpected "${spec[i]}".`, i)
     }
     let args: Located<string>[] | undefined
-    if (spec[i] === '(') {
+    if (spec[i] === '(' || spec[i] === '[') {
       const open = i
       i++
-      args = readArgs(open)
-      i++ // the closing parenthesis
+      args = readArgs(open, spec[open] === '[' ? ']' : ')')
+      i++ // the closing parenthesis or bracket
     }
     segments.push({ head: { value: head, column: start + 1 }, args })
     if (i >= spec.length) return segments
@@ -649,16 +665,36 @@ export function parseFieldSpecs(specs: readonly string[]): FieldSpec[] {
 /** Arguments that can be written without quotes and parse back unchanged. */
 const BARE_ARG = /^[A-Za-z0-9_.+-]+$/
 
-/** Print one argument, quoting it when needed. */
-export function formatArg(value: string): string {
-  return BARE_ARG.test(value) ? value : `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+/**
+ * Print one argument, quoting it when needed with `quote` (`"` by default); backslashes and the
+ * quote character are escaped.
+ */
+export function formatArg(value: string, quote: '"' | "'" = '"'): string {
+  if (BARE_ARG.test(value)) return value
+  return `${quote}${value.replaceAll('\\', '\\\\').replaceAll(quote, `\\${quote}`)}${quote}`
 }
 
-const formatArgs = (args: readonly string[]): string =>
-  args.length === 0 ? '' : `(${args.map(formatArg).join(',')})`
+/** Options for {@link formatFieldSpec}. */
+export interface FormatFieldOptions {
+  /**
+   * The cmd-safe spelling: `[args]` instead of `(args)`, and single quotes for arguments that need
+   * quoting (PowerShell 5.1 drops double quotes inside an argument). See the module documentation.
+   */
+  readonly brackets?: boolean
+}
 
-/** The canonical spelling of a field spec (parses back to an equal {@link FieldSpec}). */
-export function formatFieldSpec(field: FieldSpec): string {
+/**
+ * The canonical spelling of a field spec (parses back to an equal {@link FieldSpec}). With
+ * `{ brackets: true }`, the spelling that survives Windows `.cmd` shims without quoting.
+ */
+export function formatFieldSpec(field: FieldSpec, options: FormatFieldOptions = {}): string {
+  const brackets = options.brackets === true
+  const quote = brackets ? "'" : '"'
+  const formatArgs = (args: readonly string[]): string => {
+    if (args.length === 0) return ''
+    const list = args.map((a) => formatArg(a, quote)).join(',')
+    return brackets ? `[${list}]` : `(${list})`
+  }
   return [
     field.name,
     `${field.type}${formatArgs(field.typeArgs)}`,

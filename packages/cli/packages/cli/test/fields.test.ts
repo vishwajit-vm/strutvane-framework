@@ -222,6 +222,63 @@ describe('formatFieldSpec', () => {
     expect(formatArg('a b')).toBe('"a b"')
     expect(formatArg('')).toBe('""')
     expect(formatArg('say "hi" \\o/')).toBe('"say \\"hi\\" \\\\o/"')
+    expect(formatArg("it's", "'")).toBe("'it\\'s'")
+    expect(formatArg('say "hi"', "'")).toBe('\'say "hi"\'')
+  })
+
+  test('{ brackets: true } prints the cmd-safe spelling, quoting with single quotes', () => {
+    const field = parseFieldSpec('due:date:label("Due date, local"):default(now)')
+    expect(formatFieldSpec(field, { brackets: true })).toBe(
+      "due:date:label['Due date, local']:default[now]",
+    )
+    expect(formatFieldSpec(parseFieldSpec('a:decimal(12,2):min(0)'), { brackets: true })).toBe(
+      'a:decimal[12,2]:min[0]',
+    )
+    expect(formatFieldSpec(parseFieldSpec('a:string:required'), { brackets: true })).toBe(
+      'a:string:required',
+    )
+  })
+})
+
+describe('square brackets: the spelling that survives Windows .cmd shims', () => {
+  test('every documented example means the same with brackets', () => {
+    for (const [brackets, parens] of [
+      ['title:string[200]:required:searchable', 'title:string(200):required:searchable'],
+      [
+        'name:string[120]:required:searchable:sortable',
+        'name:string(120):required:searchable:sortable',
+      ],
+      ['amount:decimal[12,2]:min[0]:sortable', 'amount:decimal(12,2):min(0):sortable'],
+      [
+        'status:enum[draft,sent,paid]:default[draft]:filterable',
+        'status:enum(draft,sent,paid):default(draft):filterable',
+      ],
+      ['customer:belongsTo[Customer]', 'customer:belongsTo(Customer)'],
+      ['tags:manyToMany[Tag, InvoiceTag]', 'tags:manyToMany(Tag,InvoiceTag)'],
+      ["due:date:label['Due date, local: UTC']", 'due:date:label("Due date, local: UTC")'],
+      ['due:date:label["Due date"]', 'due:date:label("Due date")'],
+      ['title:string[]', 'title:string()'],
+      ['code:string:regex[^a-z+$]', 'code:string:regex(^a-z+$)'],
+      ['code:string:regex["^[a-z]+$"]', 'code:string:regex(^[a-z]+$)'],
+    ]) {
+      expect(parseFieldSpec(brackets ?? ''), brackets).toEqual(parseFieldSpec(parens ?? ''))
+    }
+  })
+
+  test('the spellings cannot be mixed, and ( ) [ need quoting inside brackets', () => {
+    fails('title:string[200', 'UNCLOSED_PARENTHESIS', 13)
+    fails('title:string[200,', 'UNCLOSED_PARENTHESIS', 13)
+    fails('title:string[200)', 'UNEXPECTED_CHARACTER', 17)
+    fails('title:string(200]', 'UNCLOSED_PARENTHESIS', 13)
+    fails('a:enum[x,(y)]', 'UNEXPECTED_CHARACTER', 10)
+    fails('a:enum[x,y)]', 'UNEXPECTED_CHARACTER', 11)
+    fails('a:string:regex[^[a]', 'UNEXPECTED_CHARACTER', 17)
+    fails('title:string[200]x', 'UNEXPECTED_CHARACTER', 18)
+    fails('a:enum[x,,y]', 'EMPTY_ARGUMENT', 10)
+    fails("a:enum[x,'y]", 'UNTERMINATED_QUOTE', 10)
+    fails('a:string[1,2]', 'WRONG_ARGUMENT_COUNT', 3)
+    fails('status:enum[draft,paid]:default[sent]', 'INVALID_DEFAULT', 33)
+    expect(fails('title:string[200', 'UNCLOSED_PARENTHESIS').message).toBe('Missing "]".')
   })
 })
 
@@ -284,6 +341,19 @@ describe('properties', () => {
     )
   })
 
+  test('the bracket spelling round-trips too, and means the same as the canonical one', () => {
+    fc.assert(
+      fc.property(validField, (field) => {
+        const brackets = formatFieldSpec(field, { brackets: true })
+        // Only free text (quoted) may still contain parentheses.
+        if (!field.modifiers.some((m) => m.name === 'label')) expect(brackets).not.toMatch(/[()"]/)
+        expect(parseFieldSpec(brackets)).toEqual(field)
+        expect(formatFieldSpec(parseFieldSpec(brackets))).toBe(formatFieldSpec(field))
+      }),
+      { numRuns: 500 },
+    )
+  })
+
   test('parse → format → parse is stable', () => {
     fc.assert(
       fc.property(validField, (field) => {
@@ -295,7 +365,7 @@ describe('properties', () => {
   })
 
   test('fuzz: arbitrary input never throws anything but FieldSpecError, with a column inside the input', () => {
-    const alphabet = fc.constantFrom(...'ab:(),"\'\\ x1Z-_.'.split(''))
+    const alphabet = fc.constantFrom(...'ab:()[],"\'\\ x1Z-_.'.split(''))
     fc.assert(
       fc.property(
         fc.oneof(fc.string({ maxLength: 40 }), fc.string({ unit: alphabet, maxLength: 30 })),

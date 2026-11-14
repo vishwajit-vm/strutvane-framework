@@ -6,8 +6,9 @@
  *
  * @module
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import type { GeneratedFile } from '@strutvane/devkit'
 import { type AnyCommand, type CommandContext, defineCommand } from '../framework/command.ts'
 import { CliError, usageError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
@@ -30,6 +31,11 @@ import {
   testGenerator,
 } from '../make/generators.ts'
 import { type Names, names } from '../make/names.ts'
+import {
+  DATABASE_SEEDER_PATH,
+  type RegistrationResult,
+  registerSeeder,
+} from '../make/seeder-registration.ts'
 import { paths } from '../make/templates.ts'
 import { analyzeFile } from '../registry/analyze.ts'
 import { CONVENTIONS } from '../registry/conventions.ts'
@@ -110,7 +116,7 @@ function existingFields(
       // Re-validate through the parser, so only catalogue types reach the template.
       return [
         parseFieldSpec(
-          `${f.name}:${f.type}${typeArgs.length > 0 ? `(${typeArgs.map(formatArg).join(',')})` : ''}`,
+          `${f.name}:${f.type}${typeArgs.length > 0 ? `(${typeArgs.map((a) => formatArg(a)).join(',')})` : ''}`,
         ),
       ]
     } catch {
@@ -118,6 +124,171 @@ function existingFields(
     }
   })
   return { fields, softDeletes: model.softDeletes }
+}
+
+/**
+ * The field-syntax part of `sv help make:model`. Both spellings are always accepted; the order
+ * depends on the platform because on Windows the parenthesised one breaks before the CLI even
+ * runs: PowerShell strips the quotes and cmd.exe re-parses the arguments inside the `.cmd` shims
+ * of corepack, pnpm and npx, where `)` ends a block ("… was unexpected at this time"). That
+ * cannot be detected at runtime, so help text and docs are the guard (see `make/fields.ts`).
+ */
+export function fieldSyntaxDetails(platform: NodeJS.Platform): string {
+  const brackets = [
+    '  title:string[200]:required:searchable',
+    '  amount:decimal[12,2]:min[0]:sortable',
+    '  status:enum[draft,sent,paid]:default[draft]',
+    '  customer:belongsTo[Customer]',
+    `  "due:date:label['Due date, local']"   (quote text with spaces; single quotes inside)`,
+  ]
+  const parens = [
+    '  title:string(200):required:searchable',
+    "  'amount:decimal(12,2):min(0):sortable'   (quote parentheses in shells)",
+    "  'status:enum(draft,sent,paid):default(draft)'",
+    "  'customer:belongsTo(Customer)'",
+  ]
+  const windows = platform === 'win32'
+  return [
+    'Fields use the syntax name:type[:modifier]…; a type or modifier takes its arguments in',
+    '[square brackets] or (parentheses), which mean the same.',
+    ...(windows
+      ? [
+          'On Windows use square brackets: parentheses break inside the .cmd shims that corepack,',
+          'pnpm and npx run through ("… was unexpected at this time"), even when quoted:',
+          ...brackets,
+          'Parentheses (fine from cmd.exe or Git Bash when quoted):',
+          ...parens,
+        ]
+      : [
+          ...parens,
+          'Square brackets (use these on Windows, where parentheses break inside the .cmd shims of',
+          'corepack, pnpm and npx; in zsh, quote them):',
+          ...brackets,
+        ]),
+    'Without fields (in a terminal) an interactive field builder opens.',
+  ].join('\n')
+}
+
+/** `sv help make:model` examples: the cmd-safe spelling first on Windows. */
+export function makeModelExamples(platform: NodeJS.Platform): string[] {
+  const brackets =
+    'sv make:model Invoice number:string:unique amount:decimal[12,2]:min[0] customer:belongsTo[Customer]'
+  const parens =
+    "sv make:model Invoice number:string:unique 'amount:decimal(12,2):min(0)' 'customer:belongsTo(Customer)'"
+  return [
+    ...(platform === 'win32' ? [brackets, parens] : [parens, brackets]),
+    'sv make model Tag name:string:required --no-seeder --dry-run --diff',
+  ]
+}
+
+/** The `belongsTo` targets of every model in `app/models`, by model name (static analysis). */
+function modelParents(root: string): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  const convention = CONVENTIONS.find((c) => c.kind === 'model')
+  if (convention === undefined) return out
+  const dir = join(root, ...convention.dir.split('/'))
+  if (!existsSync(dir)) return out
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(convention.suffix)) continue
+    const absPath = join(dir, entry.name)
+    const relPath = `${convention.dir}/${entry.name}`
+    const analysis = analyzeFile(
+      { kind: 'model', relPath, absPath, convention },
+      readFileSync(absPath, 'utf8'),
+    )
+    const model = analysis.entries.find((e) => e.kind === 'model')
+    if (model === undefined || model.kind !== 'model') continue
+    out.set(
+      model.name,
+      model.fieldDetails.flatMap((f) =>
+        f.type === 'belongsTo' && f.target !== undefined ? [f.target] : [],
+      ),
+    )
+  }
+  return out
+}
+
+/** A planned registration in `database.seeder.ts`. */
+interface SeederPlan {
+  readonly seeder: string
+  /** The patched file, when it changes. */
+  readonly file: GeneratedFile | undefined
+  readonly result: RegistrationResult
+}
+
+/**
+ * Plan registering the seeder `seeder` (which seeds `model`) in the database seeder, after the
+ * seeders of the models `model` belongs to (`parents`; read from its model file when omitted) and
+ * before the seeders of existing models that belong to it. Seeders are matched to models by name
+ * (`<Model>Seeder`), the names `make:model` gives them.
+ */
+function planSeederRegistration(
+  root: string,
+  seeder: Names,
+  model: string,
+  parents?: readonly string[],
+): SeederPlan {
+  const relations = modelParents(root)
+  const own = parents ?? relations.get(model) ?? []
+  const after = [...new Set(own.filter((p) => p !== model).map((p) => `${p}Seeder`))]
+  const before = [...relations]
+    .filter(([name, targets]) => name !== model && targets.includes(model))
+    .map(([name]) => `${name}Seeder`)
+  const path = join(root, ...DATABASE_SEEDER_PATH.split('/'))
+  const current =
+    existsSync(path) && statSync(path).isFile() ? readFileSync(path, 'utf8') : undefined
+  const name = `${seeder.pascal}Seeder`
+  const result = registerSeeder(current, {
+    seeder: name,
+    importPath: `./${seeder.kebab}.seeder.ts`,
+    after,
+    before,
+  })
+  const file =
+    result.status === 'registered'
+      ? { path: DATABASE_SEEDER_PATH, content: result.content }
+      : undefined
+  return { seeder: name, file, result }
+}
+
+/** Print the registration outcome; returns it for `--json`. */
+function reportSeederRegistration(
+  ctx: CommandContext,
+  plan: SeederPlan,
+  dryRun: boolean,
+): Record<string, unknown> {
+  const { seeder, result } = plan
+  const path = DATABASE_SEEDER_PATH
+  if (result.status === 'unrecognised') {
+    ctx.out.warn(
+      `${path} does not have the shape sv make:model can edit, so ${seeder} was not registered. Add these lines yourself:`,
+    )
+    for (const line of result.manual) ctx.out.line(`  ${line}`)
+    return { seeder, path, status: 'manual', manual: result.manual }
+  }
+  for (const missing of result.missingAfter) {
+    ctx.out.warn(
+      `${missing} is not registered in ${path}, so ${seeder} runs without the rows it would create. Register it before ${seeder}.`,
+    )
+  }
+  if (result.status === 'registered') {
+    const extra = result.created
+      ? ' (new file)'
+      : result.migrated
+        ? ' (updated to the current shape)'
+        : ''
+    ctx.out.info(`${dryRun ? 'Would register' : 'Registered'} ${seeder} in ${path}${extra}.`)
+  } else {
+    ctx.out.info(`${seeder} is already registered in ${path}.`)
+  }
+  return {
+    seeder,
+    path,
+    status: result.status,
+    created: result.created,
+    migrated: result.migrated,
+    missingParents: result.missingAfter,
+  }
 }
 
 /** The interactive field builder: one spec per prompt, validated as you type. */
@@ -128,7 +299,7 @@ async function promptFields(ctx: CommandContext): Promise<string[]> {
       'Add a field (name:type[:modifier…]), or press Enter to finish',
       {
         default: '',
-        placeholder: 'title:string(200):required',
+        placeholder: 'title:string[200]:required',
         validate(value) {
           if (value.trim() === '') return undefined
           try {
@@ -160,14 +331,7 @@ export function tenantOption(flag: boolean | undefined, root: string): { tenant?
 export const makeModelCommand: AnyCommand = defineCommand({
   name: 'make:model',
   description: 'Create a model with its policy, factory, seeder and feature test',
-  details: [
-    'Fields use the syntax name:type[(args)][:modifier[(args)]]…, for example:',
-    '  title:string(200):required:searchable',
-    '  amount:decimal(12,2):min(0):sortable',
-    '  "status:enum(draft,sent,paid):default(draft)"   (quote arguments with parentheses in shells)',
-    '  customer:belongsTo(Customer)',
-    'Without fields (in a terminal) an interactive field builder opens.',
-  ].join('\n'),
+  details: fieldSyntaxDetails(process.platform),
   args: {
     name: { required: true, description: 'Model name, e.g. Invoice or invoice-line' },
     fields: { variadic: true, description: 'Field specs' },
@@ -203,10 +367,7 @@ export const makeModelCommand: AnyCommand = defineCommand({
       description: 'Rows the seeder creates',
     },
   },
-  examples: [
-    'sv make:model Invoice number:string:unique amount:decimal(12,2):min(0) customer:belongsTo(Customer)',
-    'sv make model Tag name:string:required --no-seeder --dry-run --diff',
-  ],
+  examples: makeModelExamples(process.platform),
   async run(ctx) {
     const n = modelNames(ctx.args.name)
     const specs =
@@ -221,6 +382,13 @@ export const makeModelCommand: AnyCommand = defineCommand({
         command: ctx.command,
       })
     }
+    const root = ctx.requireProject().root
+    const parents = fields.flatMap((f) =>
+      f.type === 'belongsTo' && f.typeArgs[0] !== undefined ? [f.typeArgs[0]] : [],
+    )
+    const seeding = ctx.flags.seeder
+      ? planSeederRegistration(root, n, n.pascal, parents)
+      : undefined
     const data = await applyGenerator(
       ctx,
       modelGenerator,
@@ -245,8 +413,11 @@ export const makeModelCommand: AnyCommand = defineCommand({
         seedCount,
       },
       'sv migrate',
+      seeding?.file === undefined ? [] : [seeding.file],
     )
-    return { data: { model: n.pascal, fields, ...data } }
+    const seederRegistration =
+      seeding === undefined ? null : reportSeederRegistration(ctx, seeding, data.dryRun)
+    return { data: { model: n.pascal, fields, ...data, seederRegistration } }
   },
 })
 
@@ -342,12 +513,21 @@ export const makeSeederCommand: AnyCommand = defineCommand({
         command: ctx.command,
       })
     }
-    const data = await applyGenerator(ctx, seederGenerator, {
-      name: n.pascal,
-      model: model?.pascal,
-      count,
-    })
-    return { data }
+    // A seeder tied to a model is registered in database.seeder.ts like make:model's.
+    const seeding =
+      model === undefined
+        ? undefined
+        : planSeederRegistration(ctx.requireProject().root, n, model.pascal)
+    const data = await applyGenerator(
+      ctx,
+      seederGenerator,
+      { name: n.pascal, model: model?.pascal, count },
+      undefined,
+      seeding?.file === undefined ? [] : [seeding.file],
+    )
+    const seederRegistration =
+      seeding === undefined ? null : reportSeederRegistration(ctx, seeding, data.dryRun)
+    return { data: { ...data, seederRegistration } }
   },
 })
 

@@ -7,10 +7,12 @@ Add it to a project as a dev dependency and run it through the `strutvane` launc
 ```bash
 pnpm add -D @strutvane/cli@next   # until 1.0 (`latest` is only a name placeholder); from 1.0: pnpm add -D @strutvane/cli
 pnpm exec strutvane-cli help    # list every command (the launcher answers `help` itself)
-pnpm sv make:model Invoice
+pnpm sv make:model Invoice number:string[40]:required customer:belongsTo[Customer]   # [args] or (args)
 ```
 
 `sv add <package>` installs Strutvane packages from the CLI's own release channel (`@strutvane/auth@next` while the CLI is a `-next` pre-release, the bare name from 1.0); third-party plugins by their bare name.
+
+Field arguments go in square brackets or parentheses (`string[120]` = `string(120)`); use brackets on Windows, where parentheses break inside the `.cmd` shims of corepack, pnpm and npx. `make:model` also registers the new seeder in `database/seeders/database.seeder.ts`, after the seeders of the models it belongs to.
 
 A folder counts as a project when its package.json lists `@strutvane/cli` or it has `strutvane.config.ts` (never a drive root, the temp folder or a folder above home). Destructive commands need `--force --i-understand` unless `APP_ENV` is local, test, testing or development; see the repository README.
 
