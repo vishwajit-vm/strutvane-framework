@@ -70,7 +70,7 @@ describe('policySchema', () => {
       ok: field.boolean(),
     })
     const d = policySchema(WithJson)
-    expect(d.columns['body']).toBeUndefined()
+    expect((d.columns as Record<string, unknown>)['body']).toBeUndefined()
     expect(d.columns['n']?.type).toBe('int4')
     expect(d.columns['ok']?.type).toBe('bool')
   })

@@ -172,7 +172,7 @@ route.post('/notes/:id/attachments', {
 })
 ```
 
-`c.scope` is `{ tenantId }` (tenant-scoped models refuse to run without it), `c.authorize(permission, record?)` throws 401/403, `c.storage` is the StorageManager and `c.app` the booted application.
+`c.params` is typed from the path (`/invoices/:id` → `c.params.id: string`). `c.where(Model, filter)` binds a server-written `QueryFilter` for repository calls (`repo.count(c.where(Task, { op: 'eq', field: 'status', value: 'done' }), c.scope)`). `c.scope` is `{ tenantId }` (tenant-scoped models refuse to run without it), `c.authorize(permission, record?)` throws 401/403, `c.storage` is the StorageManager and `c.app` the booted application.
 
 Other packages join the request pipeline through core hooks, never imports. `http.onRequest`
 handlers may set `actor`/`tenant`, add response `headers` (a refreshed session cookie), or answer
@@ -181,7 +181,7 @@ answers still get security headers, `X-Request-Id` and `http.onResponse`. The pa
 hook names (`HttpRequestHookPayload`, `HttpResponseHookPayload`, `HTTP_HOOKS`) come from
 `@strutvane/contracts` and are re-exported here. `http.onResponse` receives `route`, the matched
 route template (`/api/v1/invoices/:id`), or nothing for unmatched requests. Policies get their schema
-from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `ModelSchema` shape).
+from a model with `policySchema(Invoice)` (typed per field, so `row.stage.eq('won')` and `row.amount.lte(100)` type-check and a typo does not compile) (plain data in `@strutvane/auth`'s `ModelSchema` shape).
 
 ## Security notes
 

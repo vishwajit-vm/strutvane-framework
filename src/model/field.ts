@@ -123,11 +123,15 @@ export class FieldBuilder<
   R extends boolean = true,
   D extends boolean = false,
   W extends boolean = true,
+  K extends FieldKind = FieldKind,
 > {
   /** The resolved field definition. */
   readonly def: FieldDef
-  /** @internal phantom types for inference; never set at runtime. */
-  declare readonly __types?: { value: T; required: R; hasDefault: D; writable: W }
+  /**
+   * @internal phantom types for inference; never set at runtime. `kind` lets types that depend on
+   * the storage kind (e.g. `policySchema(Model)`'s column types) be exact.
+   */
+  declare readonly __types?: { value: T; required: R; hasDefault: D; writable: W; kind: K }
 
   constructor(def: FieldDef) {
     this.def = Object.freeze({ ...def })
@@ -135,37 +139,37 @@ export class FieldBuilder<
 
   private with<NR extends boolean = R, ND extends boolean = D, NW extends boolean = W>(
     patch: Partial<FieldDef>,
-  ): FieldBuilder<T, NR, ND, NW> {
-    return new FieldBuilder<T, NR, ND, NW>({ ...this.def, ...patch })
+  ): FieldBuilder<T, NR, ND, NW, K> {
+    return new FieldBuilder<T, NR, ND, NW, K>({ ...this.def, ...patch })
   }
 
   /** NOT NULL (the default). */
-  required(): FieldBuilder<T, true, D, W> {
+  required(): FieldBuilder<T, true, D, W, K> {
     return this.with<true>({ required: true })
   }
 
   /** May be missing / null. */
-  optional(): FieldBuilder<T, false, D, W> {
+  optional(): FieldBuilder<T, false, D, W, K> {
     return this.with<false>({ required: false })
   }
 
   /** Alias of {@link FieldBuilder.optional}. */
-  nullable(): FieldBuilder<T, false, D, W> {
+  nullable(): FieldBuilder<T, false, D, W, K> {
     return this.optional()
   }
 
   /** Unique (per tenant on tenant-scoped models). */
-  unique(): FieldBuilder<T, R, D, W> {
+  unique(): FieldBuilder<T, R, D, W, K> {
     return this.with({ unique: true })
   }
 
   /** Add a database index. */
-  index(): FieldBuilder<T, R, D, W> {
+  index(): FieldBuilder<T, R, D, W, K> {
     return this.with({ index: true })
   }
 
   /** A default value, stored in the schema. Makes the field optional on create. */
-  default(value: T & DefaultValue): FieldBuilder<T, R, true, W> {
+  default(value: T & DefaultValue): FieldBuilder<T, R, true, W, K> {
     if (
       this.def.kind === 'enum' &&
       (typeof value !== 'string' || !this.def.values?.includes(value))
@@ -181,24 +185,24 @@ export class FieldBuilder<
   }
 
   /** Numbers: minimum value. Text: minimum length. */
-  min(value: number): FieldBuilder<T, R, D, W> {
+  min(value: number): FieldBuilder<T, R, D, W, K> {
     return this.bound('min', value)
   }
 
   /** Numbers: maximum value. Text: maximum length. */
-  max(value: number): FieldBuilder<T, R, D, W> {
+  max(value: number): FieldBuilder<T, R, D, W, K> {
     return this.bound('max', value)
   }
 
   /** Text must match a regular expression. */
-  regex(pattern: RegExp): FieldBuilder<T, R, D, W> {
+  regex(pattern: RegExp): FieldBuilder<T, R, D, W, K> {
     if (!isTextKind(this.def.kind))
       throw new TypeError(`regex() is only for text fields, not ${this.def.kind}`)
     return this.with({ pattern: { source: pattern.source, flags: pattern.flags.replace('g', '') } })
   }
 
   /** Include in free-text search (`?search=`). Text fields only. */
-  searchable(): FieldBuilder<T, R, D, W> {
+  searchable(): FieldBuilder<T, R, D, W, K> {
     if (!isTextKind(this.def.kind))
       throw new TypeError(`searchable() is only for text fields, not ${this.def.kind}`)
     return this.with({ searchable: true })
@@ -208,7 +212,7 @@ export class FieldBuilder<
    * Allow filtering. With no arguments, every operator that suits the kind is allowed; pass a list
    * to restrict it. Unsupported operators are rejected here, not at request time.
    */
-  filterable(...operators: FilterOperator[]): FieldBuilder<T, R, D, W> {
+  filterable(...operators: FilterOperator[]): FieldBuilder<T, R, D, W, K> {
     const supported = operatorsFor(this.def.kind)
     const chosen = operators.length > 0 ? operators : supported
     const bad = chosen.filter((op) => !supported.includes(op))
@@ -221,7 +225,7 @@ export class FieldBuilder<
   }
 
   /** Allow sorting by this field. */
-  sortable(): FieldBuilder<T, R, D, W> {
+  sortable(): FieldBuilder<T, R, D, W, K> {
     if (this.def.kind === 'json' || this.def.kind === 'text') {
       throw new TypeError(`${this.def.kind} fields cannot be sortable`)
     }
@@ -229,36 +233,36 @@ export class FieldBuilder<
   }
 
   /** Never returned by the API (e.g. internal flags). */
-  hidden(): FieldBuilder<T, R, D, W> {
+  hidden(): FieldBuilder<T, R, D, W, K> {
     return this.with({ hidden: true })
   }
 
   /** Returned but never writable through the API. */
-  readOnly(): FieldBuilder<T, R, D, false> {
+  readOnly(): FieldBuilder<T, R, D, false, K> {
     return this.with<R, D, false>({ readOnly: true })
   }
 
   /** Settable on create, never changeable afterwards. */
-  writeOnce(): FieldBuilder<T, R, D, W> {
+  writeOnce(): FieldBuilder<T, R, D, W, K> {
     return this.with({ writeOnce: true })
   }
 
   /** Redacted in logs and audit diffs. */
-  sensitive(): FieldBuilder<T, R, D, W> {
+  sensitive(): FieldBuilder<T, R, D, W, K> {
     return this.with({ sensitive: true })
   }
 
   /** Human label shown in the UI and messages (default: derived from the key). */
-  label(text: string): FieldBuilder<T, R, D, W> {
+  label(text: string): FieldBuilder<T, R, D, W, K> {
     return this.with({ label: nonEmpty('label', text) })
   }
 
   /** Help text shown under form inputs. */
-  help(text: string): FieldBuilder<T, R, D, W> {
+  help(text: string): FieldBuilder<T, R, D, W, K> {
     return this.with({ help: nonEmpty('help', text) })
   }
 
-  private bound(which: 'min' | 'max', value: number): FieldBuilder<T, R, D, W> {
+  private bound(which: 'min' | 'max', value: number): FieldBuilder<T, R, D, W, K> {
     const kind = this.def.kind
     if (!isNumericKind(kind) && !isTextKind(kind))
       throw new TypeError(`${which}() is not supported on ${kind} fields`)
@@ -273,7 +277,7 @@ export class FieldBuilder<
     if (kind === 'string' && which === 'max' && value > (this.def.length ?? 255)) {
       throw new RangeError(`max(${value}) exceeds the column length (${this.def.length ?? 255})`)
     }
-    return new FieldBuilder<T, R, D, W>(next)
+    return new FieldBuilder<T, R, D, W, K>(next)
   }
 }
 
@@ -290,15 +294,18 @@ export class HasManyBuilder {
 
 /** Any column builder. */
 // biome-ignore lint/suspicious/noExplicitAny: the generic parameters are erased for storage.
-export type AnyFieldBuilder = FieldBuilder<any, boolean, boolean, boolean>
+export type AnyFieldBuilder = FieldBuilder<any, boolean, boolean, boolean, FieldKind>
 
 function nonEmpty(name: string, text: string): string {
   if (text.trim().length === 0) throw new TypeError(`${name}() needs a non-empty string`)
   return text
 }
 
-const base = <T>(kind: FieldKind, extra: Partial<FieldDef> = {}): FieldBuilder<T> =>
-  new FieldBuilder<T>({
+/** A required, writable field without a default, of kind `K` and value type `T`. */
+export type NewField<T, K extends FieldKind> = FieldBuilder<T, true, false, true, K>
+
+const base = <T, K extends FieldKind>(kind: K, extra: Partial<FieldDef> = {}): NewField<T, K> =>
+  new FieldBuilder<T, true, false, true, K>({
     kind,
     required: true,
     unique: false,
@@ -322,49 +329,51 @@ function positiveInt(name: string, value: number): number {
 /** Field builders. */
 export const field = {
   /** Short text (varchar). Default length 255. */
-  string: (length: number = 255): FieldBuilder<string> =>
-    base<string>('string', { length: positiveInt('length', length) }),
+  string: (length: number = 255): NewField<string, 'string'> =>
+    base<string, 'string'>('string', { length: positiveInt('length', length) }),
   /** Long text. */
-  text: (): FieldBuilder<string> => base<string>('text'),
+  text: (): NewField<string, 'text'> => base<string, 'text'>('text'),
   /** An email address (validated). */
-  email: (): FieldBuilder<string> => base<string>('email', { length: 320 }),
+  email: (): NewField<string, 'email'> => base<string, 'email'>('email', { length: 320 }),
   /** An absolute http(s) URL (validated). */
-  url: (): FieldBuilder<string> => base<string>('url', { length: 2048 }),
+  url: (): NewField<string, 'url'> => base<string, 'url'>('url', { length: 2048 }),
   /** A UUID value (not a relation). */
-  uuid: (): FieldBuilder<string> => base<string>('uuid'),
+  uuid: (): NewField<string, 'uuid'> => base<string, 'uuid'>('uuid'),
   /** A 32-bit integer. */
-  integer: (): FieldBuilder<number> => base<number>('integer'),
+  integer: (): NewField<number, 'integer'> => base<number, 'integer'>('integer'),
   /** A 64-bit integer, exchanged as a decimal string to keep precision. */
-  bigInteger: (): FieldBuilder<string> => base<string>('bigInteger'),
+  bigInteger: (): NewField<string, 'bigInteger'> => base<string, 'bigInteger'>('bigInteger'),
   /** An exact decimal, exchanged as a string (e.g. `"1250.50"`) to keep precision. */
-  decimal: (precision: number = 12, scale: number = 2): FieldBuilder<string> => {
+  decimal: (precision: number = 12, scale: number = 2): NewField<string, 'decimal'> => {
     positiveInt('precision', precision)
     if (!Number.isInteger(scale) || scale < 0 || scale > precision) {
       throw new RangeError('decimal(precision, scale) needs 0 <= scale <= precision')
     }
-    return base<string>('decimal', { precision, scale })
+    return base<string, 'decimal'>('decimal', { precision, scale })
   },
   /** A floating-point number (not exact; use decimal for money). */
-  float: (): FieldBuilder<number> => base<number>('float'),
-  boolean: (): FieldBuilder<boolean> => base<boolean>('boolean'),
+  float: (): NewField<number, 'float'> => base<number, 'float'>('float'),
+  boolean: (): NewField<boolean, 'boolean'> => base<boolean, 'boolean'>('boolean'),
   /** One of a fixed list of values. Stored as text with a CHECK constraint (ADR-0009). */
-  enum: <const V extends readonly [string, ...string[]]>(values: V): FieldBuilder<V[number]> => {
+  enum: <const V extends readonly [string, ...string[]]>(
+    values: V,
+  ): NewField<V[number], 'enum'> => {
     if (new Set(values).size !== values.length) throw new RangeError('enum values must be unique')
     if (values.some((v) => v.length === 0 || v.length > 64))
       throw new RangeError('enum values must be 1-64 characters')
-    return base<V[number]>('enum', { values: [...values] })
+    return base<V[number], 'enum'>('enum', { values: [...values] })
   },
   /** A calendar date, exchanged as `YYYY-MM-DD`. */
-  date: (): FieldBuilder<string> => base<string>('date'),
+  date: (): NewField<string, 'date'> => base<string, 'date'>('date'),
   /** A point in time, exchanged as an ISO-8601 UTC string. */
-  datetime: (): FieldBuilder<string> => base<string>('datetime'),
+  datetime: (): NewField<string, 'datetime'> => base<string, 'datetime'>('datetime'),
   /** Arbitrary JSON (objects/arrays). */
-  json: <T = unknown>(): FieldBuilder<T> => base<T>('json'),
+  json: <T = unknown>(): NewField<T, 'json'> => base<T, 'json'>('json'),
   /** A foreign key to another model; the value is the related record's id. */
-  belongsTo: (target: string): FieldBuilder<string> => {
+  belongsTo: (target: string): NewField<string, 'belongsTo'> => {
     if (!/^[A-Z][A-Za-z0-9]*$/.test(target))
       throw new TypeError(`belongsTo("${target}") needs a PascalCase model name`)
-    return base<string>('belongsTo', { target })
+    return base<string, 'belongsTo'>('belongsTo', { target })
   },
   /** A to-many relation (not a column), e.g. an invoice's lines. */
   hasMany: (target: string, foreignKey?: string): HasManyBuilder => {

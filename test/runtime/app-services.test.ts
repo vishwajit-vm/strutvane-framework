@@ -20,7 +20,11 @@ afterEach(async () => {
 })
 
 /** Server still healthy after an attack request. */
-const healthy = async (base: string) => expect((await fetch(`${base}/health`)).status).toBe(200)
+const healthy = async (base: string) => {
+  // A client may reuse a pooled socket the server just closed after an oversized upload: retry once.
+  const once = () => fetch(`${base}/health`).then((r) => r.status)
+  expect(await once().catch(once)).toBe(200)
+}
 
 const APP_KEY = 'a'.repeat(44)
 const MB = 1024 * 1024
@@ -31,6 +35,7 @@ export default [
   route.get('/stats', { public: true, handler: async (c) => ({
     count: await c.repository(Invoice).count(undefined, c.scope),
     drafts: (await c.repository('Invoice').list({}, await c.scopeFor(Invoice, 'viewAny'))).data.length,
+    paid: await c.repository(Invoice).count(c.where(Invoice, { op: 'eq', field: 'status', value: 'paid' }), c.scope),
   }) }),
   route.post('/invoices/:id/pay', { public: true, handler: async (c) => {
     await c.authorize('invoice.update')
@@ -101,24 +106,13 @@ describe('custom routes use the app (data, permissions, storage)', () => {
         headers: { 'content-type': 'application/json' },
       })
       const invoice = (await created.json()) as { id: string }
-      expect(await (await fetch(`${base}/api/v1/stats`)).json()).toEqual({ count: 1, drafts: 1 })
+      expect(await (await fetch(`${base}/api/v1/stats`)).json()).toEqual({
+        count: 1,
+        drafts: 1,
+        paid: 0,
+      })
       const paid = await fetch(`${base}/api/v1/invoices/${invoice.id}/pay`, { method: 'POST' })
       expect(((await paid.json()) as { status: string }).status).toBe('paid')
-
-      // A 2.2 MB body: above the app's 1 MiB default (refused on a normal route) but within the
-      // upload route's own limit; the file itself is then over its 2 MB multipart limit.
-      const big = form('big.png', Buffer.concat([PNG, Buffer.alloc(2.2 * MB)]))
-      // Far over a limit, the server answers 413 and stops reading after a bounded discard, so a
-      // client still uploading may see the connection close instead. It must never crash.
-      expect([413, 'reset']).toContain((await postForm(`${base}/api/v1/echo`, big)).status)
-      await healthy(base)
-      const tooBigFile = await postForm(`${base}/api/v1/upload`, big)
-      expect(tooBigFile.status).toBe(413)
-      expect((tooBigFile.json as { code: string }).code).toBe('FILE_TOO_LARGE')
-      await healthy(base)
-      const huge = form('huge.png', Buffer.concat([PNG, Buffer.alloc(3.5 * MB)]))
-      expect([413, 'reset']).toContain((await postForm(`${base}/api/v1/upload`, huge)).status)
-      await healthy(base)
 
       // A real upload: stored under a generated key, served through a signed link only.
       const ok = form('../../etc/passwd.png', PNG, 'text/html')
@@ -140,6 +134,21 @@ describe('custom routes use the app (data, permissions, storage)', () => {
         (await fetch(`${base}${url.replace(/signature=[^&]+/, 'signature=AAAA')}`)).status,
       )
       expect([403, 404]).toContain((await fetch(`${base}/storage/local/${key}`)).status)
+      // A 2.2 MB body: above the app's 1 MiB default (refused on a normal route) but within the
+      // upload route's own limit; the file itself is then over its 2 MB multipart limit.
+      const big = form('big.png', Buffer.concat([PNG, Buffer.alloc(2.2 * MB)]))
+      // An upload aborted by the multipart parser: the client gets the 413 problem, not a reset.
+      const tooBigFile = await postForm(`${base}/api/v1/upload`, big)
+      expect(tooBigFile.status).toBe(413)
+      expect((tooBigFile.json as { code: string }).code).toBe('FILE_TOO_LARGE')
+      await healthy(base)
+      // Far over a limit, the server answers 413 and stops reading after a bounded discard, so a
+      // client still uploading may see the connection close instead. It must never crash.
+      expect([413, 'reset']).toContain((await postForm(`${base}/api/v1/echo`, big)).status)
+      await healthy(base)
+      const huge = form('huge.png', Buffer.concat([PNG, Buffer.alloc(3.5 * MB)]))
+      expect([413, 'reset']).toContain((await postForm(`${base}/api/v1/upload`, huge)).status)
+      await healthy(base)
     } finally {
       await started.stop()
     }

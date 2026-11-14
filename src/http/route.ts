@@ -20,13 +20,13 @@
  * @module
  */
 import type { OpenAPIHono } from '@hono/zod-openapi'
-import type { Actor, Permission, PermissionProvider } from '@strutvane/contracts'
+import type { Actor, Permission, PermissionProvider, QueryFilter } from '@strutvane/contracts'
 import { type Application, ForbiddenError, UnauthenticatedError } from '@strutvane/core'
 import { createRepository, type Repository, type Scope } from '../data/repository.ts'
 import type { Database } from '../database/types.ts'
 import type { AnyModel, ModelDefinition } from '../model/define-model.ts'
 import type { ModelRegistry } from '../model/registry.ts'
-import { bindFilter } from '../query/bind.ts'
+import { type BoundFilter, bindFilter } from '../query/bind.ts'
 import { queryFields } from '../query/fields.ts'
 import type { StorageManager } from '../storage/manager.ts'
 import { type MultipartLimits, type MultipartResult, parseMultipart } from '../storage/multipart.ts'
@@ -38,10 +38,23 @@ import { type HttpEnv, readJsonBody } from './resource-routes.ts'
 export type RouteMethod = 'get' | 'post' | 'put' | 'patch' | 'delete'
 
 /** What a route handler receives. */
-export interface RouteContext {
+/**
+ * The path parameters of a route path, as a type: `'/invoices/:id/lines/:lineId'` →
+ * `{ readonly id: string; readonly lineId: string }`, so `c.params.id` is a `string`.
+ */
+export type RouteParams<P extends string> = { readonly [K in keyof RawParams<P>]: RawParams<P>[K] }
+
+type RawParams<P extends string> = P extends `${string}:${infer Name}/${infer Rest}`
+  ? { readonly [K in Name]: string } & RawParams<`/${Rest}`>
+  : P extends `${string}:${infer Name}`
+    ? { readonly [K in Name]: string }
+    : Readonly<Record<never, string>>
+
+/** What a route handler receives. */
+export interface RouteContext<Params = Readonly<Record<string, string>>> {
   readonly request: Request
   /** Path parameters (`/reports/:year` → `{ year: '2026' }`). */
-  readonly params: Readonly<Record<string, string>>
+  readonly params: Params
   readonly query: URLSearchParams
   readonly actor: Actor | null
   readonly tenantId: string | undefined
@@ -87,16 +100,24 @@ export interface RouteContext {
    * one. The route's `bodyLimit` must allow the upload size (default 1 MiB).
    */
   multipart(limits?: MultipartLimits): Promise<MultipartResult>
+  /**
+   * Bind a trusted, server-written filter to a model's fields for repository calls:
+   * `repo.count(c.where(Task, { op: 'eq', field: 'status', value: 'done' }), scope)`. Any operator
+   * the field supports is allowed (unlike client filters); an unknown field throws.
+   */
+  where(model: AnyModel | ModelDefinition | string, filter: QueryFilter): BoundFilter
 }
 
 /**
  * A handler returns a `Response` (sent as is), `undefined` (204 No Content) or a JSON-serialisable
  * value (200 JSON). Throw a Strutvane error (`NotFoundError`, `ValidationError`, …) for failures.
  */
-export type RouteHandler = (context: RouteContext) => unknown
+export type RouteHandler<Params = Readonly<Record<string, string>>> = (
+  context: RouteContext<Params>,
+) => unknown
 
 /** Options for one route. */
-export interface RouteOptions {
+export interface RouteOptions<Params = Readonly<Record<string, string>>> {
   /** Stable route name, e.g. `reports.revenue` (shown by `sv routes`). */
   readonly name?: string
   /** Permission required, e.g. `report.revenue`. */
@@ -108,7 +129,7 @@ export interface RouteOptions {
    * body limit (1 MiB). Multipart limits still apply per file on top of it.
    */
   readonly bodyLimit?: number
-  readonly handler: RouteHandler
+  readonly handler: RouteHandler<Params>
 }
 
 /** A defined route. */
@@ -121,7 +142,7 @@ export interface RouteDefinition extends RouteOptions {
 const PATH = /^\/[A-Za-z0-9\-._~/:]*$/
 const PERMISSION = /^[a-z][a-zA-Z0-9_-]{0,63}\.[a-zA-Z*][a-zA-Z0-9_-]{0,63}$/
 
-function define(method: RouteMethod, path: string, options: RouteOptions): RouteDefinition {
+function define(method: RouteMethod, path: string, options: RouteOptions<never>): RouteDefinition {
   // Validate at definition time so a bad route stops the app at boot, not at the first request.
   if (!PATH.test(path) || path.includes('//') || path.split('/').some((s) => s === '..')) {
     throw new TypeError(`route.${method}(${JSON.stringify(path)}): path must start with "/"`)
@@ -141,19 +162,24 @@ function define(method: RouteMethod, path: string, options: RouteOptions): Route
       `route.${method}(${JSON.stringify(path)}): permission ${JSON.stringify(options.permission)} must look like "report.revenue"`,
     )
   }
-  return Object.freeze({ ...options, method, path })
+  // The typed params are a compile-time view of the same runtime object: erase them here.
+  return Object.freeze({ ...(options as unknown as RouteOptions), method, path })
 }
 
 /** Route builders, one per HTTP method. */
-export const route: Readonly<
-  Record<RouteMethod, (path: string, options: RouteOptions) => RouteDefinition>
-> = Object.freeze({
-  get: (path: string, options: RouteOptions) => define('get', path, options),
-  post: (path: string, options: RouteOptions) => define('post', path, options),
-  put: (path: string, options: RouteOptions) => define('put', path, options),
-  patch: (path: string, options: RouteOptions) => define('patch', path, options),
-  delete: (path: string, options: RouteOptions) => define('delete', path, options),
-})
+/** A route builder for one method; the handler's `params` are typed from the path. */
+export type RouteBuilder = <const P extends string>(
+  path: P,
+  options: RouteOptions<RouteParams<P>>,
+) => RouteDefinition
+
+export const route: Readonly<Record<RouteMethod, RouteBuilder>> = Object.freeze({
+  get: (path, options) => define('get', path, options as RouteOptions<never>),
+  post: (path, options) => define('post', path, options as RouteOptions<never>),
+  put: (path, options) => define('put', path, options as RouteOptions<never>),
+  patch: (path, options) => define('patch', path, options as RouteOptions<never>),
+  delete: (path, options) => define('delete', path, options as RouteOptions<never>),
+} satisfies Record<RouteMethod, RouteBuilder>)
 
 /** Is `value` a route created by {@link route}? (Used when loading route files.) */
 export function isRouteDefinition(value: unknown): value is RouteDefinition {
@@ -262,6 +288,12 @@ export function registerCustomRoutes(
           })
           return { ...scope, filter }
         },
+        where: (model, filter) =>
+          bindFilter(filter, {
+            fields: queryFields(definitionOf(model)),
+            operators: 'any',
+            actor: s.actor,
+          }),
         multipart: async (limits) => {
           const parsed = await parseMultipart(c.req.raw, limits)
           uploads.push(parsed)
