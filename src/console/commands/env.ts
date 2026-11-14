@@ -61,6 +61,13 @@ export const envCheckCommand: AnyCommand = defineCommand({
   },
 })
 
+/**
+ * Every `APP_KEY=` line of an env file (group 1: everything before the value), `export` prefixes
+ * included. A byte-order mark may precede the first line: the env reader skips it, so this must
+ * too, or a forced replacement of a first-line key would report success and change nothing.
+ */
+const APP_KEY_LINE = /^(\uFEFF?[ \t]*(?:export[ \t]+)?APP_KEY[ \t]*=).*$/gm
+
 /** A new application key: 32 random bytes, base64url (the same format devkit uses for secrets). */
 export function generateAppKey(): string {
   return randomBytes(32).toString('base64url')
@@ -108,7 +115,7 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
       // Replace every existing APP_KEY line in place (empty, or forced), keeping the layout, so no
       // stale duplicate is left behind for a later loader to pick up.
       const text = await fs.read('.env')
-      const replaced = text.replace(/^([ \t]*(?:export[ \t]+)?APP_KEY[ \t]*=).*$/gm, `$1${key}`)
+      const replaced = text.replace(APP_KEY_LINE, `$1${key}`)
       await fs.write('.env', replaced, { overwrite: true })
     }
     const env = createEnvEditor(fs, { generateSecret: () => key })

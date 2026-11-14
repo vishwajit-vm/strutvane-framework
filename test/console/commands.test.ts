@@ -254,6 +254,20 @@ describe('key:generate', () => {
     expect((await cli(['key:generate', '--json'], { cwd: empty })).code).toBe(0)
   })
 
+  test.each([
+    ['a byte-order mark', '\uFEFFAPP_KEY=old\nAPP_ENV=local\n'],
+    ['CRLF line endings', 'APP_KEY=old\r\nAPP_ENV=local\r\n'],
+    ['a byte-order mark and CRLF', '\uFEFFAPP_KEY=old\r\nAPP_ENV=local\r\n'],
+  ])('--force really replaces a key on the first line of a .env with %s', async (_, env) => {
+    const root = makeProject({ '.env': env })
+    const forced = await cli(['key:generate', '--force', '--json'], { cwd: root })
+    expect(forced.code).toBe(0)
+    const after = read(root, '.env')
+    expect(after).not.toContain('old')
+    expect(after).toMatch(/APP_KEY=[A-Za-z0-9_-]{43}(\r?\n)APP_ENV=local\1$/)
+    expect(after.startsWith('\uFEFF')).toBe(env.startsWith('\uFEFF'))
+  })
+
   test('every APP_KEY line is replaced; a non-empty duplicate counts as an existing key', async () => {
     const root = makeProject({ '.env': 'APP_KEY=real\nAPP_ENV=local\nexport APP_KEY=\n' })
     const r = await cli(['key:generate', '--json'], { cwd: root })
