@@ -308,6 +308,7 @@ export function registerResourceRoutes(
     }
     const hooked = (await deps.hooks.run('resource.serialize', {
       resource: target.name,
+      type: target.permission,
       actor: s.actor,
       record: out,
     })) as {
@@ -370,6 +371,26 @@ export function registerResourceRoutes(
       }
     }
     return byRecord
+  }
+
+  /**
+   * `resource.beforeWrite`: the last check before a create or update reaches the database.
+   * Handlers refuse a write by throwing a Strutvane error (auth uses it for field-level write
+   * rules); they cannot change the input. `input` holds only the validated, client-sent fields.
+   */
+  const beforeWrite = async (
+    action: 'create' | 'update',
+    input: Readonly<Record<string, unknown>>,
+    s: RequestState,
+  ): Promise<void> => {
+    await deps.hooks.run('resource.beforeWrite', {
+      resource: model.name,
+      type: model.permission,
+      action,
+      actor: s.actor,
+      tenantId: s.tenantId,
+      input: Object.freeze({ ...input }),
+    })
   }
 
   const emit = async (event: string, record: DataRecord, s: RequestState): Promise<void> => {
@@ -550,6 +571,7 @@ export function registerResourceRoutes(
       if (!parsed.success) throw new ValidationError(issuesFromZod(parsed.error.issues, [], raw))
       let input = parsed.data as Record<string, unknown>
       await authorize(s, 'create', input)
+      await beforeWrite('create', input, s)
       input = (await resource.hooks?.beforeCreate?.(input, ctxOf(s))) ?? input
       // The created row must satisfy the create policy (checked in the transaction) and may only
       // reference rows the actor can see.
@@ -573,6 +595,7 @@ export function registerResourceRoutes(
       if (!parsed.success) throw new ValidationError(issuesFromZod(parsed.error.issues, [], raw))
       await authorize(s, 'update')
       const existing = await findVisible(c.req.param('id'), s, ACTION_PERMISSIONS.update)
+      await beforeWrite('update', parsed.data as Record<string, unknown>, s)
       let patch = parsed.data as Record<string, unknown>
       patch = (await resource.hooks?.beforeUpdate?.(patch, existing, ctxOf(s))) ?? patch
       // Record-level authorization sees the row as it would be after the change.

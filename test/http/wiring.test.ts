@@ -8,9 +8,11 @@ import {
   defineMessages,
   ErrorRegistryToken,
   EventBusToken,
+  ForbiddenError,
   HooksToken,
   LoggerToken,
   PermissionProviderToken,
+  ValidationError,
 } from '@strutvane/core'
 import { describe, expect, it, vi } from 'vitest'
 import { connectDatabase, NotImplementedError } from '../../src/database/connect.ts'
@@ -464,6 +466,91 @@ describe('resource hooks, events and global hooks', () => {
         `customer.updated:${TENANT_A}`,
         `customer.deleted:${TENANT_A}`,
       ])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('resource.beforeWrite sees every create and update, and a refusal is the handler problem (never a 500)', async () => {
+    const t = await createTestApp({ resources: [Customer, Invoice] })
+    try {
+      const seen: unknown[] = []
+      const hooks = t.app.make(HooksToken)
+      hooks.on(
+        'resource.beforeWrite',
+        (p) => {
+          const payload = p as { type: string; action: string; input: Record<string, unknown> }
+          seen.push({
+            type: payload.type,
+            action: payload.action,
+            keys: Object.keys(payload.input),
+          })
+          if ('email' in payload.input && payload.action === 'update') throw new ForbiddenError()
+          return undefined
+        },
+        { name: 'test.fieldWrite' },
+      )
+      const client = t.actingAs(
+        { id: 'u', type: 'user', roles: [], attrs: {} },
+        { tenantId: TENANT_A },
+      )
+      const created = await client.request<Record<string, string>>('POST', '/api/v1/customers', {
+        body: { name: 'Acme', email: 'a@a.test' },
+      })
+      expect(created.status).toBe(201)
+      const id = created.body['id'] as string
+      expect(
+        (await client.request('PATCH', `/api/v1/customers/${id}`, { body: { name: 'B' } })).status,
+      ).toBe(200)
+      const refused = await client.request<{ code: string }>('PATCH', `/api/v1/customers/${id}`, {
+        body: { email: 'evil@x.test' },
+      })
+      expect(refused.status).toBe(403)
+      expect(refused.body.code).toBe('FORBIDDEN')
+      // The refused write never reached the database.
+      const after = await client.request<Record<string, string>>('GET', `/api/v1/customers/${id}`)
+      expect(after.body['email']).toBe('a@a.test')
+      expect(seen).toEqual([
+        { type: 'customer', action: 'create', keys: ['name', 'email'] },
+        { type: 'customer', action: 'update', keys: ['name'] },
+        { type: 'customer', action: 'update', keys: ['email'] },
+      ])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('a Strutvane error thrown by any hook handler keeps its status (serialize, beforeQuery)', async () => {
+    const t = await createTestApp({ resources: [Customer, Invoice] })
+    try {
+      const hooks = t.app.make(HooksToken)
+      const types: unknown[] = []
+      hooks.on(
+        'resource.serialize',
+        (p) => {
+          types.push((p as { type?: unknown }).type)
+          return undefined
+        },
+        { name: 'test.type' },
+      )
+      const client = t.actingAs(
+        { id: 'u', type: 'user', roles: [], attrs: {} },
+        { tenantId: TENANT_A },
+      )
+      await client.request('POST', '/api/v1/customers', {
+        body: { name: 'Acme', email: 'a@a.test' },
+      })
+      expect(types).toEqual(['customer'])
+      hooks.on(
+        'resource.beforeQuery',
+        () => {
+          throw new ValidationError([{ path: ['query'], code: 'invalid_filter' }])
+        },
+        { name: 'test.refuse' },
+      )
+      const res = await client.request<{ code: string }>('GET', '/api/v1/customers')
+      expect(res.status).toBe(422)
+      expect(res.body.code).toBe('VALIDATION_FAILED')
     } finally {
       await t.close()
     }

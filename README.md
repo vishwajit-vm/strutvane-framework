@@ -137,6 +137,12 @@ export default defineSeeder('InvoiceSeeder', async ({ create }) => {
 })
 ```
 
+Resource hooks: `resource.beforeQuery` narrows list and row filters, `resource.serialize` shapes each
+record on the way out (payload `{ resource, type, actor, record }`, `type` being the permission
+prefix such as `invoice`), and `resource.beforeWrite` (`{ resource, type, action, actor, tenantId,
+input }`) may refuse a create or update before it reaches the database. A Strutvane error thrown by
+any hook handler (`ForbiddenError`, `ValidationError`, …) becomes that problem, never a 500.
+
 Other packages join the request pipeline through core hooks, never imports. `http.onRequest`
 handlers may set `actor`/`tenant`, add response `headers` (a refreshed session cookie), or answer
 the request themselves with `response` + `control.stop()` (sign-in routes, the log viewer); such

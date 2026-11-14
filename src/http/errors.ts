@@ -18,8 +18,25 @@ import {
 import { FilterError } from '../query/bind.ts'
 import { CursorError, SortError } from '../query/sort.ts'
 
+/**
+ * Core wraps an error thrown by a hook handler in a `HookError` (`cause` = the original). When
+ * the original is a Strutvane error (a handler refusing the request on purpose, e.g. auth's
+ * field-level write rule), the client must get THAT problem, not a 500.
+ */
+function unwrapHookError(error: unknown): unknown {
+  let current: unknown = error
+  for (
+    let depth = 0;
+    depth < 5 && current instanceof Error && current.name === 'HookError';
+    depth++
+  )
+    current = current.cause
+  return current instanceof StrutvaneError ? current : error
+}
+
 /** Map framework-internal errors to the public error model; others pass through unchanged. */
-export function normalizeError(error: unknown, where: 'query' | 'body' = 'query'): unknown {
+export function normalizeError(raw: unknown, where: 'query' | 'body' = 'query'): unknown {
+  const error = unwrapHookError(raw)
   if (error instanceof FilterError) {
     const path: (string | number)[] =
       where === 'query'
