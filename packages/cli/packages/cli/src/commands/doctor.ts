@@ -8,6 +8,7 @@
  *
  * @module
  */
+
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { hasConflictMarkers, nodeIo, readLock } from '@strutvane/devkit'
@@ -17,6 +18,7 @@ import { EXIT } from '../framework/exit-codes.ts'
 import { renderMessages } from '../framework/run.ts'
 import { channelSpec } from '../project/channel.ts'
 import { checkEnv } from '../project/env-check.ts'
+import { packageMigrations } from '../project/package-migrations.ts'
 import { loadPluginCommands } from '../project/plugin-commands.ts'
 import { declaredRange, dependencyNames, readInstalledPackage } from '../project/project.ts'
 import { parseVersion } from '../project/semver.ts'
@@ -257,6 +259,32 @@ async function checkPlugins(project: Project, version: string): Promise<DoctorCh
   return checks
 }
 
+/**
+ * Package migrations run as the database owner, so only enabled packages contribute them. Warn
+ * about a dependency that ships migrations the CLI ignores (not enabled in strutvane.config.ts,
+ * or not a contributor package), and fail on one that is enabled but fails the gate.
+ */
+function checkPackageMigrations(project: Project, version: string): DoctorCheck[] {
+  let scan: ReturnType<typeof packageMigrations>
+  try {
+    scan = packageMigrations(project, version)
+  } catch (error) {
+    return [fail('migrations', renderMessages(toFailure(error)).message)]
+  }
+  const checks = scan.ignored.map((name) =>
+    warn(
+      'migrations',
+      `${name} ships database migrations that are ignored: it is not enabled in strutvane.config.ts`,
+      'Register its provider in strutvane.config.ts (`sv add` does this) if you trust it; otherwise remove the dependency.',
+    ),
+  )
+  if (scan.dirs.length > 0)
+    checks.push(
+      ok('migrations', `Package migrations from: ${scan.dirs.map((d) => d.package).join(', ')}`),
+    )
+  return checks
+}
+
 export const doctorCommand: AnyCommand = defineCommand({
   name: 'doctor',
   description: 'Diagnose Node.js, the project, env files, the registry and plugins',
@@ -276,6 +304,7 @@ export const doctorCommand: AnyCommand = defineCommand({
       )
       checks.push(...checkRegistry(project), ...(await checkOwnedFiles(project)))
       checks.push(...(await checkPlugins(project, ctx.version)))
+      checks.push(...checkPackageMigrations(project, ctx.version))
     }
     const { out } = ctx
     for (const check of checks) {

@@ -26,6 +26,7 @@ import {
   resolveAppEnv,
 } from '../project/app-env.ts'
 import { isValidEnvName } from '../project/env-check.ts'
+import { packageMigrations } from '../project/package-migrations.ts'
 import {
   loadPluginCommands,
   mergeCommands,
@@ -287,6 +288,8 @@ async function execute(
     version,
     appEnv: appEnv.value,
     guardDestructive: guard,
+    packageMigrations: () =>
+      project === undefined ? [] : packageMigrations(project, version).dirs,
   }
   const outcome = (await command.run(ctx)) ?? {}
   return finish(state, streams, outcome.data, outcome.exitCode ?? EXIT.OK)

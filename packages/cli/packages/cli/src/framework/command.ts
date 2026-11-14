@@ -12,6 +12,7 @@
  * @module
  */
 import type { Logger } from '@strutvane/contracts'
+import type { PackageMigrationDir } from '../project/package-migrations.ts'
 import type { ExitCode } from './exit-codes.ts'
 import type { Output } from './output.ts'
 import type { Prompter } from './prompter.ts'
@@ -131,6 +132,14 @@ export interface CommandContext<F extends FlagMap = FlagMap, A extends ArgMap = 
    * local, test, testing or development, or `--force --i-understand` was passed.
    */
   guardDestructive(): void
+  /**
+   * The package migration folders `sv migrate` may apply (they run as the database owner):
+   * direct dependencies with a contributor name that `strutvane.config.ts` imports, compatible,
+   * with the folder's real path inside the package (see `project/package-migrations.ts`). Empty
+   * outside a project. Throws `UNSAFE_CONTRIBUTION` or an incompatibility (exit 7) instead of
+   * returning a folder that fails the gate.
+   */
+  packageMigrations(): readonly PackageMigrationDir[]
 }
 
 /** What a command returns. */

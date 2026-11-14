@@ -145,6 +145,8 @@ describe('resolution errors and exit codes', () => {
     const r = await cli(['routes', '--json'], { cwd: tempDir() })
     expect(r.code).toBe(2)
     expect(r.json().error?.code).toBe('PROJECT_NOT_FOUND')
+    // The hint names every rule, ownership included (a root-owned folder in a container).
+    expect(r.json().error?.hint).toMatch(/owned by the user running the command/)
   })
 
   test('a broken package.json is a validation error (exit 3)', async () => {

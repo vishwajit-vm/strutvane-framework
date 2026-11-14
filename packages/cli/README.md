@@ -61,7 +61,7 @@ Destructive commands must be typed in full: prefixes such as `sv mi:fr` are refu
 | Command | What it does |
 |---|---|
 | `about` | Versions of the CLI, Node.js and every installed Strutvane package |
-| `doctor [--global]` | Checks Node.js, package.json, env files, `.gitignore`, the registry, owned-file conflicts and plugin compatibility. Exits 3 on failures |
+| `doctor [--global]` | Checks Node.js, package.json, env files, `.gitignore`, the registry, owned-file conflicts, plugin compatibility and ignored package migrations. Exits 3 on failures |
 | `env:check [--env <name>] [--strict]` | Compares `.env` with `.env.example`: missing, unknown, empty and invalid keys, and secrets committed in `.env.example`. Never prints values; malformed lines are reported as `file:line` only |
 | `key:generate [--force] [--show]` | Writes `APP_KEY` to `.env` (and an empty entry to `.env.example`), replacing every `APP_KEY` line. Never prints the key unless `--show`. Replacing a non-empty key needs `--force`, and outside local/test environments also `--i-understand` |
 | `make:model <Name> [fields…]` | Model, policy, factory, seeder and feature test (`--all` adds the resource), and registers the seeder in `database/seeders/database.seeder.ts` (see below). Interactive field builder when run in a terminal without fields |
@@ -156,6 +156,17 @@ export default defineCommand({
 ```
 
 The module must resolve inside the package's own folder in `node_modules` (symlinks included); anything else is refused without being executed. Packages whose `compat` range excludes the CLI are refused (exit 7), and so are plugins (anything outside `@strutvane/`) that declare no `compat` range at all: declare the Strutvane versions your plugin supports. A plugin can never replace a built-in command. Contributed commands receive `ctx.appEnv` (the resolved `APP_ENV`) and `ctx.guardDestructive()` for operations that are only sometimes destructive.
+
+### Package migrations
+
+A package can ship database migrations (`{ "strutvane": { "migrations": "./migrations" } }`, with `<folder>/<dialect>/*.sql`), which `sv migrate` applies as the database **owner**. Because of that, the CLI hands the framework a package's folder (`ctx.packageMigrations()`) only when all of these hold, and the framework never looks anywhere else:
+
+1. the package is a **direct dependency** in the app's package.json (transitive dependencies never count) with a contributor name (`@strutvane/*`, `strutvane-plugin-*`, `@scope/strutvane-plugin-*`);
+2. the app **enabled** it: `strutvane.config.ts` imports from the package (registering its provider, which `sv add` writes). Installing it is not enough; `import type` does not count;
+3. a third-party package declares a `strutvane.compat` range the CLI satisfies (exit 7 otherwise), as for contributed commands;
+4. the folder resolves, symlinks followed, inside the package's own folder in `node_modules` (`UNSAFE_CONTRIBUTION` otherwise).
+
+A dependency that ships migrations but fails 1 or 2 is ignored, and `sv doctor` warns about it; one that is enabled but fails 3 or 4 stops the command. `sv migrate --pretend` and `sv migrate:status` show which package each migration comes from.
 
 ## Development
 
