@@ -129,3 +129,57 @@ describe('tenancy migrations on Postgres', () => {
     }
   })
 })
+
+describe('tenancy audit: ways around RLS', () => {
+  let fx: Fixture
+  beforeEach(async () => {
+    fx = await setupDatabase('postgres', models)
+    await fx.db.execute('CREATE ROLE app_user NOLOGIN NOSUPERUSER NOBYPASSRLS')
+    await fx.db.execute('GRANT SELECT, INSERT, UPDATE, DELETE ON customers, invoices TO app_user')
+  })
+  afterEach(async () => {
+    await fx.db.close()
+  })
+  const auditAsApp = async () => {
+    await fx.db.execute('SET ROLE app_user')
+    try {
+      return await tenancyAudit(fx.db)
+    } finally {
+      await fx.db.execute('RESET ROLE')
+    }
+  }
+
+  it('a runtime role that owns a tenant table is flagged (it could disable RLS)', async () => {
+    await fx.db.execute('ALTER TABLE customers OWNER TO app_user')
+    expect(await auditAsApp()).toEqual([{ table: 'customers', problem: 'role-owns-table' }])
+  })
+
+  it('views over tenant tables must be security_invoker; materialized views are always flagged', async () => {
+    await fx.db.execute('CREATE VIEW all_customers AS SELECT * FROM customers')
+    await fx.db.execute(
+      'CREATE VIEW safe_customers WITH (security_invoker = true) AS SELECT * FROM customers',
+    )
+    await fx.db.execute('CREATE MATERIALIZED VIEW customer_names AS SELECT name FROM customers')
+    expect(await auditAsApp()).toEqual([
+      { table: 'all_customers', problem: 'view-bypasses-rls' },
+      { table: 'customer_names', problem: 'view-bypasses-rls' },
+    ])
+  })
+
+  it('SECURITY DEFINER functions are flagged', async () => {
+    await fx.db.execute(
+      'CREATE FUNCTION count_all() RETURNS bigint LANGUAGE sql SECURITY DEFINER AS $$ SELECT count(*) FROM customers $$',
+    )
+    expect(await auditAsApp()).toEqual([
+      { table: 'count_all', problem: 'security-definer-function' },
+    ])
+  })
+
+  it('a restrictive policy that does not check the tenant setting is flagged', async () => {
+    await fx.db.execute('DROP POLICY "tenant_isolation" ON invoices')
+    await fx.db.execute(
+      'CREATE POLICY "looks_safe" ON invoices AS RESTRICTIVE FOR ALL USING (true) WITH CHECK (true)',
+    )
+    expect(await auditAsApp()).toEqual([{ table: 'invoices', problem: 'tenant-policy-mismatch' }])
+  })
+})

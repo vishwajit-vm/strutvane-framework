@@ -5,6 +5,7 @@
  * @module
  */
 import type { StorageDisk } from '@strutvane/contracts'
+import { tenantDisk } from './tenant-disk.ts'
 
 /** Named disks. */
 export interface StorageManager {
@@ -12,6 +13,11 @@ export interface StorageManager {
   readonly defaultDisk: string
   /** A disk by name (default disk when omitted). Throws for an unknown name. */
   disk(name?: string): StorageDisk
+  /**
+   * A disk (default disk when `name` is omitted) confined to one tenant: keys are stored under
+   * `tenants/<tenantId>/` and listing cannot leave that prefix. Use it for tenant data.
+   */
+  forTenant(tenantId: string, name?: string): StorageDisk
   /** Add a disk (e.g. from `@strutvane/files`). Names are unique. */
   extend(disk: StorageDisk): void
   /** Configured disk names. */
@@ -33,6 +39,9 @@ export function createStorageManager(options: {
           `Unknown storage disk "${name}" (configured: ${[...disks.keys()].join(', ') || 'none'})`,
         )
       return d
+    },
+    forTenant(tenantId, name) {
+      return tenantDisk(manager.disk(name), tenantId)
     },
     extend(disk) {
       if (disks.has(disk.name)) throw new Error(`Storage disk "${disk.name}" is already registered`)

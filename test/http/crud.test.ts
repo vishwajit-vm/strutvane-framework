@@ -33,7 +33,7 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
       dialect,
       resources: [
         defineResource({ model: Customer, includes: ['invoices'] }),
-        defineResource({ model: Invoice, includes: ['customer'] }),
+        defineResource({ model: Invoice, includes: ['customer'], allowTotal: true }),
       ],
     })
   })
@@ -365,7 +365,9 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
     const ok = await asA().request('GET', `${BASE}/customers`, {
       headers: { 'x-request-id': 'req-12345678' },
     })
-    expect(ok.headers.get('x-request-id')).toBe('req-12345678')
+    // a client-chosen id is not believed without a trusted proxy (no forged correlation ids)
+    expect(ok.headers.get('x-request-id')).not.toBe('req-12345678')
+    expect(ok.headers.get('permissions-policy')).toContain('camera=()')
     const unsafe = await asA().request('GET', `${BASE}/customers`, {
       headers: { 'x-request-id': '<script>' },
     })

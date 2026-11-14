@@ -167,6 +167,19 @@ export function columnName(key: string, def: FieldDef): string {
   return def.kind === 'belongsTo' ? `${snakeCase(key)}_id` : snakeCase(key)
 }
 
+/**
+ * Why a field definition would expose a hidden value, or `undefined` when it is consistent.
+ * A hidden field that clients could filter, sort or search on leaks its contents one guess at a
+ * time (and through sort cursors), so those combinations are rejected at definition time.
+ */
+export function hiddenFieldProblem(def: FieldDef): string | undefined {
+  if (!def.hidden) return undefined
+  if (def.filterOperators.length > 0) return 'is hidden and cannot be filterable'
+  if (def.sortable) return 'is hidden and cannot be sortable'
+  if (def.searchable) return 'is hidden and cannot be searchable'
+  return undefined
+}
+
 /** Define a model. Throws a descriptive error for any invalid definition. */
 export function defineModel<
   const N extends string,
@@ -198,6 +211,8 @@ export function defineModel<
     if (columns.has(column))
       throw new TypeError(`${name}: two fields map to the column "${column}"`)
     columns.add(column)
+    const exposure = hiddenFieldProblem(def)
+    if (exposure) throw new TypeError(`${name}: field "${key}" ${exposure}`)
     resolvedFields[key] = Object.freeze({ ...def, label: def.label ?? humanLabel(key) })
   }
 

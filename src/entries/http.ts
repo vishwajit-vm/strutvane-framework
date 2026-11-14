@@ -3,6 +3,8 @@
  *
  * @module
  */
+
+export { HTTP_HOOKS } from '@strutvane/contracts'
 export type {
   HttpRequestHookPayload,
   HttpResponseHookPayload,

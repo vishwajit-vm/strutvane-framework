@@ -159,20 +159,21 @@ describe('bindFilter', () => {
   })
 
   it('resolves actor references with null-safe rules', () => {
-    expect(bind({ op: 'eq', field: 'number', value: { $actor: 'attrs.none' } })).toEqual({
+    const trusted = (f: unknown, a: Actor | null = actor) => bind(f, 'any', a)
+    expect(trusted({ op: 'eq', field: 'number', value: { $actor: 'attrs.none' } })).toEqual({
       op: 'false',
     })
-    expect(bind({ op: 'ne', field: 'number', value: { $actor: 'attrs.none' } })).toEqual({
+    expect(trusted({ op: 'ne', field: 'number', value: { $actor: 'attrs.none' } })).toEqual({
       op: 'true',
     })
-    expect(bind({ op: 'gt', field: 'amount', value: { $actor: 'attrs.none' } })).toEqual({
+    expect(trusted({ op: 'gt', field: 'amount', value: { $actor: 'attrs.none' } })).toEqual({
       op: 'false',
     })
     expect(
-      bind({ op: 'between', field: 'amount', from: { $actor: 'attrs.none' }, to: '1' }),
+      trusted({ op: 'between', field: 'amount', from: { $actor: 'attrs.none' }, to: '1' }),
     ).toEqual({ op: 'false' })
     expect(
-      bind({
+      trusted({
         op: 'in',
         field: 'number',
         values: ['a', { $actor: 'attrs.none' }, { $actor: 'attrs.region' }],
@@ -180,16 +181,20 @@ describe('bindFilter', () => {
     ).toMatchObject({
       values: ['a', 'eu'],
     })
-    expect(bind({ op: 'eq', field: 'number', value: { $actor: 'id' } })).toMatchObject({
+    expect(trusted({ op: 'eq', field: 'number', value: { $actor: 'id' } })).toMatchObject({
       value: 'u1',
     })
-    expect(bind({ op: 'eq', field: 'number', value: { $actor: 'id' } }, 'declared', null)).toEqual({
+    expect(trusted({ op: 'eq', field: 'number', value: { $actor: 'id' } }, null)).toEqual({
       op: 'false',
     })
-    expect(() => bind({ op: 'eq', field: 'number', value: { $actor: 'attrs.missing' } })).toThrow(
-      /not set/,
-    )
+    expect(() =>
+      trusted({ op: 'eq', field: 'number', value: { $actor: 'attrs.missing' } }),
+    ).toThrow(/not set/)
     expect(actorValue(actor, 'tenantId')).toBe('t1')
+    // Client filters may not reference the actor (no probing of server-side attributes).
+    expect(() => bind({ op: 'eq', field: 'number', value: { $actor: 'id' } })).toThrow(
+      /actor references are not allowed/,
+    )
     expect(actorValue({ ...actor, tenantId: undefined } as unknown as Actor, 'tenantId')).toBeNull()
     expect(() => actorValue({ ...actor, attrs: { u: undefined } }, 'attrs.u')).toThrow(/not set/)
   })

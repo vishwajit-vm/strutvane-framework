@@ -12,7 +12,12 @@
  * @module
  */
 import { OpenAPIHono } from '@hono/zod-openapi'
-import { type Actor, MANIFEST_PATH, type TenantContext } from '@strutvane/contracts'
+import {
+  HTTP_HOOKS,
+  type HttpRequestHookPayload,
+  type HttpResponseHookPayload,
+  MANIFEST_PATH,
+} from '@strutvane/contracts'
 import {
   type Application,
   ClockToken,
@@ -25,6 +30,7 @@ import {
   negotiateLocale,
   runWithContext,
   StrutvaneError,
+  UnauthenticatedError,
 } from '@strutvane/core'
 import { bodyLimit } from 'hono/body-limit'
 import type { Database } from '../database/types.ts'
@@ -37,11 +43,28 @@ import {
   type OpenApiDocument,
 } from '../openapi/document.ts'
 import { buildManifest } from '../openapi/manifest.ts'
+import {
+  type SignedFileOptions,
+  serveSignedFile,
+  signedFilePrefix,
+} from '../storage/serve-signed.ts'
 import { DatabaseToken, ModelRegistryToken } from '../tokens.ts'
 import { normalizeError, problemResponse, toProblemBody } from './errors.ts'
 import { resolvePermissionProvider } from './permissions.ts'
+import {
+  clientAddressOf,
+  forwardedProtocol,
+  parsePublicUrl,
+  type TrustProxy,
+  trustedHops,
+} from './proxy.ts'
 import { type ResourceConfig, resolveResources } from './resource.ts'
-import { type HttpEnv, type RequestState, registerResourceRoutes } from './resource-routes.ts'
+import {
+  type HttpBindings,
+  type HttpEnv,
+  type RequestState,
+  registerResourceRoutes,
+} from './resource-routes.ts'
 import { type RouteDefinition, registerCustomRoutes } from './route.ts'
 import { acceptRequestId, securityHeaders } from './security.ts'
 
@@ -59,8 +82,31 @@ export interface HttpAppOptions {
   readonly bodyLimit?: number
   /** API title and version for OpenAPI and the manifest. */
   readonly info?: { readonly title: string; readonly version: string }
-  /** Serve `/openapi.json`. Default `true`. */
-  readonly openapi?: boolean
+  /**
+   * Serve `/openapi.json`: `'public'` to anyone, `'authenticated'` only to identified callers
+   * (anonymous requests get 401), `false` not at all. `true` (the default) means `'public'` when
+   * `env` is `local` and `'authenticated'` everywhere else: the document lists every resource,
+   * field and filter, which is a map an anonymous visitor of a production API does not need.
+   */
+  readonly openapi?: boolean | 'public' | 'authenticated'
+  /**
+   * Proxy hops in front of the app whose `X-Forwarded-For`, `X-Forwarded-Proto` and
+   * `X-Request-Id` headers are believed (`true` = one). Default `false`: clients can send those
+   * headers themselves, so without a proxy you control they are ignored. The client address
+   * handed to `http.onRequest` (`clientAddress`) then always comes from the socket.
+   */
+  readonly trustProxy?: TrustProxy
+  /**
+   * The URL users reach the app at (e.g. `https://app.example.com`). When it is `https`, HSTS is
+   * sent even though TLS ends at a proxy in front of the app.
+   */
+  readonly publicUrl?: string
+  /**
+   * Serve signed temporary file links (`disk.temporaryUrl(key)`) for these disks: each entry
+   * mounts `GET <prefix>/*` (default prefix `/storage/<disk>`), verifying the signature and
+   * streaming the file with `nosniff`, a sandboxing CSP and active content as an attachment.
+   */
+  readonly signedFiles?: readonly SignedFileOptions[]
   /** Extra readiness checks for `/ready` (the database is always checked). */
   readonly readiness?: Readonly<Record<string, () => Promise<void>>>
   /** Override the database (default: `DatabaseToken`). */
@@ -72,27 +118,11 @@ export interface HttpAppOptions {
 }
 
 /**
- * The `http.onRequest` hook payload. Handlers (e.g. `@strutvane/auth`, `@strutvane/logs`) may:
- * - set `actor` / `tenant` to identify the caller;
- * - add `headers` (e.g. a refreshed session cookie) to the eventual response;
- * - set `response` to answer the request themselves (e.g. sign-in routes, the log viewer) and
- *   call `control.stop()`. The answer still gets security headers, `X-Request-Id` and
- *   `http.onResponse`, but skips routing and the body limit (such handlers cap bodies themselves).
+ * The hook payloads live in `@strutvane/contracts` (`http-hooks.ts`) so the framework and the
+ * packages that handle them (auth, logs) compile against one definition. Re-exported here for
+ * compatibility with code that imported them from the framework.
  */
-export interface HttpRequestHookPayload {
-  readonly request: Request
-  readonly actor: Actor | null
-  readonly tenant: TenantContext | undefined
-  readonly headers?: Headers
-  readonly response?: Response
-}
-
-/** The `http.onResponse` hook payload (observe only). */
-export interface HttpResponseHookPayload {
-  readonly request: Request
-  readonly status: number
-  readonly requestId: string
-}
+export type { HttpRequestHookPayload, HttpResponseHookPayload }
 
 /** Copy `extra` onto `target`, keeping every `Set-Cookie` separate. */
 function appendHeaders(target: Headers, extra: Headers | undefined): void {
@@ -138,21 +168,50 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       throw new Error(`Resource ${r.definition.name} is not in the model registry`)
   }
   const info = options.info ?? { title: 'Strutvane API', version: '1.0.0' }
+  const hops = trustedHops(options.trustProxy)
+  const publicUrl = parsePublicUrl(options.publicUrl)
+  const openapiMode =
+    options.openapi === false
+      ? false
+      : options.openapi === 'public' || options.openapi === 'authenticated'
+        ? options.openapi
+        : env === 'local'
+          ? 'public'
+          : 'authenticated'
 
   const http = new OpenAPIHono<HttpEnv>()
 
-  http.use('*', securityHeaders())
+  http.use(
+    '*',
+    securityHeaders({
+      isHttps: (c) =>
+        publicUrl?.protocol === 'https:' ||
+        forwardedProtocol(
+          c.req.header('x-forwarded-proto'),
+          hops,
+          new URL(c.req.url).protocol === 'https:' ? 'https' : 'http',
+        ) === 'https',
+    }),
+  )
   http.use('*', async (c, next) => {
-    const requestId = acceptRequestId(c.req.header('x-request-id'), () => ids())
+    // A client-sent id is only believed from a trusted proxy (else ids could be forged).
+    const requestId = acceptRequestId(c.req.header('x-request-id'), () => ids(), hops > 0)
     const locale = negotiateLocale(c.req.header('accept-language'), messages.locales())
-    const initial: HttpRequestHookPayload = { request: c.req.raw, actor: null, tenant: undefined }
-    const resolved = ((await hooks.run('http.onRequest', initial)) ??
+    const clientAddress = resolveClientAddress(c.env, c.req.header('x-forwarded-for'), hops)
+    const initial: HttpRequestHookPayload = {
+      request: c.req.raw,
+      actor: null,
+      tenant: undefined,
+      ...(clientAddress !== undefined ? { clientAddress } : {}),
+    }
+    const resolved = ((await hooks.run(HTTP_HOOKS.request, initial)) ??
       initial) as HttpRequestHookPayload
     const state: RequestState = {
       requestId,
       locale,
       actor: resolved.actor ?? null,
       tenantId: resolved.tenant?.id,
+      ...(clientAddress !== undefined ? { clientAddress } : {}),
     }
     c.set('sv', state)
     if (resolved.response instanceof Response) {
@@ -161,7 +220,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       appendHeaders(answer.headers, resolved.headers)
       answer.headers.set('X-Request-Id', requestId)
       const done: HttpResponseHookPayload = { request: c.req.raw, status: answer.status, requestId }
-      await hooks.run('http.onResponse', done)
+      await hooks.run(HTTP_HOOKS.response, done)
       return answer
     }
     await runWithContext(
@@ -177,7 +236,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     appendHeaders(c.res.headers, resolved.headers)
     c.res.headers.set('X-Request-Id', requestId)
     const done: HttpResponseHookPayload = { request: c.req.raw, status: c.res.status, requestId }
-    await hooks.run('http.onResponse', done)
+    await hooks.run(HTTP_HOOKS.response, done)
     return undefined
   })
   http.use(
@@ -201,6 +260,11 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     logger,
     basePath,
   }
+  for (const files of options.signedFiles ?? []) {
+    http.on(['GET', 'HEAD'], `${signedFilePrefix(files)}/*`, (c) =>
+      serveSignedFile(c.req.raw, files),
+    )
+  }
   registerCustomRoutes(http, options.routes ?? [], { basePath, permissions })
   for (const resource of resources) {
     registerResourceRoutes(http, resource, deps)
@@ -212,7 +276,13 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     cachedDoc ??= buildOpenApiDocument(http, resources, basePath, info)
     return cachedDoc
   }
-  if (options.openapi !== false) http.get('/openapi.json', (c) => c.json(openApiDocument()))
+  if (openapiMode !== false) {
+    http.get('/openapi.json', (c) => {
+      if (openapiMode === 'authenticated' && c.get('sv').actor === null)
+        throw new UnauthenticatedError()
+      return c.json(openApiDocument())
+    })
+  }
 
   http.get(MANIFEST_PATH, async (c) => {
     const manifest = await buildManifest(c.get('sv').actor, {
@@ -291,6 +361,22 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   })
 
   return Object.assign(http, { openApiDocument }) as HttpApp
+}
+
+/**
+ * The client address for this request. An adapter that already resolved it (this package's
+ * `serve`, which applies `trustProxy` itself) passes `clientAddress`; otherwise the socket peer
+ * from `@hono/node-server`'s `incoming` is used, with trusted `X-Forwarded-For` hops applied.
+ * Never read from headers alone.
+ */
+function resolveClientAddress(
+  env: HttpBindings | undefined,
+  forwardedFor: string | undefined,
+  hops: number,
+): string | undefined {
+  if (env !== undefined && typeof env === 'object' && 'clientAddress' in env)
+    return typeof env.clientAddress === 'string' ? env.clientAddress : undefined
+  return clientAddressOf(env?.incoming?.socket?.remoteAddress, forwardedFor, hops)
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

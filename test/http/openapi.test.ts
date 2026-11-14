@@ -17,7 +17,11 @@ describe('OpenAPI document', () => {
         defineResource({ model: Invoice, routes: { restore: false } }),
       ],
     })
-    const res = await t.request<Json>('GET', '/openapi.json')
+    // Outside APP_ENV=local the document is served to identified callers only.
+    expect((await t.request<Json>('GET', '/openapi.json')).status).toBe(401)
+    const res = await t
+      .actingAs({ id: 'u', type: 'user', roles: [], attrs: {} })
+      .request<Json>('GET', '/openapi.json')
     expect(res.status).toBe(200)
     doc = res.body
   })
@@ -103,7 +107,9 @@ describe('OpenAPI document', () => {
   })
 
   it('is deterministic', async () => {
-    const again = await t.request<Json>('GET', '/openapi.json')
+    const again = await t
+      .actingAs({ id: 'u2', type: 'user', roles: [], attrs: {} })
+      .request<Json>('GET', '/openapi.json')
     expect(JSON.stringify(again.body)).toBe(JSON.stringify(doc))
   })
 })

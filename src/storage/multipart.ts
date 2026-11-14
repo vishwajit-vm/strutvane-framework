@@ -37,8 +37,14 @@ export interface MultipartLimits {
   readonly maxParts?: number
   /** Allowed file field names. Files in other fields are rejected. Default: any. */
   readonly fileFields?: readonly string[]
-  /** Abort when no data arrives for this long (slow-drip uploads). Default 30 s. */
+  /** Abort when no bytes arrive for this long (stalled uploads). Default 30 s. */
   readonly idleTimeoutMs?: number
+  /**
+   * Abort when the whole request takes longer than this, however steadily bytes arrive.
+   * Default 120 s. Without a total deadline a client sending one byte just before every idle
+   * timeout could hold a connection, a parser and temp files open indefinitely.
+   */
+  readonly totalTimeoutMs?: number
   /** Temp folder. Default the OS temp dir. */
   readonly tempDir?: string
 }
@@ -74,7 +80,8 @@ export async function parseMultipart(
   const dir = join(limits.tempDir ?? tmpdir(), `strutvane-upload-${randomUUID()}`)
   await mkdir(dir, { recursive: true })
 
-  const fields: Record<string, string[]> = {}
+  // A prototype-free map: field names like `__proto__` or `constructor` are just names.
+  const fields: Record<string, string[]> = Object.create(null) as Record<string, string[]>
   const files: UploadedFile[] = []
   const cleanup = async (): Promise<void> => {
     await rm(dir, { recursive: true, force: true })
@@ -109,6 +116,10 @@ export async function parseMultipart(
 
   const done = new Promise<void>((resolveDone, rejectDone) => {
     let idle: ReturnType<typeof setTimeout> | undefined
+    const deadline = setTimeout(
+      () => fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 408 })),
+      limits.totalTimeoutMs ?? 120_000,
+    )
     const resetIdle = (): void => {
       clearTimeout(idle)
       idle = setTimeout(
@@ -120,6 +131,7 @@ export async function parseMultipart(
       if (failure !== undefined) return
       failure = error
       clearTimeout(idle)
+      clearTimeout(deadline)
       source.unpipe(parser)
       source.destroy()
       for (const w of writers) w.destroy()
@@ -219,6 +231,7 @@ export async function parseMultipart(
     )
     parser.on('close', () => {
       clearTimeout(idle)
+      clearTimeout(deadline)
       Promise.all(pending).then(() => {
         if (failure === undefined) resolveDone()
       }, fail)
@@ -227,6 +240,9 @@ export async function parseMultipart(
       fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })),
     )
     source.on('aborted', () => fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400 })))
+    // Any received byte counts as progress (not just part boundaries), so a large field or a
+    // file header arriving slowly is not mistaken for a stall, and a stall is caught anywhere.
+    source.on('data', resetIdle)
     resetIdle()
     source.pipe(parser)
   })

@@ -37,6 +37,10 @@ export const FRAMEWORK_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'validation.invalid_cursor':
     'The page cursor is invalid or expired. Start again from the first page.',
   'validation.include_not_allowed': 'Including "{relation}" is not allowed.',
+  'validation.too_many_includes': 'Include at most {max} relations.',
+  'validation.page_too_deep':
+    'Page numbers can reach at most {max} records deep. Use the page cursor to go further.',
+  'validation.total_not_allowed': 'A total count is not available for this list.',
   'errors.TENANT_REQUIRED.title': 'Workspace required',
   'errors.TENANT_REQUIRED.detail': 'Select a workspace (tenant) before doing this.',
   'errors.RECORD_IN_USE.title': 'Record in use',

@@ -8,7 +8,7 @@
  *
  * @module
  */
-import type { AnyModel, ModelDefinition } from './define-model.ts'
+import { type AnyModel, hiddenFieldProblem, type ModelDefinition } from './define-model.ts'
 
 /** A validated, ordered set of models. */
 export interface ModelRegistry {
@@ -72,6 +72,9 @@ export function validateModels(models: readonly ModelDefinition[]): void {
   const byName = new Map(models.map((m) => [m.name, m]))
   for (const m of models) {
     for (const [key, f] of Object.entries(m.fields)) {
+      // Plain definitions (snapshots, hand-written) skip defineModel, so check exposure here too.
+      const exposure = hiddenFieldProblem(f)
+      if (exposure) problems.push(`${m.name}.${key} ${exposure}`)
       if (f.kind === 'belongsTo' && !byName.has(f.target ?? '')) {
         problems.push(`${m.name}.${key} belongsTo unknown model "${f.target}"`)
       }

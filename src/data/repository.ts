@@ -12,13 +12,24 @@
  *   bypass RLS), so this is a security check, not a convenience.
  * - **Policy filters narrow everything.** The scope's filter applies to reads *and* writes; a
  *   row the actor may not see is "not found", never "forbidden" (no enumeration).
+ * - **Writes are checked after the fact.** A created or updated row must still match
+ *   `scope.check` (default: the filter) inside the same transaction, or the write is rolled back
+ *   (`PolicyViolationError`, 403): no create outside the actor's rows, no update moving a row out.
+ * - **References respect visibility.** `scope.references` adds the target's policy to the
+ *   reference check, so a client cannot link to rows it may not see.
  * - **Values are parameters.** All SQL comes from the model and the bound filter compiler.
  *
  * @module
  */
 
 import type { PageInfo, SortDirective } from '@strutvane/contracts'
-import { ConflictError, NotFoundError, StrutvaneError, ValidationError } from '@strutvane/core'
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  StrutvaneError,
+  ValidationError,
+} from '@strutvane/core'
 import { frag, ident, join, render, type SqlFragment } from '../database/sql.ts'
 import type { Database, Row } from '../database/types.ts'
 import { columnName, type ModelDefinition } from '../model/define-model.ts'
@@ -46,8 +57,27 @@ export interface Scope {
   readonly tenantId?: string | null
   /** Policy filter from the PermissionProvider, already bound. */
   readonly filter?: BoundFilter
+  /**
+   * What a row must satisfy **after** a create or update (the `WITH CHECK` of row-level
+   * security, enforced on every engine). The write runs in a transaction; when the written row
+   * does not match, the transaction is rolled back and {@link PolicyViolationError} (403) is
+   * thrown. Defaults to `filter`, so a caller allowed to touch only some rows can never create a
+   * row outside that set or move one out of it.
+   */
+  readonly check?: BoundFilter
+  /**
+   * Per `belongsTo` field key: the filter the referenced row must match (e.g. the target's `view`
+   * policy). Without it a reference only has to exist in the same tenant, so a client could link
+   * to (and learn about) rows it may not see.
+   */
+  readonly references?: Readonly<Record<string, BoundFilter>>
   /** Soft-deleted rows: hidden (default), included, or the only ones. */
   readonly trashed?: 'without' | 'with' | 'only'
+}
+
+/** A create or update would leave the row outside what the caller may write. 403. */
+export class PolicyViolationError extends ForbiddenError {
+  override readonly name = 'PolicyViolationError'
 }
 
 /** A page request. */
@@ -210,6 +240,8 @@ export function createRepository(options: RepositoryOptions): Repository {
         conditions.push(frag('"tenant_id" = ?', [tenantId]))
       }
       if (target.options.softDeletes) conditions.push(frag('"deleted_at" IS NULL'))
+      const visible = scope.references?.[key]
+      if (visible) conditions.push(compileFilter(visible, { dialect }))
       const j = join(conditions, ' AND ')
       const rows = await run(
         frag(`SELECT "id" FROM ${ident(target.table)} WHERE ${j.text}`, j.params),
@@ -244,6 +276,21 @@ export function createRepository(options: RepositoryOptions): Repository {
     return rows[0] ? decode(rows[0]) : undefined
   }
 
+  /**
+   * The post-write check (`WITH CHECK`): the row just written must match `scope.check` (default
+   * `scope.filter`). Throwing inside the transaction rolls the write back.
+   */
+  const assertWritable = async (id: string, scope: Scope, tx: Database): Promise<void> => {
+    const check = scope.check ?? scope.filter
+    if (!check || check.op === 'true') return
+    const visible = await selectOne(
+      id,
+      { ...unfiltered(scope), filter: check, trashed: 'with' },
+      tx,
+    )
+    if (!visible) throw new PolicyViolationError()
+  }
+
   const validId = (id: string): string | undefined =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
       ? id.toLowerCase()
@@ -274,6 +321,7 @@ export function createRepository(options: RepositoryOptions): Repository {
             ),
             tx,
           )
+          await assertWritable(id, scope, tx)
           const created = await selectOne(id, { ...unfiltered(scope), trashed: 'with' }, tx)
           return created as DataRecord
         }),
@@ -314,6 +362,7 @@ export function createRepository(options: RepositoryOptions): Repository {
               tx,
             )
           }
+          await assertWritable(clean, scope, tx)
           return selectOne(clean, unfiltered(scope), tx)
         })
       }),
@@ -497,7 +546,8 @@ export function createRepository(options: RepositoryOptions): Repository {
         { path: ['search'], code: 'too_long', params: { max: MAX_SEARCH } },
       ])
     }
-    const searchable = [...fields.values()].filter((f) => f.def.searchable)
+    // Hidden fields never take part in search: a match would reveal their contents.
+    const searchable = [...fields.values()].filter((f) => f.def.searchable && !f.def.hidden)
     if (searchable.length === 0) return undefined
     return {
       op: 'or',

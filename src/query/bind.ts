@@ -79,6 +79,12 @@ export interface BindOptions {
   readonly operators: 'declared' | 'any'
   /** The actor `$actor` references resolve against; `null` for anonymous (every value null). */
   readonly actor: Actor | null
+  /**
+   * Whether `{ $actor: … }` operands are allowed. Default: only for trusted filters
+   * (`operators: 'any'`). Client filters must not use them: they would let a caller probe the
+   * actor's server-side attributes, and a missing attribute is a server error.
+   */
+  readonly actorRefs?: boolean
   /** Maximum tree depth and node count (defence against hostile `/query` bodies). */
   readonly maxDepth?: number
   readonly maxNodes?: number
@@ -92,9 +98,13 @@ export function bindFilter(filter: QueryFilter, options: BindOptions): BoundFilt
   let nodes = 0
   const maxDepth = options.maxDepth ?? 16
   const maxNodes = options.maxNodes ?? 500
+  const actorRefs = options.actorRefs ?? options.operators === 'any'
 
   const visit = (f: QueryFilter, depth: number): BoundFilter => {
     nodes++
+    // Untrusted trees (`POST /query`) may contain anything: reject non-objects before reading.
+    if (typeof f !== 'object' || f === null || Array.isArray(f))
+      throw new FilterError('invalid_filter', 'a filter node must be an object')
     if (depth > maxDepth)
       throw new FilterError('filter_too_complex', `filter nesting exceeds ${maxDepth}`)
     if (nodes > maxNodes)
@@ -127,7 +137,8 @@ export function bindFilter(filter: QueryFilter, options: BindOptions): BoundFilt
       )
     }
     const field = options.fields.get(path)
-    if (!field)
+    // Client filters never see hidden fields, whatever the definition says (no value oracle).
+    if (!field || (options.operators === 'declared' && field.def.hidden))
       throw new FilterError(
         'filter_not_allowed',
         `unknown or non-filterable field "${path}"`,
@@ -164,6 +175,14 @@ export function bindFilter(filter: QueryFilter, options: BindOptions): BoundFilt
   ): FilterValue | undefined => {
     let value = raw
     if (typeof raw === 'object' && raw !== null && '$actor' in raw) {
+      if (!actorRefs) {
+        throw new FilterError(
+          'invalid_filter_value',
+          'actor references are not allowed here',
+          field.key,
+          op,
+        )
+      }
       value = actorValue(options.actor, (raw as { $actor: unknown }).$actor)
       if (value === null) return undefined
     }

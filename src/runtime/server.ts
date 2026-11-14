@@ -5,6 +5,7 @@
  * @module
  */
 import { LoggerToken } from '@strutvane/core'
+import type { TrustProxy } from '../http/proxy.ts'
 import { type BootedProject, bootProject } from './boot.ts'
 import { loadProject } from './project.ts'
 import { type RunningServer, serve } from './serve.ts'
@@ -32,12 +33,17 @@ export async function startServer(options: StartServerOptions): Promise<StartedS
   const loaded = await loadProject(options.root)
   const project = await bootProject(loaded, options.env ? { env: options.env } : {})
   const logger = project.app.make(LoggerToken)
-  const appConfig = loaded.config['app'] as { port?: number } | undefined
+  const appConfig = loaded.config['app'] as
+    | { port?: number; publicUrl?: string; trustProxy?: TrustProxy }
+    | undefined
   let server: RunningServer
   try {
-    server = await serve((request) => project.http.fetch(request), {
+    // Hono receives the adapter's bindings as `c.env` (socket peer, resolved client address).
+    server = await serve((request, bindings) => project.http.fetch(request, bindings), {
       port: options.port ?? appConfig?.port ?? 3000,
       ...(options.hostname ? { hostname: options.hostname } : {}),
+      ...(appConfig?.publicUrl ? { publicUrl: appConfig.publicUrl } : {}),
+      ...(appConfig?.trustProxy !== undefined ? { trustProxy: appConfig.trustProxy } : {}),
       onError: (error) =>
         logger.error('Unhandled server error', {
           error: error instanceof Error ? error.message : String(error),

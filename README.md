@@ -26,7 +26,7 @@ Strutvane Framework is part of **[Strutvane](https://github.com/vishwajit-vm/str
 | **Migrations** (ADR-0009) | A planner that never guesses about renames (an injected `resolveRename` decides), blocks destructive changes unless allowed, and drives drizzle-kit only with diffs that cannot prompt. Timestamped SQL files record every decision. The migrator applies pending files atomically under a lock and detects drift. |
 | **Data access** | Per-model repositories: create, find, update, delete (soft or hard), restore, list. Tenant scope in every statement *and* Postgres row-level security; keyset (cursor) and offset pagination; `QueryFilter` → SQL with the two-valued, NULL-safe semantics of ADR-0008. |
 | **HTTP** | `createHttpApp(app, { resources })` on Hono: list, show, create, update, delete, restore and `POST /query` per model, the list protocol of ADR-0011, deny-by-default permissions, hooks, domain events, security headers, body limits, `/health`, `/ready`. Every failure is an RFC 9457 problem with catalog messages. |
-| **OpenAPI & manifest** | OpenAPI 3.1 at `/openapi.json` (validated in tests) with `x-strutvane-*` extensions; the resource manifest at `/.well-known/strutvane.json` with per-actor capabilities. |
+| **OpenAPI & manifest** | OpenAPI 3.1 at `/openapi.json` (validated in tests; public in `APP_ENV=local`, for identified callers elsewhere) with `x-strutvane-*` extensions; the resource manifest at `/.well-known/strutvane.json` with per-actor capabilities. |
 | **Storage** (RFC-0002 core) | `local` and `memory` disks behind the `StorageDisk` contract, path-safe keys, streaming with sha256, signed temporary URLs; streaming multipart parsing with limits enforced *while* streaming; magic-byte MIME detection; `UploadedFile.store()`. |
 | **Testing** | `@strutvane/framework/testing`: `createTestApp()`, `defineFactory()` (deterministic fake data), `factory()`, `actingAs()`, `refreshDatabase()`, typed request helpers, on real SQLite or PGlite. |
 | **App runtime** | What a generated app runs on: the zero-option provider (`/provider`), custom routes (`/http`), seeders (`/database`), `loadProject()` / `bootProject()` / `startServer()`, and the CLI commands `sv dev`, `start`, `build`, `migrate`, `migrate:status` and `db:seed` (contributed via `strutvane.commands`). |
@@ -139,17 +139,34 @@ export default defineSeeder('InvoiceSeeder', async ({ create }) => {
 Other packages join the request pipeline through core hooks, never imports. `http.onRequest`
 handlers may set `actor`/`tenant`, add response `headers` (a refreshed session cookie), or answer
 the request themselves with `response` + `control.stop()` (sign-in routes, the log viewer); such
-answers still get security headers, `X-Request-Id` and `http.onResponse`. Policies get their schema
+answers still get security headers, `X-Request-Id` and `http.onResponse`. The payload types and
+hook names (`HttpRequestHookPayload`, `HttpResponseHookPayload`, `HTTP_HOOKS`) come from
+`@strutvane/contracts` and are re-exported here. Policies get their schema
 from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `ModelSchema` shape).
 
 ## Security notes
 
 - **Deny by default.** Without a bound `PermissionProvider` (`@strutvane/auth`), `createHttpApp` refuses to start unless `APP_ENV=local` (allow-all with a warning) or `publicApi: true` is set explicitly.
-- **Tenancy, twice** (ADR-0007). Tenant models get `tenant_id`, per-tenant unique indexes, a RESTRICTIVE RLS policy with `ENABLE` + `FORCE`, and `NULLIF(current_setting('app.tenant_id', true), '')::uuid`. Repositories add `tenant_id = ?` to every statement *and* set the tenant transaction-locally with `set_config(…, true)`. `tenancyAudit()` flags unprotected tables and roles that bypass RLS. The runtime role must never own the tables, be a superuser or have `BYPASSRLS`.
+- **Tenancy, twice** (ADR-0007). Tenant models get `tenant_id`, per-tenant unique indexes, a RESTRICTIVE RLS policy with `ENABLE` + `FORCE`, and `NULLIF(current_setting('app.tenant_id', true), '')::uuid`. Repositories add `tenant_id = ?` to every statement *and* set the tenant transaction-locally with `set_config(…, true)`. `tenancyAudit()` flags unprotected tables, restrictive policies that do not check the tenant, tables owned by the runtime role, views without `security_invoker` (and materialized views), `SECURITY DEFINER` functions, and roles that bypass RLS. The runtime role must never own the tables, be a superuser or have `BYPASSRLS`.
 - **No enumeration.** Rows outside the tenant or the policy filter are 404, exactly like missing rows.
-- **References are checked in scope.** A `belongsTo` id must name a visible row of the same tenant (foreign keys alone would accept another tenant's id).
-- **Never trusted:** the payload's tenant, system fields and unknown keys (strict schemas → `unknown_field`), client file names (keys are UUIDs), browser MIME types (magic bytes decide), filter text (`%`/`_` are literal; no `LIKE`).
+- **Writes are checked after the fact** (the `WITH CHECK` of RLS, on every engine). A created row must match the actor's `create` filter and an updated row its `update` filter, inside the same transaction; otherwise the write is rolled back with 403. Record-level `can()` for an update sees the row as it would be after the change. `Scope.check` (repository) overrides the default (`Scope.filter`).
+- **Hooks narrow, never widen.** A `resource.beforeQuery` result is AND-ed with the PermissionProvider's filter.
+- **References are checked in scope.** A `belongsTo` id must name a row of the same tenant that the actor may `view` (foreign keys alone would accept another tenant's id).
+- **Hidden fields stay server-side.** `hidden()` fields are never serialised, never writable (`unknown_field`), absent from OpenAPI and the manifest, and cannot be filterable, sortable or searchable (rejected when the model is defined). Hidden and `sensitive()` field keys are handed to the logger at boot through the `logger.redactKeys` hook (`REDACT_KEYS_HOOK`), so a logger implementation can redact them.
+- **Query cost is bounded.** Page size is at most 100 (or the resource's `pageSize.max`, also on `POST /query`), offset pages reach at most `MAX_OFFSET` (10 000) rows deep (cursors go further), total counts only where a resource sets `allowTotal: true`, at most 10 includes, and Postgres pools get a 5 s `statement_timeout` by default (`pool.statementTimeoutMs`, `0` disables).
+- **Never trusted:** the payload's tenant, system fields and unknown keys (strict schemas → `unknown_field`), `$actor` references in client filters, malformed filter nodes (422 `invalid_filter`), client file names (keys are UUIDs), browser MIME types (magic bytes decide), filter text (`%`/`_` are literal; no `LIKE`), and `X-Forwarded-*` / `X-Request-Id` unless `trustProxy` says a proxy you run sets them.
+- **Discovery needs an identity.** The manifest lists only resources the caller can use at all; `/openapi.json` is served to identified callers outside `APP_ENV=local` (`openapi: 'public' | 'authenticated' | false`).
+- **Uploads** (RFC-0002): limits apply while streaming, including an idle timeout reset by every received byte and a total deadline (`totalTimeoutMs`, default 120 s). Markup anywhere in the sniffed head makes a file `text/html` or `image/svg+xml`, and wildcards such as `image/*` never allow active content (name `image/svg+xml` explicitly). Keys are lowercase, with no trailing dots or Windows device names; `storage.forTenant(id)` and `store(dir, { tenantId })` confine a tenant's files to `tenants/<id>/`. Signed links use an HKDF subkey of the secret; `createHttpApp({ signedFiles })` (or `serveSignedFile`) serves them with `nosniff`, a sandboxing CSP and active content as an attachment.
 - Broken Postgres connections are destroyed, never returned to the pool.
+
+### Behind a proxy
+
+| Option (`createHttpApp`, `serve`, `config/app.ts`) | Default | Why |
+|---|---|---|
+| `trustProxy` | `false` | How many proxy hops may set `X-Forwarded-For`/`-Proto` and `X-Request-Id`. Clients can send these headers themselves, so they are ignored unless a proxy you control overwrites them. |
+| `publicUrl` | none | The URL users reach the app at. An `https://` URL makes the app send HSTS (and request URLs report `https`) even though TLS ends at the proxy. |
+
+`http.onRequest` handlers receive `clientAddress`: the TCP peer (from `serve`, or `@hono/node-server`'s `c.env.incoming`), or the trusted `X-Forwarded-For` hop. It is `undefined` when unknown, and controls keyed by address must then fail closed. `serve` also aborts `request.signal` when the client disconnects, cancels the response body, honours backpressure, and never streams `HEAD` bodies. Every response carries a `Permissions-Policy` that disables camera, microphone, geolocation, payment and similar features.
 
 ## What's deferred
 
@@ -160,7 +177,7 @@ from a model with `policySchema(Invoice)` (plain data in `@strutvane/auth`'s `Mo
 | Azure Entra ID (passwordless) Postgres | `auth: { kind: 'azure-entra' }` is part of the config shape and throws `NotImplementedError` for now. |
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |
 | Locale-aware sorting, case folding beyond ASCII | Text sorts by code point and case-insensitive matching folds ASCII only, identically on every engine. |
-| `/docs` UI, custom actions, ETags, rate limiting, request timeouts | Planned. |
+| `/docs` UI, custom actions, ETags, rate limiting, request timeouts | Planned. Postgres statements have a default timeout; SQLite and PGlite have none. |
 | Migration `schema` builder and rollback | Hand-written migrations run (`.sql`, or `.ts` with `defineMigration({ up({ db }) {…} })` using `db.execute`), but the `schema` builder of docs/06 §3.2 and `down()`/rollback are not built yet. |
 | Custom routes in OpenAPI, `sv dev` UI serving | Custom routes are served but not documented in `/openapi.json` yet; `sv dev` serves the API only (run Vite separately). |
 

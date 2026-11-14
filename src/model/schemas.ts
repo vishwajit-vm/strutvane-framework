@@ -6,7 +6,8 @@
  * Rules (each one prevents a class of bugs):
  * - `create`/`update` are **strict**: unknown keys are rejected (`unknown_field`), never ignored.
  * - `readOnly` fields are never writable; `writeOnce` fields are writable on create only.
- * - `hidden` fields never appear in `read` (the API response).
+ * - `hidden` fields never appear in `read` (the API response) and are never writable either:
+ *   set them in hooks or through the repository.
  * - Decimals and big integers are strings, so no precision is ever lost in JSON.
  *
  * @module
@@ -114,7 +115,9 @@ export function modelSchemas(model: ModelDefinition): ModelSchemas {
 
   for (const [key, def] of Object.entries(model.fields)) {
     const value = valueSchema(def)
-    if (!def.readOnly) {
+    // Hidden fields are server-controlled (password hashes, internal flags): never writable
+    // through the API, so a client sending one gets `unknown_field`, like any other unknown key.
+    if (!def.readOnly && !def.hidden) {
       const optionalOnCreate = !def.required || def.default !== undefined
       createShape[key] = optionalOnCreate ? value.nullable().optional() : value
       if (!def.writeOnce) updateShape[key] = (def.required ? value : value.nullable()).optional()

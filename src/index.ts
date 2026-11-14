@@ -16,6 +16,7 @@ export {
   type ListOptions,
   type ListPage,
   type PageSpec,
+  PolicyViolationError,
   type Repository,
   type RepositoryOptions,
   type Scope,
@@ -24,8 +25,11 @@ export {
 export {
   connectDatabase,
   type DatabaseConfig,
+  DEFAULT_STATEMENT_TIMEOUT_MS,
   NotImplementedError,
   type PostgresAuth,
+  type PostgresConfig,
+  pgPoolOptions,
 } from './database/connect.ts'
 export {
   type LibsqlLike,
@@ -52,6 +56,7 @@ export {
   denyAllPermissions,
   MissingPermissionProviderError,
 } from './http/permissions.ts'
+export type { TrustProxy } from './http/proxy.ts'
 export {
   defineResource,
   type ResourceAction,
@@ -59,6 +64,7 @@ export {
   type ResourceContext,
   type ResourceHooks,
 } from './http/resource.ts'
+export { type HttpBindings, MAX_OFFSET } from './http/resource-routes.ts'
 export {
   type RouteContext,
   type RouteDefinition,
@@ -67,7 +73,7 @@ export {
   type RouteOptions,
   route,
 } from './http/route.ts'
-export { securityHeaders } from './http/security.ts'
+export { PERMISSIONS_POLICY, securityHeaders } from './http/security.ts'
 export { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from './messages.ts'
 export {
   answersResolver,
@@ -120,6 +126,7 @@ export {
   columnName,
   defineModel,
   type FieldMap,
+  hiddenFieldProblem,
   type InferModel,
   type Model,
   type ModelDefinition,
@@ -155,14 +162,19 @@ export {
   modelSchemas,
   valueSchema,
 } from './model/schemas.ts'
+// Wiring
+export {
+  REDACT_KEYS_HOOK,
+  type RedactKeysPayload,
+  sensitiveFieldKeys,
+} from './model/sensitive-keys.ts'
 export { buildOpenApiDocument, type OpenApiDocument } from './openapi/document.ts'
 export { buildManifest } from './openapi/manifest.ts'
-// Wiring
 export { type FrameworkProviderOptions, frameworkProvider } from './provider.ts'
 export { andAll, type BoundFilter, bindFilter, FilterError } from './query/bind.ts'
 export { compileFilter } from './query/compile.ts'
 export { evaluateFilter, MissingFieldError } from './query/evaluate.ts'
-export { type QueryField, queryFields } from './query/fields.ts'
+export { clientQueryFields, type QueryField, queryFields } from './query/fields.ts'
 export { CursorError, SortError } from './query/sort.ts'
 export {
   type ApiConfig,
@@ -187,7 +199,13 @@ export {
   ProjectLoadError,
 } from './runtime/project.ts'
 export { runSeeder } from './runtime/seeders.ts'
-export { type FetchHandler, type RunningServer, type ServeOptions, serve } from './runtime/serve.ts'
+export {
+  type FetchHandler,
+  type RunningServer,
+  type ServeBindings,
+  type ServeOptions,
+  serve,
+} from './runtime/serve.ts'
 export { type StartedServer, type StartServerOptions, startServer } from './runtime/server.ts'
 // Schema and migrations
 export {
@@ -203,9 +221,15 @@ export { createLocalDisk, type LocalDiskOptions } from './storage/local-disk.ts'
 // Storage and uploads
 export { createStorageManager, type StorageManager } from './storage/manager.ts'
 export { createMemoryDisk, type MemoryDiskOptions } from './storage/memory-disk.ts'
-export { detectMime, mimeMatches } from './storage/mime.ts'
+export { ACTIVE_CONTENT, detectMime, mimeMatches } from './storage/mime.ts'
 export { type MultipartLimits, type MultipartResult, parseMultipart } from './storage/multipart.ts'
+export {
+  type SignedFileOptions,
+  serveSignedFile,
+  signedFilePrefix,
+} from './storage/serve-signed.ts'
 export { signUrl, verifySignedUrl } from './storage/signing.ts'
+export { tenantDisk, tenantPrefix } from './storage/tenant-disk.ts'
 export {
   type FileRules,
   parseBytes,

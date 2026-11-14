@@ -1,6 +1,6 @@
 import { NotFoundError, ValidationError } from '@strutvane/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { TenantRequiredError } from '../../src/data/repository.ts'
+import { PolicyViolationError, TenantRequiredError } from '../../src/data/repository.ts'
 import { defineModel } from '../../src/model/define-model.ts'
 import { field } from '../../src/model/field.ts'
 import { bindFilter } from '../../src/query/bind.ts'
@@ -147,10 +147,20 @@ describe.each(DIALECTS)('repository on %s', (dialect) => {
     expect(await invoices.find(paid.id, scope)).toBeUndefined()
     expect(await invoices.update(paid.id, { notes: 'x' }, scope)).toBeUndefined()
     expect(await invoices.delete(paid.id, scope)).toBe(false)
-    // writes that move a row out of the policy still succeed (the policy limits what is selected)
-    expect(await invoices.update(draft.id, { status: 'sent' }, scope)).toMatchObject({
-      status: 'sent',
-    })
+    // update cannot move a row outside the caller's policy scope: rolled back, 403
+    await expect(invoices.update(draft.id, { status: 'sent' }, scope)).rejects.toBeInstanceOf(
+      PolicyViolationError,
+    )
+    expect(await invoices.find(draft.id, A)).toMatchObject({ status: 'draft' })
+    // create cannot forge a row outside the policy either; nothing is left behind
+    await expect(
+      invoices.create({ number: 'F', amount: '1', customer: customer.id, status: 'paid' }, scope),
+    ).rejects.toBeInstanceOf(PolicyViolationError)
+    expect((await invoices.list({}, A)).data.map((r) => r['number']).sort()).toEqual(['D', 'P'])
+    // an explicit check overrides the default (e.g. a workflow step that hands a row on)
+    expect(
+      await invoices.update(draft.id, { status: 'sent' }, { ...scope, check: { op: 'true' } }),
+    ).toMatchObject({ status: 'sent' })
   })
 
   it('paginates with cursors across sorts, including nulls and ties, without gaps or overlaps', async () => {

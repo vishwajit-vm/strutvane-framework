@@ -2,7 +2,7 @@
  * Storage keys and file names (RFC-0002 §4).
  *
  * A key is the *only* thing that decides where a file lives, so it is validated strictly and is
- * never derived from a client file name: `tenant/invoices/0190…-….pdf`. Client names are kept
+ * never derived from a client file name: `tenants/<id>/invoices/0190…-….pdf`. Client names are kept
  * for display only, after sanitising.
  *
  * @module
@@ -13,19 +13,26 @@ export class UnsafeKeyError extends Error {
   override readonly name = 'UnsafeKeyError'
 }
 
-const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._=-]{0,127}$/
+const SEGMENT = /^[a-z0-9][a-z0-9._=-]{0,127}$/
+/** Device names Windows reserves in every folder, with or without an extension. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\.|$)/
 
 /**
- * Validate a key: `/`-separated segments of `[A-Za-z0-9._=-]`, each starting with a letter or
- * digit (so no `.`/`..`, no hidden files), no leading or trailing `/`, no backslashes, no
- * control characters, at most 1024 bytes. Throws {@link UnsafeKeyError}.
+ * Validate a key: `/`-separated segments of `[a-z0-9._=-]`, each starting with a letter or digit
+ * (so no `.`/`..`, no hidden files), no leading or trailing `/`, no backslashes, no control
+ * characters, at most 1024 bytes. Throws {@link UnsafeKeyError}.
+ *
+ * Keys are **lowercase** and segments may not end with `.` or be a Windows device name (`con`,
+ * `nul.txt`, …): on case-insensitive or Windows file systems such keys would alias another file
+ * or a device, so two different keys could read or overwrite the same bytes.
  */
 export function assertSafeKey(key: string): void {
   if (typeof key !== 'string' || key.length === 0 || key.length > 1024)
     throw new UnsafeKeyError('key must be 1-1024 characters')
   const segments = key.split('/')
   for (const s of segments) {
-    if (!SEGMENT.test(s)) throw new UnsafeKeyError(`unsafe key segment in "${printable(key)}"`)
+    if (!SEGMENT.test(s) || s.endsWith('.') || WINDOWS_RESERVED.test(s))
+      throw new UnsafeKeyError(`unsafe key segment in "${printable(key)}"`)
   }
 }
 

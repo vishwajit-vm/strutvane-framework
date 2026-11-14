@@ -70,6 +70,13 @@ export interface ResourceConfig {
   readonly routes?: Partial<Record<ResourceAction, boolean>>
   /** Page size limits for this resource (never above the global maximum of 100). */
   readonly pageSize?: { readonly default?: number; readonly max?: number }
+  /**
+   * Allow clients to ask for a total count (`page[total]=true`, `"total": true`). Default
+   * `false`: a count scans every matching row, so on a large table each request becomes a full
+   * scan a client can repeat at will. Turn it on for resources whose tables stay small or whose
+   * filters are indexed.
+   */
+  readonly allowTotal?: boolean
   /** UI hints passed through to the manifest. */
   readonly ui?: {
     readonly icon?: string
@@ -115,6 +122,9 @@ export function resolveResources(
         throw new TypeError(
           `${definition.name}: include "${inc}" is not a belongsTo field or hasMany relation`,
         )
+      }
+      if (f?.hidden) {
+        throw new TypeError(`${definition.name}: include "${inc}" is a hidden field`)
       }
     }
     return { ...config, definition }

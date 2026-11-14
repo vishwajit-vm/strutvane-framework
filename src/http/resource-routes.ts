@@ -39,7 +39,7 @@ import type { ModelDefinition } from '../model/define-model.ts'
 import type { ModelRegistry } from '../model/registry.ts'
 import { issuesFromZod, modelLabels, modelSchemas } from '../model/schemas.ts'
 import { andAll, type BoundFilter, bindFilter } from '../query/bind.ts'
-import { queryFields } from '../query/fields.ts'
+import { clientQueryFields, queryFields } from '../query/fields.ts'
 import { normalizeError } from './errors.ts'
 import { type ParsedListQuery, parseListQuery, serializeListParams } from './list-query.ts'
 import { permissionFor } from './permissions.ts'
@@ -57,14 +57,32 @@ export interface RequestState {
   readonly locale: string
   readonly actor: Actor | null
   readonly tenantId: string | undefined
+  /** The client address (socket peer, or a trusted proxy hop); never from headers alone. */
+  readonly clientAddress?: string
   /** Field labels for problem messages, set by the handler that knows the resource. */
   labels?: Readonly<Record<string, string>>
 }
 
+/**
+ * What runtime adapters pass as Hono's `c.env`: this package's `serve` passes `clientAddress`
+ * (already resolved); `@hono/node-server` passes `incoming` (the Node request).
+ */
+export interface HttpBindings {
+  readonly clientAddress?: string | undefined
+  readonly incoming?: { readonly socket?: { readonly remoteAddress?: string | undefined } }
+}
+
 /** Hono environment for framework apps. */
 export interface HttpEnv {
+  Bindings: HttpBindings
   Variables: { sv: RequestState }
 }
+
+/** Deepest row an offset page may reach (`page[number] × page[size]`); use cursors beyond it. */
+export const MAX_OFFSET = 10_000
+
+/** Most relations one request may include. */
+const MAX_INCLUDES = 10
 
 /** What the engine needs (resolved once by `createHttpApp`). */
 export interface EngineDeps {
@@ -133,8 +151,10 @@ export function registerResourceRoutes(
   const base = `${deps.basePath}/${model.path}`
   const schemas = modelSchemas(model)
   const labels = modelLabels(model)
-  const fields = queryFields(model)
+  // Client queries never reference hidden fields; trusted policy filters use queryFields().
+  const fields = clientQueryFields(model)
   const includes = resource.includes ?? []
+  const maxPageSize = Math.min(resource.pageSize?.max ?? 100, 100)
   const repo = createRepository({
     db: deps.db,
     model,
@@ -187,7 +207,11 @@ export function registerResourceRoutes(
       throw s.actor === null ? new UnauthenticatedError() : new ForbiddenError()
   }
 
-  /** Step 2: which rows may this action touch? (policy filter + `resource.beforeQuery` hook) */
+  /**
+   * Step 2: which rows may this action touch? The PermissionProvider's filter AND whatever the
+   * `resource.beforeQuery` hook returns: a hook can only narrow the policy, never replace or
+   * widen it (a buggy or hostile hook returning `{ op: 'true' }` changes nothing).
+   */
   const policyFilter = async (
     target: ModelDefinition,
     s: RequestState,
@@ -203,19 +227,56 @@ export function registerResourceRoutes(
       action: suffix,
       actor: s.actor,
       filter: raw,
-    })) as { filter: QueryFilter }
+    })) as { filter?: QueryFilter } | undefined
+    const extra = hooked?.filter
     // Policy filters are trusted code: any operator the field supports may be used. A policy
     // that references an unknown field is a bug and fails closed (500), never open.
     try {
-      return bindFilter(hooked.filter, {
-        fields: queryFields(target),
-        operators: 'any',
-        actor: s.actor,
-      })
+      const options = { fields: queryFields(target), operators: 'any' as const, actor: s.actor }
+      const policy = bindFilter(raw, options)
+      if (extra === undefined || extra === raw) return policy
+      return andAll([policy, bindFilter(extra, options)])
     } catch (error) {
       // Not the client's fault: surface as a 500 (logged), never as a 4xx the client could probe.
       throw new Error(`Invalid policy filter for ${target.name}.${suffix}`, { cause: error })
     }
+  }
+
+  /**
+   * The visibility each referenced row must have: for every `belongsTo` value in `values`, the
+   * target's `view` policy (so a client cannot link to, or learn about, rows it may not see).
+   */
+  const referenceFilters = async (
+    values: Readonly<Record<string, unknown>>,
+    s: RequestState,
+  ): Promise<Record<string, BoundFilter>> => {
+    const out: Record<string, BoundFilter> = {}
+    for (const [key, def] of Object.entries(model.fields)) {
+      if (def.kind !== 'belongsTo' || values[key] === null || values[key] === undefined) continue
+      const target = deps.registry.get(def.target ?? '')
+      if (target) out[key] = await policyFilter(target, s, ACTION_PERMISSIONS.show)
+    }
+    return out
+  }
+
+  /** Reject a list request the resource does not allow (deep offsets, totals). */
+  const checkListCost = (query: ParsedListQuery, where: 'query' | 'body'): void => {
+    const at = (...path: string[]) => (where === 'query' ? ['query', ...path] : path)
+    const issues: { path: string[]; code: string; params?: Record<string, number> }[] = []
+    if (query.page?.kind === 'offset' && query.page.number * query.page.size > MAX_OFFSET) {
+      issues.push({
+        path: at('page', 'number'),
+        code: 'page_too_deep',
+        params: { max: MAX_OFFSET },
+      })
+    }
+    if (query.withTotal && resource.allowTotal !== true) {
+      issues.push({
+        path: where === 'query' ? at('page', 'total') : ['total'],
+        code: 'total_not_allowed',
+      })
+    }
+    if (issues.length > 0) throw new ValidationError(issues)
   }
 
   const scopeFor = async (
@@ -335,6 +396,7 @@ export function registerResourceRoutes(
   ): Promise<Response> => {
     const s = state(c)
     await authorize(s, 'list')
+    checkListCost(query, where)
     await resource.hooks?.beforeList?.(ctxOf(s))
     try {
       const userFilter = query.filter
@@ -402,7 +464,12 @@ export function registerResourceRoutes(
           ])
         }
       }
-      const size = b.page?.size ?? Math.min(resource.pageSize?.default ?? 25, 100)
+      if (b.page?.size !== undefined && b.page.size > maxPageSize) {
+        throw new ValidationError([
+          { path: ['page', 'size'], code: 'invalid_page_size', params: { max: maxPageSize } },
+        ])
+      }
+      const size = b.page?.size ?? Math.min(resource.pageSize?.default ?? 25, maxPageSize)
       const query: ParsedListQuery = {
         ...(b.filter !== undefined ? { filter: b.filter as QueryFilter } : {}),
         ...(b.search !== undefined && b.search.trim() !== '' ? { search: b.search } : {}),
@@ -415,7 +482,7 @@ export function registerResourceRoutes(
                 size,
                 ...(b.page?.cursor !== undefined ? { cursor: b.page.cursor } : {}),
               },
-        ...(b.include ? { include: b.include } : {}),
+        ...(b.include ? { include: [...new Set(b.include)] } : {}),
         withTotal: b.total === true,
       }
       return runList(c, query, 'body')
@@ -430,7 +497,12 @@ export function registerResourceRoutes(
       await resource.hooks?.beforeShow?.(id, ctxOf(s))
       const record = await findVisible(id, s, ACTION_PERMISSIONS.show)
       const includeParam = new URL(c.req.url).searchParams.get('include')
-      const names = includeParam ? includeParam.split(',') : []
+      const names = includeParam ? [...new Set(includeParam.split(','))] : []
+      if (names.length > MAX_INCLUDES) {
+        throw new ValidationError([
+          { path: ['query', 'include'], code: 'too_many_includes', params: { max: MAX_INCLUDES } },
+        ])
+      }
       for (const n of names) {
         if (!includes.includes(n)) {
           throw new ValidationError([
@@ -453,10 +525,13 @@ export function registerResourceRoutes(
       let input = parsed.data as Record<string, unknown>
       await authorize(s, 'create', input)
       input = (await resource.hooks?.beforeCreate?.(input, ctxOf(s))) ?? input
-      const created = await repo.create(
-        input,
-        s.tenantId !== undefined ? { tenantId: s.tenantId } : {},
-      )
+      // The created row must satisfy the create policy (checked in the transaction) and may only
+      // reference rows the actor can see.
+      const created = await repo.create(input, {
+        ...(s.tenantId !== undefined ? { tenantId: s.tenantId } : {}),
+        check: await policyFilter(model, s, ACTION_PERMISSIONS.create),
+        references: await referenceFilters(input, s),
+      })
       await resource.hooks?.afterCreate?.(created, ctxOf(s))
       await emit('created', created, s)
       c.header('Location', `${base}/${created.id}`)
@@ -474,10 +549,16 @@ export function registerResourceRoutes(
       const existing = await findVisible(c.req.param('id'), s, ACTION_PERMISSIONS.update)
       let patch = parsed.data as Record<string, unknown>
       patch = (await resource.hooks?.beforeUpdate?.(patch, existing, ctxOf(s))) ?? patch
+      // Record-level authorization sees the row as it would be after the change.
+      await authorize(s, 'update', { ...existing, ...patch })
+      // `filter` doubles as the check: the updated row must still be one the actor may update,
+      // so a patch cannot move it out of scope (e.g. hand it to another owner).
       const updated = await repo.update(
         existing.id,
         patch,
-        await scopeFor(s, ACTION_PERMISSIONS.update),
+        await scopeFor(s, ACTION_PERMISSIONS.update, {
+          references: await referenceFilters(patch, s),
+        }),
       )
       if (!updated) throw new NotFoundError(model.label)
       await resource.hooks?.afterUpdate?.(updated, existing, ctxOf(s))

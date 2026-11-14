@@ -42,6 +42,11 @@ export type DatabaseConfig =
       readonly pool?: {
         readonly max?: number
         readonly idleTimeoutMs?: number
+        /**
+         * Postgres `statement_timeout` per connection, in milliseconds. Default
+         * {@link DEFAULT_STATEMENT_TIMEOUT_MS} (5 s); `0` disables the limit (not recommended
+         * for a public API). Long-running jobs should use their own connection settings.
+         */
         readonly statementTimeoutMs?: number
       }
       readonly auth?: PostgresAuth
@@ -50,9 +55,41 @@ export type DatabaseConfig =
   | { readonly driver: 'sqlite'; readonly url: string; readonly authToken?: string }
   | { readonly driver: 'mysql'; readonly url?: string }
 
+/** Default Postgres `statement_timeout` (ms) for pooled connections. */
+export const DEFAULT_STATEMENT_TIMEOUT_MS = 5_000
+
 /** Thrown for configured features that are designed but not implemented yet. */
 export class NotImplementedError extends Error {
   override readonly name = 'NotImplementedError'
+}
+
+/** Postgres configuration (the `driver: 'postgres'` member of {@link DatabaseConfig}). */
+export type PostgresConfig = Extract<DatabaseConfig, { readonly driver: 'postgres' }>
+
+/**
+ * The node-postgres `Pool` options for a config: certificate verification on when `ssl: true`,
+ * and a default {@link DEFAULT_STATEMENT_TIMEOUT_MS} statement timeout.
+ */
+export function pgPoolOptions(config: PostgresConfig): Record<string, unknown> {
+  const statementTimeout = config.pool?.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS
+  if (!Number.isInteger(statementTimeout) || statementTimeout < 0)
+    throw new RangeError('pool.statementTimeoutMs must be a non-negative integer')
+  return {
+    ...(config.url ? { connectionString: config.url } : {}),
+    ...(config.host ? { host: config.host } : {}),
+    ...(config.port ? { port: config.port } : {}),
+    ...(config.database ? { database: config.database } : {}),
+    ...(config.user ? { user: config.user } : {}),
+    ...(config.password ? { password: config.password } : {}),
+    ...(config.ssl !== undefined
+      ? { ssl: config.ssl === true ? { rejectUnauthorized: true } : config.ssl }
+      : {}),
+    max: config.pool?.max ?? 10,
+    idleTimeoutMillis: config.pool?.idleTimeoutMs ?? 30_000,
+    // A default cap on every statement: one expensive query (a deep page, a count over a huge
+    // table) must not hold a connection forever. `0` disables it explicitly.
+    ...(statementTimeout > 0 ? { statement_timeout: statementTimeout } : {}),
+  }
 }
 
 /** Open a database from configuration. */
@@ -83,22 +120,7 @@ export async function connectDatabase(config: DatabaseConfig): Promise<Database>
       }
       const pg = await import('pg')
       const Pool = (pg.default ?? pg).Pool
-      const pool = new Pool({
-        ...(config.url ? { connectionString: config.url } : {}),
-        ...(config.host ? { host: config.host } : {}),
-        ...(config.port ? { port: config.port } : {}),
-        ...(config.database ? { database: config.database } : {}),
-        ...(config.user ? { user: config.user } : {}),
-        ...(config.password ? { password: config.password } : {}),
-        ...(config.ssl !== undefined
-          ? { ssl: config.ssl === true ? { rejectUnauthorized: true } : config.ssl }
-          : {}),
-        max: config.pool?.max ?? 10,
-        idleTimeoutMillis: config.pool?.idleTimeoutMs ?? 30_000,
-        ...(config.pool?.statementTimeoutMs
-          ? { statement_timeout: config.pool.statementTimeoutMs }
-          : {}),
-      })
+      const pool = new Pool(pgPoolOptions(config))
       // An idle client erroring must not crash the process (ADR-0007 rule 5); the pool drops it.
       pool.on('error', () => undefined)
       return pgDatabase(pool as unknown as PgPoolLike)

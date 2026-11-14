@@ -63,9 +63,11 @@ describe('README', () => {
     })
     await migrate(db, [migrationSource('0001_init', plan.statements)])
     const http = createHttpApp(app, { resources: [Customer, Invoice] })
-    for (const path of ['/openapi.json', '/.well-known/strutvane.json', '/health', '/ready']) {
+    for (const path of ['/.well-known/strutvane.json', '/health', '/ready']) {
       expect((await http.request(path)).status, path).toBe(200)
     }
+    // Outside APP_ENV=local, /openapi.json needs an identified caller (the `openapi` option).
+    expect((await http.request('/openapi.json')).status).toBe(401)
     // Without an http.onRequest hook (auth) there is no tenant: tenant models fail closed.
     expect((await http.request('/api/v1/invoices')).status).toBe(403)
     expect(

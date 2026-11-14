@@ -45,14 +45,18 @@ function detectText(head: Uint8Array): string {
   } catch {
     return 'application/octet-stream'
   }
-  const start = text
-    .replace(/^\uFEFF/, '')
-    .trimStart()
-    .slice(0, 256)
-    .toLowerCase()
-  if (start.startsWith('<svg') || (start.startsWith('<?xml') && start.includes('<svg')))
-    return 'image/svg+xml'
-  if (/^<(!doctype html|html|head|body|script|iframe)\b/.test(start)) return 'text/html'
+  const lower = text.replace(/^﻿/, '').toLowerCase()
+  const start = lower.trimStart()
+  // Browsers sniff markup anywhere near the start, not just at byte 0 (a "text" file with a
+  // harmless first line and `<script>` further down is still HTML to a sniffing browser), so the
+  // whole sniffed head is scanned for active markup.
+  if (start.startsWith('<svg') || /<svg[\s>/]/.test(lower)) return 'image/svg+xml'
+  if (
+    /<(!doctype\s+html|html|head|body|script|iframe|object|embed|img|meta|link|style)[\s>/]/.test(
+      lower,
+    )
+  )
+    return 'text/html'
   if (start.startsWith('<?xml')) return 'application/xml'
   return 'text/plain'
 }
@@ -70,18 +74,31 @@ function trimPartialUtf8(b: Uint8Array): Uint8Array {
   return b.subarray(0, end)
 }
 
-/** Whether `mime` matches an allow-list entry (`application/pdf`, `image/*`, `*\/*`). */
-export function mimeMatches(mime: string, accept: readonly string[]): boolean {
-  return accept.some((a) => {
-    if (a === '*/*') return true
-    if (a.endsWith('/*')) return mime.startsWith(a.slice(0, -1))
-    return mime === a
-  })
-}
-
 /** Types that can run script when served inline; never serve these inline from your origin. */
 export const ACTIVE_CONTENT: ReadonlySet<string> = new Set([
   'text/html',
   'image/svg+xml',
   'application/xml',
+  'text/xml',
+  'application/xhtml+xml',
+  'text/javascript',
+  'application/javascript',
 ])
+
+/**
+ * Whether `mime` matches an allow-list entry (`application/pdf`, `image/*`, `*\/*`).
+ *
+ * Wildcards never match {@link ACTIVE_CONTENT}: `image/*` is meant as "pictures", and an SVG
+ * (which can carry script) must be allowed by naming `image/svg+xml` explicitly. Serve allowed
+ * active content only as an attachment with `X-Content-Type-Options: nosniff` (see
+ * `serveSignedFile`), or from a separate origin.
+ */
+export function mimeMatches(mime: string, accept: readonly string[]): boolean {
+  return accept.some((a) => {
+    if (a === mime) return true
+    if (ACTIVE_CONTENT.has(mime)) return false
+    if (a === '*/*') return true
+    if (a.endsWith('/*')) return mime.startsWith(a.slice(0, -1))
+    return false
+  })
+}

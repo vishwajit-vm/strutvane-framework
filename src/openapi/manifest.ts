@@ -98,7 +98,7 @@ export function describeFields(resource: ResolvedResource): FieldDescriptor[] {
   return out
 }
 
-/** Build the manifest for one actor. */
+/** Build the manifest for one actor (only the resources that actor can use at all). */
 export async function buildManifest(
   actor: Actor | null,
   options: ManifestOptions,
@@ -124,6 +124,9 @@ export async function buildManifest(
       restore: await allowed('restore'),
       export: false, // export routes are deferred
     }
+    // A resource the actor can do nothing with is left out entirely: anonymous visitors (or
+    // users without any grant) must not learn which resources and fields exist.
+    if (!Object.values(capabilities).some(Boolean)) continue
     resources.push({
       name: m.name,
       path: m.path,

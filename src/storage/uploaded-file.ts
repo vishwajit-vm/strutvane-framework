@@ -31,6 +31,11 @@ export interface StoreOptions {
   readonly visibility?: FileVisibility
   /** Key generator (UUIDv7 recommended). */
   readonly id: () => string
+  /**
+   * Store under the tenant's prefix (`tenants/<tenantId>/…`, see `StorageManager.forTenant`).
+   * Pass it for every tenant-owned upload; the returned `key` is relative to that prefix.
+   */
+  readonly tenantId?: string
 }
 
 /** A file received in a multipart request. */
@@ -93,7 +98,11 @@ export class UploadedFile {
   async store(directory: string, options: StoreOptions): Promise<StoredFile> {
     const ext = extensionFor(this.detectedMime)
     const key = joinKey(directory, `${options.id().toLowerCase()}${ext ? `.${ext}` : ''}`)
-    const stored = await options.storage.disk(options.disk).put(key, this.stream(), {
+    const disk =
+      options.tenantId !== undefined
+        ? options.storage.forTenant(options.tenantId, options.disk)
+        : options.storage.disk(options.disk)
+    const stored = await disk.put(key, this.stream(), {
       contentType: this.detectedMime,
       ...(options.visibility ? { visibility: options.visibility } : {}),
     })

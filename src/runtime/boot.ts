@@ -6,6 +6,7 @@
  */
 import { type Application, createApp } from '@strutvane/core'
 import { createHttpApp, type HttpApp } from '../http/create-http-app.ts'
+import type { TrustProxy } from '../http/proxy.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import type { AnyModel } from '../model/define-model.ts'
 import { ProjectModelsToken } from '../tokens.ts'
@@ -58,7 +59,9 @@ export async function bootProject(
   project: LoadedProject,
   options: { readonly env?: string } = {},
 ): Promise<BootedProject> {
-  const appConfig = project.config['app'] as { env?: string; name?: string } | undefined
+  const appConfig = project.config['app'] as
+    | { env?: string; name?: string; publicUrl?: string; trustProxy?: TrustProxy }
+    | undefined
   const env = options.env ?? appConfig?.env ?? process.env['APP_ENV'] ?? 'production'
   const app = createApp({ config: project.config, providers: project.providers })
   app.container.value(ProjectModelsToken, project.models)
@@ -72,6 +75,8 @@ export async function bootProject(
       env,
       openapi: api?.docs !== false,
       info: { title: appConfig?.name ?? 'Strutvane API', version: '1.0.0' },
+      ...(appConfig?.publicUrl ? { publicUrl: appConfig.publicUrl } : {}),
+      ...(appConfig?.trustProxy !== undefined ? { trustProxy: appConfig.trustProxy } : {}),
     })
     return { app, http, env, shutdown: async () => void (await app.shutdown()) }
   } catch (error) {

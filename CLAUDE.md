@@ -23,9 +23,10 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
   - `database/`: tiny `Database` contract, drivers (PGlite, libSQL, node-postgres with transaction-local tenant + broken-connection destruction), `connect.ts` (config → driver), `sql.ts` (quoted identifiers, `?` fragments)
   - `query/`: `bind.ts` (QueryFilter → bound, actor refs, fail closed), `compile.ts` (→ SQL, two-valued, ASCII case folding), `evaluate.ts` (in-memory twin), `sort.ts` (sort keys, NULLS LAST, keyset cursors)
   - `data/`: `values.ts` (canonical values: the reason SQL and memory agree), `repository.ts` (CRUD, tenant scope, in-scope reference checks, soft deletes, pagination)
-  - `http/`: `create-http-app.ts`, `resource-routes.ts` (pipeline), `resource.ts` (config + hooks), `list-query.ts` (shared serializer/parser), `permissions.ts`, `security.ts`, `errors.ts`
+  - `http/`: `create-http-app.ts`, `resource-routes.ts` (pipeline, post-write policy check, cost limits), `resource.ts` (config + hooks), `list-query.ts` (shared serializer/parser), `permissions.ts`, `security.ts`, `proxy.ts` (`trustProxy`/`publicUrl`, client address), `errors.ts`
   - `openapi/`: `document.ts` (OpenAPI 3.1 + `x-strutvane-*`), `manifest.ts`
-  - `storage/`: keys, MIME sniffing, memory + local disks, signing, manager, streaming multipart, `UploadedFile`
+  - `storage/`: keys, MIME sniffing, memory + local disks, signing (HKDF subkey), `serve-signed.ts`, `tenant-disk.ts`, manager, streaming multipart, `UploadedFile`
+  - `model/sensitive-keys.ts`: runs the `logger.redactKeys` hook at boot with hidden/sensitive field keys
   - `testing/` (subpath export): `createTestApp`, factories
   - `provider.ts`, `tokens.ts`, `messages.ts` (framework catalog + error codes)
   - `runtime/` (app runtime: `project.ts` loader, `boot.ts`, `serve.ts` Node adapter, `server.ts`, `migrations.ts`, `seeders.ts`, `database-config.ts`, `default-provider.ts`), `entries/` (`/provider`, `/http`, `/database` subpaths), `commands.ts` (CLI contribution: dev/start/build/migrate/migrate:status/db:seed), `http/route.ts` (custom routes), `model/policy-schema.ts`, `testing/define-factory.ts`
@@ -45,6 +46,7 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 - Postgres error `23001` (restrict_violation) is what `ON DELETE RESTRICT` raises, not `23503`.
 - libSQL throws for integers beyond 2^53 unless the client uses `intMode: 'bigint'` (what `connectDatabase` does).
 - PGlite runs as a superuser, which bypasses RLS: RLS tests must `SET ROLE` to a non-owner role.
+- Secure defaults tests rely on: `/openapi.json` needs an actor outside `env: 'local'`, totals need `allowTotal`, client `X-Request-Id` is ignored without `trustProxy`. `createTestApp({ http: {…} })` passes extra `createHttpApp` options.
 - Undici's lazily generated `FormData` bodies throw when cancelled mid-stream; upload tests encode forms to bytes first.
 
 ## Boundaries (non-negotiable)

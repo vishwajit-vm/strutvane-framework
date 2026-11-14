@@ -15,12 +15,17 @@
  * @module
  */
 import type { StorageDisk } from '@strutvane/contracts'
-import { defineProvider, ErrorRegistryToken, type Provider } from '@strutvane/core'
+import { defineProvider, ErrorRegistryToken, HooksToken, type Provider } from '@strutvane/core'
 import { connectDatabase, type DatabaseConfig } from './database/connect.ts'
 import type { Database } from './database/types.ts'
 import { registerFrameworkErrors } from './messages.ts'
 import type { AnyModel, ModelDefinition } from './model/define-model.ts'
 import { createModelRegistry, type ModelRegistry } from './model/registry.ts'
+import {
+  REDACT_KEYS_HOOK,
+  type RedactKeysPayload,
+  sensitiveFieldKeys,
+} from './model/sensitive-keys.ts'
 import { createLocalDisk } from './storage/local-disk.ts'
 import { createStorageManager, type StorageManager } from './storage/manager.ts'
 import { DatabaseToken, ModelRegistryToken, StorageManagerToken } from './tokens.ts'
@@ -63,6 +68,12 @@ export function frameworkProvider(options: FrameworkProviderOptions): Provider {
     },
     async boot(app) {
       registerFrameworkErrors(app.make(ErrorRegistryToken))
+      // Tell the logger which model fields must never appear in logs (sensitive + hidden).
+      const keys = sensitiveFieldKeys(registry?.all ?? [])
+      if (keys.length > 0) {
+        const payload: RedactKeysPayload = { keys, source: '@strutvane/framework' }
+        await app.make(HooksToken).run(REDACT_KEYS_HOOK, payload)
+      }
       db = 'query' in options.database ? options.database : await connectDatabase(options.database)
     },
     async shutdown() {

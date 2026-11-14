@@ -24,7 +24,7 @@ import {
 import { createRepository, type Repository } from '../data/repository.ts'
 import { connectDatabase } from '../database/connect.ts'
 import type { Database, Dialect } from '../database/types.ts'
-import { createHttpApp, type HttpApp } from '../http/create-http-app.ts'
+import { createHttpApp, type HttpApp, type HttpAppOptions } from '../http/create-http-app.ts'
 import { allowAllPermissions, denyAllPermissions } from '../http/permissions.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import { migrationSource } from '../migrations/files.ts'
@@ -51,6 +51,8 @@ export interface TestAppOptions {
   /** `allow` (default), `deny`, or a provider. */
   readonly permissions?: 'allow' | 'deny' | PermissionProvider
   readonly basePath?: string
+  /** Extra `createHttpApp` options (e.g. `trustProxy`, `openapi`, `signedFiles`). */
+  readonly http?: Omit<HttpAppOptions, 'resources' | 'registry' | 'database'>
 }
 
 /** A response as seen by tests. */
@@ -160,6 +162,7 @@ export async function createTestApp(options: TestAppOptions): Promise<TestApp> {
     registry,
     env: 'testing',
     ...(options.basePath ? { basePath: options.basePath } : {}),
+    ...options.http,
   })
   const basePath = (options.basePath ?? '/api/v1').replace(/\/+$/, '')
   const repos = new Map<string, Repository>()

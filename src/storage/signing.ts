@@ -3,9 +3,14 @@
  * the disk, key, method and expiry, so a URL cannot be extended, moved to another key, or reused
  * for another method. Comparison is constant-time.
  *
+ * The HMAC key is not the configured secret itself but a subkey derived from it with HKDF-SHA256
+ * (label `strutvane/storage/signed-url/v1`). `APP_KEY` usually signs other things too (sessions,
+ * other tokens); deriving a purpose-bound key means a signature made for one purpose can never be
+ * replayed as another, and the raw secret is never used directly as an HMAC key.
+ *
  * @module
  */
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto'
 
 /** Options for {@link signUrl} / {@link verifySignedUrl}. */
 export interface SigningOptions {
@@ -17,10 +22,24 @@ export interface SigningOptions {
 const payload = (disk: string, key: string, method: string, expires: number): string =>
   `${method.toUpperCase()}\n${disk}\n${key}\n${expires}`
 
+const SUBKEY_INFO = 'strutvane/storage/signed-url/v1'
+const subkeys = new Map<string, Buffer>()
+
+/** The purpose-bound signing key derived from `secret` (cached; derivation is deterministic). */
+function subkey(secret: string): Buffer {
+  let key = subkeys.get(secret)
+  if (!key) {
+    key = Buffer.from(hkdfSync('sha256', secret, '', SUBKEY_INFO, 32))
+    if (subkeys.size > 16) subkeys.clear() // a handful of secrets at most; never grows unbounded
+    subkeys.set(secret, key)
+  }
+  return key
+}
+
 function sign(secret: string, data: string): string {
   if (Buffer.byteLength(secret) < 32)
     throw new Error('The URL signing secret must be at least 32 bytes')
-  return createHmac('sha256', secret).update(data).digest('base64url')
+  return createHmac('sha256', subkey(secret)).update(data).digest('base64url')
 }
 
 /** Build `<base>/<key>?expires=…&signature=…`. */

@@ -32,6 +32,14 @@ const systemDef = (kind: FieldDef['kind'], required: boolean, label: string): Fi
   label,
 })
 
+/**
+ * The fields clients may reference in list queries (filters, sorts, search): every queryable
+ * field except hidden ones. Trusted policy filters use {@link queryFields} instead.
+ */
+export function clientQueryFields(model: ModelDefinition): ReadonlyMap<string, QueryField> {
+  return new Map([...queryFields(model)].filter(([, f]) => !f.def.hidden))
+}
+
 /** Every queryable field of a model, by API key. */
 export function queryFields(model: ModelDefinition): ReadonlyMap<string, QueryField> {
   const out = new Map<string, QueryField>()

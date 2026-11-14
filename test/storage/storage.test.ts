@@ -27,7 +27,7 @@ async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
 
 describe('keys', () => {
   it('accepts safe keys', () => {
-    for (const k of ['a', 'tenant-1/invoices/0190a.pdf', 'A/b_c/d=e.txt'])
+    for (const k of ['a', 'tenant-1/invoices/0190a.pdf', 'a/b_c/d=e.txt', 'console/con1.txt'])
       expect(() => assertSafeKey(k)).not.toThrow()
   })
   it('rejects traversal, absolute, backslash, hidden and control-character keys', () => {
@@ -47,6 +47,15 @@ describe('keys', () => {
       'x'.repeat(1025),
       'a b',
       '%2e%2e/x',
+      // aliasing on case-insensitive / Windows file systems
+      'A/b.txt',
+      'invoices/Report.PDF',
+      'a/b.',
+      'a./b',
+      'con',
+      'nul.txt',
+      'x/com1',
+      'lpt9.log/y',
     ]) {
       expect(() => assertSafeKey(k), JSON.stringify(k)).toThrow(UnsafeKeyError)
     }

@@ -21,8 +21,8 @@
  */
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import type { Actor, Permission, PermissionProvider } from '@strutvane/contracts'
-import { ForbiddenError, StrutvaneError, UnauthenticatedError } from '@strutvane/core'
-import type { HttpEnv } from './resource-routes.ts'
+import { ForbiddenError, UnauthenticatedError } from '@strutvane/core'
+import { type HttpEnv, readJsonBody } from './resource-routes.ts'
 
 /** HTTP methods a custom route may use. */
 export type RouteMethod = 'get' | 'post' | 'put' | 'patch' | 'delete'
@@ -37,7 +37,13 @@ export interface RouteContext {
   readonly tenantId: string | undefined
   readonly requestId: string
   readonly locale: string
-  /** The JSON request body. Malformed JSON is a 400 `MALFORMED_REQUEST` problem. */
+  /** The client address (socket peer, or a trusted proxy hop), when known. */
+  readonly clientAddress?: string
+  /**
+   * The JSON request body. A body that is not `application/json` is a 415
+   * `UNSUPPORTED_MEDIA_TYPE` problem (so a cross-site form post can never reach the handler as
+   * JSON); malformed JSON is a 400 `MALFORMED_REQUEST` problem.
+   */
   json<T = unknown>(): Promise<T>
 }
 
@@ -133,13 +139,8 @@ export function registerCustomRoutes(
         tenantId: s.tenantId,
         requestId: s.requestId,
         locale: s.locale,
-        json: async <T>() => {
-          try {
-            return (await c.req.json()) as T
-          } catch {
-            throw new StrutvaneError('MALFORMED_REQUEST', { status: 400 })
-          }
-        },
+        ...(s.clientAddress !== undefined ? { clientAddress: s.clientAddress } : {}),
+        json: async <T>() => (await readJsonBody(c)) as T,
       }
       const result = await r.handler(context)
       if (result instanceof Response) return result

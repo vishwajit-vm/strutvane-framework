@@ -63,7 +63,8 @@ export function resolveSort(
   const seen = new Set<string>()
   for (const s of sort) {
     const f = fields.get(s.field)
-    if (!f?.def.sortable) throw new SortError(s.field)
+    // Hidden fields are never sortable: the order (and the cursor) would leak their values.
+    if (!f?.def.sortable || f.def.hidden) throw new SortError(s.field)
     if (seen.has(f.key)) continue
     seen.add(f.key)
     keys.push({ field: toBound(f), direction: s.direction, nullable: !f.def.required })
