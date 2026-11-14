@@ -68,18 +68,28 @@ describe('serve', () => {
       },
       { port: 0 },
     )
-    const controller = new AbortController()
-    const res = await fetch(server.url, { signal: controller.signal })
-    const reader = res.body?.getReader()
-    await reader?.read()
-    controller.abort()
-    await within(stream.cancel)
+    // A raw socket, destroyed after the first bytes: the disconnect is immediate and does not
+    // depend on how an HTTP client pools or lingers on aborted connections (which made this test
+    // time out under load).
+    const port = server.port
+    await new Promise<void>((resolve, reject) => {
+      const socket = connect(port, '127.0.0.1', () =>
+        socket.write(`GET / HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`),
+      )
+      socket.once('data', () => {
+        socket.destroy()
+        resolve()
+      })
+      socket.once('error', reject)
+    })
+    await within(stream.cancel, 15_000)
     // the body may be cancelled (socket destroyed) a moment before 'close' aborts the signal
     await within(
       new Promise<void>((resolve) => {
         if (signal?.aborted) resolve()
         else signal?.addEventListener('abort', () => resolve(), { once: true })
       }),
+      15_000,
     )
     expect(signal?.aborted).toBe(true)
   })

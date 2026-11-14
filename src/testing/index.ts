@@ -7,10 +7,12 @@ export {
   createFake,
   type DefinedFactory,
   defineFactory,
+  type FactoryAttributes,
   type FactoryHelpers,
   type FactoryTarget,
   type Fake,
   type RelatedMarker,
+  type RelatedOptions,
 } from './define-factory.ts'
 export { createFactory, type Factory, fakeValue, type RepositoryLookup } from './factory.ts'
 export {
