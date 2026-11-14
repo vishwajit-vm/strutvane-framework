@@ -3,7 +3,7 @@
  *
  * It wires, in order: security headers → request context (request id, locale, the
  * `http.onRequest` hook that resolves actor and tenant) → body limits → resource routes →
- * `/openapi.json`, the manifest, `/health` and `/ready` → RFC 9457 problems for every failure
+ * `/openapi.json` and `/docs`, the manifest, `/health` and `/ready` → RFC 9457 problems for every failure
  * (validation, malformed JSON, unknown routes, unexpected exceptions).
  *
  * The result is a standard Hono app: `app.fetch` works with any runtime adapter, and
@@ -52,6 +52,7 @@ import {
   signedFilePrefix,
 } from '../storage/serve-signed.ts'
 import { DatabaseToken, ModelRegistryToken } from '../tokens.ts'
+import { DOCS_PAGE_CSP, renderDocsPage } from './docs-page.ts'
 import { normalizeError, problemResponse, toProblemBody } from './errors.ts'
 import { resolvePermissionProvider } from './permissions.ts'
 import {
@@ -91,7 +92,7 @@ export interface HttpAppOptions {
   /** API title and version for OpenAPI and the manifest. */
   readonly info?: { readonly title: string; readonly version: string }
   /**
-   * Serve `/openapi.json`: `'public'` to anyone, `'authenticated'` only to identified callers
+   * Serve `/openapi.json` and the readable page at `/docs`: `'public'` to anyone, `'authenticated'` only to identified callers
    * (anonymous requests get 401), `false` not at all. `true` (the default) means `'public'` when
    * `env` is `local` and `'authenticated'` everywhere else: the document lists every resource,
    * field and filter, which is a map an anonymous visitor of a production API does not need.
@@ -331,6 +332,15 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       if (openapiMode === 'authenticated' && c.get('sv').actor === null)
         throw new UnauthenticatedError()
       return c.json(openApiDocument())
+    })
+    // The readable docs page: same document, same visibility rule, no scripts (docs-page.ts).
+    http.get('/docs', (c) => {
+      if (openapiMode === 'authenticated' && c.get('sv').actor === null)
+        throw new UnauthenticatedError()
+      return c.html(renderDocsPage(openApiDocument()), 200, {
+        'Content-Security-Policy': DOCS_PAGE_CSP,
+        'Cache-Control': 'no-store',
+      })
     })
   }
 
