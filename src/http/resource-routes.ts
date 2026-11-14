@@ -44,15 +44,11 @@ import type { ModelDefinition } from '../model/define-model.ts'
 import type { ModelRegistry } from '../model/registry.ts'
 import { issuesFromZod, modelLabels, modelSchemas } from '../model/schemas.ts'
 import { andAll, type BoundFilter, bindFilter } from '../query/bind.ts'
-import {
-  clientQueryFields,
-  narrowQueryFields,
-  type QueryField,
-  queryFields,
-} from '../query/fields.ts'
+import { clientQueryFields, narrowQueryFields, type QueryField } from '../query/fields.ts'
 import { normalizeError } from './errors.ts'
 import { type ParsedListQuery, parseListQuery, serializeListParams } from './list-query.ts'
 import { permissionFor } from './permissions.ts'
+import { policyFilterFor } from './policy-filter.ts'
 import {
   ACTION_PERMISSIONS,
   type ResolvedResource,
@@ -259,35 +255,11 @@ export function registerResourceRoutes(
    * `resource.beforeQuery` hook returns: a hook can only narrow the policy, never replace or
    * widen it (a buggy or hostile hook returning `{ op: 'true' }` changes nothing).
    */
-  const policyFilter = async (
+  const policyFilter = (
     target: ModelDefinition,
     s: RequestState,
     suffix: string,
-  ): Promise<BoundFilter> => {
-    const raw = await deps.permissions.filterFor(
-      s.actor,
-      permissionFor(target.permission, suffix),
-      target.permission,
-    )
-    const hooked = (await deps.hooks.run('resource.beforeQuery', {
-      resource: target.name,
-      action: suffix,
-      actor: s.actor,
-      filter: raw,
-    })) as { filter?: QueryFilter } | undefined
-    const extra = hooked?.filter
-    // Policy filters are trusted code: any operator the field supports may be used. A policy
-    // that references an unknown field is a bug and fails closed (500), never open.
-    try {
-      const options = { fields: queryFields(target), operators: 'any' as const, actor: s.actor }
-      const policy = bindFilter(raw, options)
-      if (extra === undefined || extra === raw) return policy
-      return andAll([policy, bindFilter(extra, options)])
-    } catch (error) {
-      // Not the client's fault: surface as a 500 (logged), never as a 4xx the client could probe.
-      throw new Error(`Invalid policy filter for ${target.name}.${suffix}`, { cause: error })
-    }
-  }
+  ): Promise<BoundFilter> => policyFilterFor(deps, target, s.actor, suffix)
 
   /**
    * The visibility each referenced row must have: for every `belongsTo` value in `values`, the

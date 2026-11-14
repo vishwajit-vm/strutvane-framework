@@ -21,7 +21,12 @@
  */
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import type { Actor, Permission, PermissionProvider, QueryFilter } from '../contracts/index.ts'
-import { type Application, ForbiddenError, UnauthenticatedError } from '../core/index.ts'
+import {
+  type Application,
+  ForbiddenError,
+  type HookRegistry,
+  UnauthenticatedError,
+} from '../core/index.ts'
 import { createRepository, type Repository, type Scope } from '../data/repository.ts'
 import type { Database } from '../database/types.ts'
 import type { AnyModel, ModelDefinition } from '../model/define-model.ts'
@@ -32,7 +37,7 @@ import { queryFields } from '../query/fields.ts'
 import type { StorageManager } from '../storage/manager.ts'
 import { type MultipartLimits, type MultipartResult, parseMultipart } from '../storage/multipart.ts'
 import { StorageManagerToken } from '../tokens.ts'
-import { permissionFor } from './permissions.ts'
+import { policyFilterFor } from './policy-filter.ts'
 import { type HttpEnv, readJsonBody } from './resource-routes.ts'
 
 /** HTTP methods a custom route may use. */
@@ -197,6 +202,8 @@ export function isRouteDefinition(value: unknown): value is RouteDefinition {
 export interface CustomRouteDeps {
   readonly basePath: string
   readonly permissions: PermissionProvider
+  /** For `resource.beforeQuery`, which narrows `scopeFor` exactly as it narrows CRUD routes. */
+  readonly hooks: HookRegistry<Record<string, unknown>>
   readonly app: Application
   readonly db: Database
   readonly registry: ModelRegistry
@@ -276,21 +283,12 @@ export function registerCustomRoutes(
           if (!decision.allowed)
             throw s.actor === null ? new UnauthenticatedError() : new ForbiddenError()
         },
-        scopeFor: async (model, action) => {
-          const def = definitionOf(model)
-          const raw = await deps.permissions.filterFor(
-            s.actor,
-            permissionFor(def.permission, action),
-            def.permission,
-          )
-          // Policy filters are trusted code: any operator the field supports may be used.
-          const filter = bindFilter(raw, {
-            fields: queryFields(def),
-            operators: 'any',
-            actor: s.actor,
-          })
-          return { ...scope, filter }
-        },
+        // The same policy path as the CRUD routes (policy-filter.ts): beforeQuery hooks narrow
+        // it, and a policy that cannot be bound is a server error.
+        scopeFor: async (model, action) => ({
+          ...scope,
+          filter: await policyFilterFor(deps, definitionOf(model), s.actor, action),
+        }),
         where: (model, filter) =>
           bindFilter(filter, {
             fields: queryFields(definitionOf(model)),

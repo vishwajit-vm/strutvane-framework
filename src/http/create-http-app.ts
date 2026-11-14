@@ -311,6 +311,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   registerCustomRoutes(http, options.routes ?? [], {
     basePath,
     permissions,
+    hooks,
     app,
     db,
     registry,

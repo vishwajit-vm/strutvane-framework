@@ -336,6 +336,62 @@ describe('includes, discovery and custom routes', () => {
     const json = await t.request('POST', `${BASE}/echo`, { body: { a: 1 } })
     expect(json.body).toEqual({ a: 1 })
   })
+
+  it('custom route scopeFor applies the same policy path as the CRUD routes', async () => {
+    let policy: QueryFilter = { op: 'eq', field: 'owner', value: { $actor: 'id' } }
+    const provider: PermissionProvider = {
+      can: async () => ({ allowed: true, reason: 'test' }),
+      filterFor: async () => policy,
+    }
+    t = await createTestApp({
+      dialect: 'sqlite',
+      resources: [Account],
+      permissions: provider,
+      http: {
+        routes: [
+          route.get('/mine', {
+            handler: async (c) =>
+              (await c.repository(Account).list({}, await c.scopeFor(Account, 'viewAny'))).data
+                .length,
+          }),
+        ],
+      },
+    })
+    const alice = t.actingAs(person('alice'))
+    expect(
+      (await alice.request('POST', `${BASE}/accounts`, { body: { name: 'a', owner: 'alice' } }))
+        .status,
+    ).toBe(201)
+    expect((await alice.request('GET', `${BASE}/mine`)).body).toBe(1)
+
+    // A resource.beforeQuery hook narrows custom-route scopes exactly as it narrows CRUD lists.
+    const hooks = t.app.make(HooksToken)
+    let narrowed = true
+    hooks.on(
+      'resource.beforeQuery',
+      (p) => (narrowed ? { ...(p as object), filter: { op: 'false' } } : p),
+      { name: 'test.narrow' },
+    )
+    expect((await alice.request<{ data: unknown[] }>('GET', `${BASE}/accounts`)).body.data).toEqual(
+      [],
+    )
+    expect((await alice.request('GET', `${BASE}/mine`)).body).toBe(0)
+    narrowed = false
+
+    // A broken policy (unknown field, missing actor attribute) is a server error on both paths,
+    // never a client validation problem that names the policy's fields.
+    for (const broken of [
+      { op: 'eq', field: 'nope', value: 'x' },
+      { op: 'eq', field: 'owner', value: { $actor: 'attrs.team' } },
+    ] as QueryFilter[]) {
+      policy = broken
+      for (const path of [`${BASE}/accounts`, `${BASE}/mine`]) {
+        const res = await alice.request<Problem>('GET', path)
+        expect(res.status).toBe(500)
+        expect(JSON.stringify(res.body)).not.toMatch(/nope|team|owner/)
+      }
+    }
+  })
 })
 
 describe('model definitions that would expose hidden values', () => {
