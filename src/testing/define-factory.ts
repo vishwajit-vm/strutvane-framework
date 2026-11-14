@@ -19,7 +19,7 @@
  * @module
  */
 import type { DataRecord, Repository, Scope } from '../data/repository.ts'
-import type { AnyModel, CreateInput, InferModel, ModelDefinition } from '../model/define-model.ts'
+import type { AnyModel, InferModel, ModelDefinition } from '../model/define-model.ts'
 import { createFactory } from './factory.ts'
 
 /** Something that hands out repositories: a test app or a seeder context. */
@@ -100,22 +100,50 @@ export interface FactoryHelpers {
   readonly sequence: number
 }
 
+/** Columns the database fills itself: never set through a factory. */
+type SystemColumn = 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'
+
+/**
+ * What a factory definition or its overrides may set: **every column** of the model with its
+ * record type (`null` where the field is nullable), all optional.
+ *
+ * Wider than `CreateInput` on purpose: `readOnly` (and `hidden`) are API rules, saying a *client*
+ * may not write the field. Factories write through the repository as trusted server code, and a
+ * test or seeder often needs exactly those values (an `approvedAt`, a `status` only a workflow
+ * sets, a hashed token). System columns (`id`, timestamps, `deletedAt`) stay out: the repository
+ * owns them.
+ */
+export type FactoryAttributes<M extends AnyModel> = {
+  -readonly [K in Exclude<keyof InferModel<M>, SystemColumn>]?: InferModel<M>[K]
+}
+
+/**
+ * What a factory definition returns: any column of {@link FactoryAttributes} (readOnly ones
+ * included), or `related('Model')` for a `belongsTo`. Values are checked loosely (`unknown`) on
+ * purpose: generators such as `fake.pick(['draft', 'sent'])` return a plain `string`, and the
+ * repository validates what is written. (TypeScript does not flag extra keys in an inferred
+ * callback result; overrides passed to `create`/`attributes` are checked exactly.)
+ */
+export type FactoryBuild<M extends AnyModel> = {
+  [K in keyof FactoryAttributes<M>]?: unknown
+}
+
 /** A defined factory. */
 export interface DefinedFactory<M extends AnyModel> {
   readonly model: M
   /** Values for one record, without saving (related parents are left out). */
-  attributes(overrides?: Partial<CreateInput<M>>): Record<string, unknown>
+  attributes(overrides?: FactoryAttributes<M>): Record<string, unknown>
   /** Save one record. */
   create(
     target: FactoryTarget,
-    overrides?: Partial<CreateInput<M>>,
+    overrides?: FactoryAttributes<M>,
     scope?: Scope,
   ): Promise<InferModel<M>>
   /** Save `count` records. */
   createMany(
     target: FactoryTarget,
     count: number,
-    overrides?: Partial<CreateInput<M>>,
+    overrides?: FactoryAttributes<M>,
     scope?: Scope,
   ): Promise<InferModel<M>[]>
 }
@@ -199,7 +227,7 @@ const isRelated = (v: unknown): v is RelatedMarker =>
 /** Define a factory for a model. */
 export function defineFactory<M extends AnyModel>(
   model: M,
-  build: (helpers: FactoryHelpers) => Partial<Record<keyof CreateInput<M> & string, unknown>>,
+  build: (helpers: FactoryHelpers) => FactoryBuild<M>,
 ): DefinedFactory<M> {
   const definition: ModelDefinition = model.definition
   let sequence = 0
