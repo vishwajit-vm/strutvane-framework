@@ -1,0 +1,40 @@
+case: 19-reindented-block
+what: User wrapped the form in a <Card> (re-indents every line); template adds props inside: line merges cannot see through re-indentation
+status: conflicted (three-way)
+conflicts: both-modified@line7
+notes: none
+----- merged output -----
+// @strutvane-template ui/form-page@1.1.0 (ejected: this file is yours to edit)
+import { ResourceForm, useResource } from '@strutvane/ui/react'
+
+export default function InvoiceFormPage() {
+  const resource = useResource('Invoice')
+  return (
+<<<<<<< yours
+    <Card>
+      <ResourceForm
+        resource={resource}
+        fields={['number', 'customer', 'amount', 'status', 'dueDate']}
+        submitLabel="Save invoice"
+        onSuccess={(record) => resource.navigate.show(record.id)}
+      />
+    </Card>
+||||||| original template
+    <ResourceForm
+      resource={resource}
+      fields={['number', 'customer', 'amount', 'status', 'dueDate']}
+      submitLabel="Save invoice"
+      onSuccess={(record) => resource.navigate.show(record.id)}
+    />
+=======
+    <ResourceForm
+      resource={resource}
+      fields={['number', 'customer', 'amount', 'status', 'dueDate']}
+      submitLabel="Save invoice"
+      cancelLabel="Cancel"
+      onSuccess={(record) => resource.navigate.show(record.id)}
+      autosaveDraft
+    />
+>>>>>>> new template
+  )
+}

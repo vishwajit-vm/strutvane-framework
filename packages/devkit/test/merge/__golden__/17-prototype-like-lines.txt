@@ -1,0 +1,13 @@
+case: 17-prototype-like-lines
+what: Lines such as __proto__ / constructor / toString (older diff libraries crashed or mis-diffed on these)
+status: clean (three-way)
+conflicts: none
+notes: none
+----- merged output -----
+const s = `
+__proto__
+constructor
+hasOwnProperty
+toString
+valueOf
+`

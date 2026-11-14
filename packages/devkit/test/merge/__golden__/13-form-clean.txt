@@ -1,0 +1,22 @@
+case: 13-form-clean
+what: User adds a custom field to the form; template adds cancelLabel + autosaveDraft
+status: clean (three-way)
+conflicts: none
+notes: none
+----- merged output -----
+// @strutvane-template ui/form-page@1.1.0 (ejected: this file is yours to edit)
+import { ResourceForm, useResource } from '@strutvane/ui/react'
+
+export default function InvoiceFormPage() {
+  const resource = useResource('Invoice')
+  return (
+    <ResourceForm
+      resource={resource}
+      fields={['number', 'customer', 'amount', 'status', 'dueDate', 'notes']}
+      submitLabel="Save invoice"
+      cancelLabel="Cancel"
+      onSuccess={(record) => resource.navigate.show(record.id)}
+      autosaveDraft
+    />
+  )
+}
