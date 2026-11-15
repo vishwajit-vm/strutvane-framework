@@ -65,11 +65,20 @@ export function canonicalBigInt(value: string | number | bigint): string {
   return n.toString()
 }
 
-/** Canonical calendar date `YYYY-MM-DD` (validates the day exists). */
+/**
+ * Years every engine stores: 0001-9999. Year 0000 (1 BC) is valid ISO-8601 and fine for SQLite,
+ * but Postgres `date`/`timestamptz` have no year zero and reject it, so it is refused everywhere
+ * (fail closed) instead of failing inside one database as a server error.
+ */
+const STORABLE_YEAR = /^(?!0000)\d{4}-/
+
+/** Canonical calendar date `YYYY-MM-DD` (validates the day exists; years 0001-9999). */
 export function canonicalDate(value: string | Date): string {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) throw new ValueError('invalid date')
-    return value.toISOString().slice(0, 10)
+    const iso = value.toISOString()
+    if (!STORABLE_YEAR.test(iso)) throw new ValueError('date year must be 0001-9999')
+    return iso.slice(0, 10)
   }
   const m = DATE.exec(value)
   if (!m) throw new ValueError(`"${value}" is not a YYYY-MM-DD date`)
@@ -77,15 +86,17 @@ export function canonicalDate(value: string | Date): string {
   if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
     throw new ValueError(`"${value}" is not a valid date`)
   }
+  if (!STORABLE_YEAR.test(value)) throw new ValueError('date year must be 0001-9999')
   return value
 }
 
-/** Canonical instant: ISO-8601 UTC with milliseconds (`2026-11-14T12:00:00.000Z`). */
+/** Canonical instant: ISO-8601 UTC with milliseconds (`2026-11-14T12:00:00.000Z`), years 0001-9999. */
 export function canonicalDatetime(value: string | Date): string {
   const d = value instanceof Date ? value : parseIsoDatetime(value)
   if (Number.isNaN(d.getTime())) throw new ValueError(`"${String(value)}" is not a valid datetime`)
   const iso = d.toISOString()
-  if (!/^\d{4}-/.test(iso)) throw new ValueError('datetime year must be 0000-9999')
+  // Checked on the UTC instant: an offset can move a valid local time out of range.
+  if (!STORABLE_YEAR.test(iso)) throw new ValueError('datetime year must be 0001-9999')
   return iso
 }
 

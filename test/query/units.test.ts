@@ -62,7 +62,12 @@ describe('canonical values', () => {
     expect(canonicalDatetime(new Date(0))).toBe('1970-01-01T00:00:00.000Z')
     expect(() => canonicalDatetime('2026-11-14T12:00:00')).toThrow(/offset/)
     expect(() => canonicalDatetime(new Date('x'))).toThrow(ValueError)
-    expect(() => canonicalDatetime(new Date(Date.UTC(10000, 0, 1)))).toThrow(/0000-9999/)
+    expect(() => canonicalDatetime(new Date(Date.UTC(10000, 0, 1)))).toThrow(/0001-9999/)
+    // Year 0000 (1 BC) is valid ISO-8601 but Postgres cannot store it: refused everywhere.
+    expect(() => canonicalDatetime('0000-06-01T00:00:00Z')).toThrow(/0001-9999/)
+    expect(() => canonicalDatetime('0001-01-01T00:30:00+01:00')).toThrow(/0001-9999/)
+    expect(() => canonicalDate('0000-01-01')).toThrow(/0001-9999/)
+    expect(canonicalDate('0001-01-01')).toBe('0001-01-01')
   })
   it('uuids', () => {
     expect(canonicalUuid('0190A000-0000-7000-8000-0000000000AB')).toBe(

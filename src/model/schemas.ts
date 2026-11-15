@@ -15,6 +15,7 @@
 
 import { z } from 'zod'
 import type { IssueInput } from '../core/index.ts'
+import { canonicalBigInt, canonicalDate, canonicalDatetime } from '../data/values.ts'
 import { columnName, type ModelDefinition } from './define-model.ts'
 import { type FieldDef, isNumericKind, isTextKind } from './field.ts'
 
@@ -43,7 +44,13 @@ export function valueSchema(def: FieldDef): z.ZodType {
     case 'float':
       return withNumberBounds(z.number(), def)
     case 'bigInteger':
-      return withDecimalBounds(z.string().regex(/^-?(0|[1-9]\d{0,18})$/, 'invalid_format'), def)
+      return withDecimalBounds(
+        z
+          .string()
+          .regex(/^-?(0|[1-9]\d{0,18})$/, 'invalid_format')
+          .refine(storable(canonicalBigInt), afterFormat('invalid_format')),
+        def,
+      )
     case 'decimal':
       return withDecimalBounds(decimalString(def.precision ?? 12, def.scale ?? 2), def)
     case 'boolean':
@@ -51,12 +58,58 @@ export function valueSchema(def: FieldDef): z.ZodType {
     case 'enum':
       return z.enum((def.values ?? []) as [string, ...string[]])
     case 'date':
-      return z.iso.date()
+      return z.iso.date().refine(storable(canonicalDate), afterFormat('invalid_date'))
     case 'datetime':
-      return z.iso.datetime({ offset: true })
+      return z.iso
+        .datetime({ offset: true })
+        .refine(storable(canonicalDatetime), afterFormat('invalid_date'))
     case 'json':
-      return z.json()
+      // Postgres `jsonb` cannot hold U+0000 in any string or key (the write would be a 500).
+      return z.json().refine((v) => !jsonHasNul(v), { message: 'invalid_format' })
   }
+}
+
+/**
+ * A refinement accepting what the value canonicaliser (`data/values.ts`) accepts, so every value
+ * the schemas let through can be written: the schema format checks are looser than the storable
+ * ranges (64-bit integers, years 0001-9999 after converting to UTC).
+ */
+function storable(canonical: (value: string) => string): (value: string) => boolean {
+  return (value) => {
+    try {
+      canonical(value)
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
+/** Refinement params that run only when the format check passed (one issue per bad value). */
+function afterFormat(message: string): {
+  message: string
+  when: (payload: { readonly issues: readonly unknown[] }) => boolean
+} {
+  return { message, when: (payload) => payload.issues.length === 0 }
+}
+
+/** Whether any string or object key inside a JSON value contains U+0000. */
+function jsonHasNul(value: unknown): boolean {
+  const nul = String.fromCharCode(0)
+  const pending: unknown[] = [value]
+  while (pending.length > 0) {
+    const v = pending.pop()
+    if (typeof v === 'string') {
+      if (v.includes(nul)) return true
+    } else if (Array.isArray(v)) pending.push(...v)
+    else if (typeof v === 'object' && v !== null) {
+      for (const [k, item] of Object.entries(v)) {
+        if (k.includes(nul)) return true
+        pending.push(item)
+      }
+    }
+  }
+  return false
 }
 
 function withTextBounds(schema: z.ZodString | z.ZodEmail | z.ZodURL, def: FieldDef): z.ZodType {
@@ -239,7 +292,9 @@ export function issuesFromZod(
         out.push({
           path,
           code:
-            issue.message === 'required' || issue.message === 'invalid_format'
+            issue.message === 'required' ||
+            issue.message === 'invalid_format' ||
+            issue.message === 'invalid_date'
               ? issue.message
               : 'invalid',
         })
