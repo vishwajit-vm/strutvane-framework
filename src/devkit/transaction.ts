@@ -244,9 +244,17 @@ export async function commitTransaction(
     )
   }
 
-  // 3. Done: drop the staging area.
-  await io.remove(tx)
-  await removeIfEmpty(io, stagingDir(projectRoot))
+  // 3. Done. Deleting the journal is the commit point: once it is gone, recovery has nothing to
+  // undo. It goes first, so a failure to delete the rest of the staging folder (Windows refuses
+  // while a scanner or indexer holds a file) can never make recovery roll back applied changes.
+  await io.removeFile(join(tx, 'journal.json'))
+  try {
+    await io.remove(tx)
+    await removeIfEmpty(io, stagingDir(projectRoot))
+  } catch {
+    // The change is applied and complete. The leftover folder holds no journal, so it blocks
+    // nothing; the next recovery (`sv recover`) removes it with the rest of the staging area.
+  }
 }
 
 /** A validated interrupted transaction, ready to restore. */
