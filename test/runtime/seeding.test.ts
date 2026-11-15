@@ -12,6 +12,7 @@ import {
   seederClassName,
   seederFiles,
 } from '../../src/commands.ts'
+import { ValidationError } from '../../src/core/index.ts'
 import { connectDatabase } from '../../src/database/connect.ts'
 import { defineModel } from '../../src/model/define-model.ts'
 import { field } from '../../src/model/field.ts'
@@ -165,6 +166,79 @@ describe('sv db:seed', () => {
     ])
     expect(idleSeeders(['DatabaseSeeder', 'ASeeder'], ['a.seeder.ts', 'b.seeder.ts'])).toEqual([])
     expect(idleSeeders(['DatabaseSeeder'], [])).toEqual([])
+  })
+})
+
+/** A tenancy app (integration finding M2): every model is tenant-scoped. */
+const tenantFiles = {
+  'app/models/customer.model.ts': `import { defineModel, field } from '${IMPORTS.framework}'
+export default defineModel('Customer', { name: field.string().required() }, { tenant: true })
+`,
+  'app/models/invoice.model.ts': `import { defineModel, field } from '${IMPORTS.framework}'
+export default defineModel('Invoice', {
+  number: field.string().required(),
+  customer: field.belongsTo('Customer').required(),
+}, { tenant: true })
+`,
+  'database/factories/customer.factory.ts': customerFiles['database/factories/customer.factory.ts'],
+  'database/factories/invoice.factory.ts': customerFiles['database/factories/invoice.factory.ts'],
+  // What sv make:seeder generates now: the tenant scope is passed through.
+  'database/seeders/customer.seeder.ts': `import { defineSeeder } from '${IMPORTS.database}'
+import CustomerFactory from '../factories/customer.factory.ts'
+export default defineSeeder('CustomerSeeder', async ({ create, scope }) => {
+  await create(CustomerFactory, 2, scope)
+})
+`,
+  'database/seeders/invoice.seeder.ts': `import { defineSeeder } from '${IMPORTS.database}'
+import InvoiceFactory from '../factories/invoice.factory.ts'
+export default defineSeeder('InvoiceSeeder', async ({ create, scope }) => {
+  await create(InvoiceFactory, 4, scope)
+})
+`,
+  'database/seeders/database.seeder.ts': REGISTERED_ORCHESTRATOR,
+}
+
+describe('sv db:seed in a tenancy app (--tenant)', () => {
+  const TENANT = '0190a000-0000-7000-8000-0000000000aa'
+
+  async function tenantProject(): Promise<string> {
+    const files = projectFiles(tenantFiles)
+    delete files['app/http/routes/api.ts']
+    const p = await makeProject(files)
+    cleanups.push(p.cleanup)
+    await run('migrate', p.root)
+    return p.root
+  }
+
+  test('--tenant <id> seeds every tenant-scoped model for that tenant', async () => {
+    const root = await tenantProject()
+    const lines = await run('db:seed', root, { tenant: TENANT })
+    expect(lines).toContain('ok Seeded InvoiceSeeder')
+    expect(
+      await count(root, `SELECT COUNT(*) AS n FROM "customers" WHERE "tenant_id" = '${TENANT}'`),
+    ).toBe(2)
+    expect(
+      await count(root, `SELECT COUNT(*) AS n FROM "invoices" WHERE "tenant_id" = '${TENANT}'`),
+    ).toBe(4)
+    expect(await count(root, 'SELECT COUNT(*) AS n FROM "invoices"')).toBe(4)
+  })
+
+  test('without --tenant: a validation error that names the flag, not TENANT_REQUIRED', async () => {
+    const root = await tenantProject()
+    const error = await run('db:seed', root).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ValidationError)
+    const issue = (error as ValidationError).issues[0]
+    expect(issue?.path).toEqual(['--tenant'])
+    expect(issue?.message).toContain('--tenant')
+    expect(await count(root, 'SELECT COUNT(*) AS n FROM "customers"')).toBe(0)
+  })
+
+  test('a malformed tenant id is refused before anything runs', async () => {
+    const root = await tenantProject()
+    for (const tenant of ['', 'acme', "x' OR '1'='1"]) {
+      const error = await run('db:seed', root, { tenant }).catch((e: unknown) => e)
+      expect(error, tenant).toBeInstanceOf(ValidationError)
+    }
   })
 })
 

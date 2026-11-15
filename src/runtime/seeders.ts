@@ -4,10 +4,14 @@
  * ```ts
  * import { defineSeeder } from '@strutvane/framework/database'
  * import InvoiceFactory from '../factories/invoice.factory.ts'
- * export default defineSeeder('InvoiceSeeder', async ({ create }) => {
- *   await create(InvoiceFactory, 10)
+ * export default defineSeeder('InvoiceSeeder', async ({ create, scope }) => {
+ *   await create(InvoiceFactory, 10, scope)
  * })
  * ```
+ *
+ * In a tenancy app, tenant-scoped models are seeded for one tenant at a time:
+ * `sv db:seed --tenant <id>` puts `{ tenantId }` in `scope`, which seeders pass on (without it,
+ * `sv db:seed` says which flag is missing instead of failing with `TENANT_REQUIRED`).
  *
  * `sv db:seed` runs `database/seeders/database.seeder.ts`, which calls the others in order
  * (`sv make:model` registers each new model's seeder there, after the seeders of the models it
@@ -50,8 +54,18 @@ export interface SeedFactory {
 /** What a seeder receives. */
 export interface SeederContext {
   readonly db: Database
+  /**
+   * The tenant this run seeds (`sv db:seed --tenant <id>`), or `undefined`. Tenant-scoped models
+   * refuse to be written without one (`TENANT_REQUIRED`).
+   */
+  readonly tenantId: string | undefined
+  /**
+   * `{ tenantId }` of this run (`{}` without `--tenant`). Pass it on: `create(F, 10, scope)`,
+   * `repository(Model).create(input, scope)`. Generated seeders do.
+   */
+  readonly scope: Scope
   repository(model: AnyModel | string): Repository
-  /** Create `count` records (default 1) with a factory. */
+  /** Create `count` records (default 1) with a factory, in `scope` (default: the run's scope). */
   create(factory: SeedFactory, count?: number, scope?: Scope): Promise<unknown[]>
   /** Run another seeder (for `database.seeder.ts` orchestration). */
   call(seeder: Seeder): Promise<void>
@@ -134,12 +148,21 @@ export function isSeeder(value: unknown): value is Seeder {
 /** Run `seeder` against `db`. Each seeder runs once per call tree, even if called twice. */
 export async function runSeeder(
   seeder: Seeder,
-  deps: { readonly db: Database; readonly registry: ModelRegistry; readonly ids: () => string },
+  deps: {
+    readonly db: Database
+    readonly registry: ModelRegistry
+    readonly ids: () => string
+    /** Seed tenant-scoped models for this tenant (`sv db:seed --tenant <id>`). */
+    readonly tenantId?: string
+  },
 ): Promise<string[]> {
   const repos = new Map<string, Repository>()
   const ran: string[] = []
+  const scope: Scope = deps.tenantId !== undefined ? { tenantId: deps.tenantId } : {}
   const context: SeederContext = {
     db: deps.db,
+    tenantId: deps.tenantId,
+    scope,
     repository(model) {
       const name = typeof model === 'string' ? model : model.definition.name
       let repo = repos.get(name)
@@ -154,7 +177,8 @@ export async function runSeeder(
       }
       return repo
     },
-    create: (factory, count = 1, scope) => factory.createMany(context, count, undefined, scope),
+    create: (factory, count = 1, within = scope) =>
+      factory.createMany(context, count, undefined, within),
     async call(next) {
       if (ran.includes(next.name)) return
       ran.push(next.name)

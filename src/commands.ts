@@ -13,8 +13,9 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createUuidV7Generator } from './core/index.ts'
+import { createUuidV7Generator, ValidationError } from './core/index.ts'
 import { connectDatabase } from './database/connect.ts'
+import { assertTenantId } from './database/types.ts'
 import { answersResolver } from './migrations/files.ts'
 import type { RenameDecision } from './migrations/planner.ts'
 import { createModelRegistry } from './model/registry.ts'
@@ -204,6 +205,39 @@ export async function seederFiles(dir: string): Promise<string[]> {
 }
 
 /**
+ * The `--tenant` flag: absent, or a tenant id (a UUID, as the database's tenant setting requires).
+ * A malformed value is refused before anything runs.
+ */
+function tenantFlag(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value === 'string') {
+    try {
+      assertTenantId(value)
+      return value.toLowerCase()
+    } catch {
+      // Reported below with the flag's name.
+    }
+  }
+  throw new ValidationError([
+    {
+      path: ['--tenant'],
+      code: 'invalid_tenant',
+      message:
+        '--tenant must be a tenant id (a UUID such as 0190a000-0000-7000-8000-0000000000aa).',
+    },
+  ])
+}
+
+/** The `code` of an error or of any error in its `cause` chain. */
+function codeOf(error: unknown): string | undefined {
+  for (let current = error, depth = 0; current instanceof Error && depth < 8; depth++) {
+    if ('code' in current && typeof current.code === 'string') return current.code
+    current = current.cause
+  }
+  return undefined
+}
+
+/**
  * The seeder files `sv db:seed` should warn about: when `DatabaseSeeder` ran nothing besides
  * itself while other seeder files exist, every one of them (it ran "successfully" and seeded no
  * rows, which looks like a broken seeder rather than an unregistered one). Empty otherwise.
@@ -219,8 +253,15 @@ export function idleSeeders(
 const seedCommand: ContributedCommand = {
   name: 'db:seed',
   description: 'Run the database seeders',
-  flags: { class: { type: 'string', description: 'Run one seeder, e.g. InvoiceSeeder' } },
+  flags: {
+    class: { type: 'string', description: 'Run one seeder, e.g. InvoiceSeeder' },
+    tenant: {
+      type: 'string',
+      description: 'Seed tenant-scoped models for this tenant id (needed in a tenancy app)',
+    },
+  },
   async run(ctx) {
+    const tenantId = tenantFlag(ctx.flags['tenant'])
     const project = await loadFor(ctx)
     const target = migrationTarget(project)
     const raw = project.config['database'] as { seeders?: { directory?: string } } | undefined
@@ -240,10 +281,26 @@ const seedCommand: ContributedCommand = {
     if (!isSeeder(seeder)) throw new Error(`${file} must default-export defineSeeder(...)`)
     const db = await connectDatabase(target.connection)
     try {
+      const registry = createModelRegistry(project.models.map((m) => m.definition))
       const ran = await runSeeder(seeder, {
         db,
-        registry: createModelRegistry(project.models.map((m) => m.definition)),
+        registry,
         ids: createUuidV7Generator(),
+        ...(tenantId !== undefined ? { tenantId } : {}),
+      }).catch((error: unknown) => {
+        // A tenancy app seeded without a tenant: say which flag fixes it, not TENANT_REQUIRED.
+        if (tenantId === undefined && codeOf(error) === 'TENANT_REQUIRED')
+          throw new ValidationError([
+            {
+              path: ['--tenant'],
+              code: 'tenant_required',
+              message: `Tenant-scoped models (${registry.all
+                .filter((m) => m.options.tenant)
+                .map((m) => m.name)
+                .join(', ')}) need a tenant: run sv db:seed --tenant <tenant id>.`,
+            },
+          ])
+        throw error
       })
       for (const name of ran) ctx.out.success(`Seeded ${name}`)
       if (!cls) {

@@ -397,7 +397,7 @@ describe('other generators', () => {
         .code,
     ).toBe(0)
     expect(read(root, 'database/seeders/invoices.seeder.ts')).toContain(
-      'await create(InvoiceFactory, 50)',
+      'await create(InvoiceFactory, 50, scope)',
     )
     expect((await cli(['make:seeder', 'X', '--count', '0'], { cwd: root })).code).toBe(2)
   })

@@ -427,8 +427,8 @@ export function factoryTemplate(n: Names, fields: readonly FieldSpec[]): string 
 export function seederTemplate(n: Names, model: Names | undefined, count: number): string {
   const body =
     model === undefined
-      ? ['  // await create(SomeFactory, 10)']
-      : [`  await create(${model.pascal}Factory, ${count})`]
+      ? ['  // await create(SomeFactory, 10, scope)']
+      : [`  await create(${model.pascal}Factory, ${count}, scope)`]
   return [
     "import { defineSeeder } from '@strutvane/framework/database'",
     ...(model === undefined
@@ -436,7 +436,8 @@ export function seederTemplate(n: Names, model: Names | undefined, count: number
       : [`import ${model.pascal}Factory from '../factories/${model.kebab}.factory.ts'`]),
     '',
     `/** Seeds development data. Run with \`sv db:seed --class ${n.pascal}Seeder\`. */`,
-    `export default defineSeeder(${quote(`${n.pascal}Seeder`)}, async ({ create }) => {`,
+    // `scope` carries `sv db:seed --tenant <id>`, so tenant-scoped models seed too (M2).
+    `export default defineSeeder(${quote(`${n.pascal}Seeder`)}, async ({ create, scope }) => {`,
     ...body,
     '})',
     '',
