@@ -330,6 +330,27 @@ export default [
     expect(help.json().warnings.join('\n')).toContain('also defines "about"')
   })
 
+  test('an exact contributed name wins over an abbreviation of a built-in', async () => {
+    const root = makeProject()
+    addDependencies(root, { 'strutvane-plugin-short': '1.0.0' })
+    installFakePackage(root, 'strutvane-plugin-short', {
+      strutvane: { commands: './commands.mjs', compat: '*' },
+      files: {
+        'commands.mjs': `export default [
+  { name: 'make:mod', description: 'plugin', run() { return { data: 'plugin make:mod' } } },
+]`,
+      },
+    })
+    // `make:mod` is also a prefix of the built-in `make:model`: the exact name must win.
+    const exact = await cli(['make:mod', '--json'], { cwd: root })
+    expect(exact.json().data).toBe('plugin make:mod')
+    // An abbreviation that fits both is ambiguous, never silently the built-in.
+    const short = await cli(['make:mo', '--json'], { cwd: root })
+    expect(short.json().error?.code).toBe('AMBIGUOUS_COMMAND')
+    // Exact built-in names still take the fast path.
+    expect((await cli(['about', '--json'], { cwd: root })).code).toBe(0)
+  })
+
   test('incompatible plugins are refused (exit 7 when their command is requested)', async () => {
     const root = makeProject()
     addDependencies(root, { '@acme/strutvane-plugin-old': '1.0.0' })
