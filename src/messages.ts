@@ -52,6 +52,15 @@ export const FRAMEWORK_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'errors.METHOD_NOT_ALLOWED.title': 'Method not allowed',
   'errors.untrusted_host.title': 'Untrusted host',
   'errors.untrusted_host.detail': 'This server does not answer for the requested host name.',
+  'errors.idempotency_key_invalid.title': 'Invalid idempotency key',
+  'errors.idempotency_key_invalid.detail':
+    'The Idempotency-Key must be 1 to 255 visible ASCII characters.',
+  'errors.idempotency_in_progress.title': 'Request in progress',
+  'errors.idempotency_in_progress.detail':
+    'A request with this Idempotency-Key is still being processed. Retry shortly.',
+  'errors.idempotency_key_reused.title': 'Idempotency key reused',
+  'errors.idempotency_key_reused.detail':
+    'This Idempotency-Key was already used for a different request. Use a new key for a new request.',
   'errors.csrf_token_mismatch.title': 'Page expired',
   'errors.csrf_token_mismatch.detail':
     'This request could not be verified as coming from this site. Reload the page and try again.',
@@ -70,6 +79,10 @@ export const FRAMEWORK_ERRORS: readonly ErrorDefinition[] = Object.freeze(
       ['csrf_token_mismatch', 419, 'Page expired'],
       // An unknown Host header (CONSISTENCY #20, Laravel/Symfony behaviour).
       ['untrusted_host', 400, 'Untrusted host'],
+      // Idempotency-Key (IETF httpapi draft).
+      ['idempotency_key_invalid', 400, 'Invalid idempotency key'],
+      ['idempotency_in_progress', 409, 'Request in progress'],
+      ['idempotency_key_reused', 422, 'Idempotency key reused'],
     ] as const
   ).map(([code, status, title]) =>
     Object.freeze({ code, status, title, owner: '@strutvane/framework' }),

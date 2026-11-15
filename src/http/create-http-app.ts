@@ -57,6 +57,12 @@ import { DatabaseToken, ModelRegistryToken } from '../tokens.ts'
 import { type CsrfOptions, csrfProtection, exactOrigin, resolveCsrf } from './csrf.ts'
 import { DOCS_PAGE_CSP, renderDocsPage } from './docs-page.ts'
 import { normalizeError, problemResponse, toProblemBody } from './errors.ts'
+import {
+  type IdempotencyStore,
+  IdempotencyStoreToken,
+  idempotency,
+  MemoryIdempotencyStore,
+} from './idempotency.ts'
 import { resolvePermissionProvider } from './permissions.ts'
 import {
   clientAddressOf,
@@ -156,6 +162,19 @@ export interface HttpAppOptions {
    * `false` turns it off for the whole app (logged at boot; only for apps without cookies).
    */
   readonly csrf?: CsrfOptions | false
+  /**
+   * `Idempotency-Key` handling for POST and DELETE (on by default; a request without the header
+   * is unaffected). `store` replaces the in-memory store (bound as `IdempotencyStoreToken`; a
+   * cluster needs a shared one), `ttlMs` and `maxEntries` bound the memory store. `false` turns
+   * it off.
+   */
+  readonly idempotency?:
+    | {
+        readonly store?: IdempotencyStore
+        readonly ttlMs?: number
+        readonly maxEntries?: number
+      }
+    | false
   /** Extra readiness checks for `/ready` (the database is always checked). */
   readonly readiness?: Readonly<Record<string, () => Promise<void>>>
   /** Override the database (default: `DatabaseToken`). */
@@ -387,6 +406,27 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     const own = routeLimits.find((r) => r.method === c.req.method && r.pattern.test(path))
     return (own?.limit ?? defaultLimit)(c, next)
   })
+  // After the hooks (keys are scoped to the actor and tenant) and the body limit (the body it
+  // fingerprints is already bounded).
+  if (options.idempotency !== false) {
+    const settings = options.idempotency ?? {}
+    const store = app.container.has(IdempotencyStoreToken)
+      ? app.make(IdempotencyStoreToken)
+      : (settings.store ??
+        new MemoryIdempotencyStore({
+          ...(settings.ttlMs !== undefined ? { ttlMs: settings.ttlMs } : {}),
+          ...(settings.maxEntries !== undefined ? { maxEntries: settings.maxEntries } : {}),
+        }))
+    if (!app.container.has(IdempotencyStoreToken)) app.container.value(IdempotencyStoreToken, store)
+    http.use(
+      '*',
+      idempotency({
+        store,
+        now: () => clock.now(),
+        reads: resources.map((r) => routePattern(basePath, `/${r.definition.path}/query`)),
+      }),
+    )
+  }
 
   const deps = {
     db,

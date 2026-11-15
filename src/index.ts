@@ -58,6 +58,15 @@ export {
   exactOrigin,
   matchesPathPattern,
 } from './http/csrf.ts'
+export {
+  type BeginOutcome,
+  DEFAULT_IDEMPOTENCY_MAX_ENTRIES,
+  IDEMPOTENCY_TTL_MS,
+  type IdempotencyStore,
+  IdempotencyStoreToken,
+  MemoryIdempotencyStore,
+  type StoredResponse,
+} from './http/idempotency.ts'
 export { type ListParams, parseListQuery, serializeListParams } from './http/list-query.ts'
 export {
   allowAllPermissions,
