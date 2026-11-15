@@ -115,6 +115,7 @@ export async function bootProject(
         key?: string
         publicUrl?: string
         trustProxy?: TrustProxy
+        trustedHosts?: readonly string[]
       }
     | undefined
   const session = project.config['session'] as SessionConfig | undefined
@@ -142,6 +143,7 @@ export async function bootProject(
       ...(appConfig?.publicUrl ? { publicUrl: appConfig.publicUrl } : {}),
       ...(appConfig?.trustProxy !== undefined ? { trustProxy: appConfig.trustProxy } : {}),
       ...(appConfig?.key ? { appKey: appConfig.key } : {}),
+      ...(appConfig?.trustedHosts ? { trustedHosts: appConfig.trustedHosts } : {}),
       ...(session?.cookie !== undefined ? { session: { cookie: session.cookie } } : {}),
       ...(session?.csrf !== undefined ? { csrf: session.csrf } : {}),
     })

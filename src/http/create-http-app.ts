@@ -1,7 +1,8 @@
 /**
  * `createHttpApp(app, options)`: the Hono host for a Strutvane application.
  *
- * It wires, in order: security headers → request timeout → CSRF (unsafe requests carrying the
+ * It wires, in order: security headers → trusted hosts (400 for an unknown `Host`, in every
+ * environment, `trusted-hosts.ts`) → request timeout → CSRF (unsafe requests carrying the
  * session cookie, `csrf.ts`) → request context (request id, locale, the `http.onRequest` hook
  * that resolves actor and tenant) → body limits → resource routes →
  * `/openapi.json` and `/docs`, the manifest, `/health` and `/ready` → RFC 9457 problems for every failure
@@ -80,6 +81,7 @@ import { type RouteDefinition, registerCustomRoutes, routePattern } from './rout
 import { acceptRequestId, securityHeaders } from './security.ts'
 import { SessionCookieToken, sessionCookieName } from './session-cookie.ts'
 import { createStaticFiles, type StaticFilesOptions } from './static-files.ts'
+import { resolveTrustedHosts, trustedHostsGuard } from './trusted-hosts.ts'
 import { isUiRequest, UI_FALLTHROUGH_HEADER, uiExcludedPaths } from './ui-paths.ts'
 
 /** Options for {@link createHttpApp}. */
@@ -130,6 +132,13 @@ export interface HttpAppOptions {
    * streaming the file with `nosniff`, a sandboxing CSP and active content as an attachment.
    */
   readonly signedFiles?: readonly SignedFileOptions[]
+  /**
+   * Extra host names the app answers for (`config/app.ts` `trustedHosts`): exact names, or
+   * `*.example.com` for every subdomain. `localhost`, `127.0.0.1`, `[::1]` and the `publicUrl`
+   * host are always allowed; any other `Host` gets a 400 `untrusted_host` problem, in every
+   * environment (DNS rebinding of a local dev server, host-header poisoning in production).
+   */
+  readonly trustedHosts?: readonly string[]
   /**
    * The secret behind CSRF tokens (`APP_KEY`; a purpose-bound subkey is derived from it). Default
    * `process.env.APP_KEY`; without one, a random key lives as long as the process.
@@ -250,6 +259,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
           ? 'public'
           : 'authenticated'
 
+  const hosts = resolveTrustedHosts({ publicUrl, hosts: options.trustedHosts })
   const http = new OpenAPIHono<HttpEnv>()
 
   const isHttps = (c: Context): boolean =>
@@ -281,6 +291,11 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     logger.warn('CSRF protection is off (csrf: false): cookie-authenticated writes are unchecked')
 
   http.use('*', securityHeaders({ isHttps }))
+  // First after the headers: an unknown host never reaches a hook, a route or the dev UI.
+  http.use(
+    '*',
+    trustedHostsGuard(hosts, () => hops > 0),
+  )
   // Before the request hooks, so a hook that never settles is bounded too.
   http.use('*', (c, next) => {
     if (routeTimeouts.length === 0) return timeout(c, next)

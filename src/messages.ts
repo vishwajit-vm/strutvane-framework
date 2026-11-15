@@ -50,6 +50,8 @@ export const FRAMEWORK_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'errors.UNSUPPORTED_MEDIA_TYPE.title': 'Unsupported media type',
   'errors.UNSUPPORTED_MEDIA_TYPE.detail': 'Send the request body as {expected}.',
   'errors.METHOD_NOT_ALLOWED.title': 'Method not allowed',
+  'errors.untrusted_host.title': 'Untrusted host',
+  'errors.untrusted_host.detail': 'This server does not answer for the requested host name.',
   'errors.csrf_token_mismatch.title': 'Page expired',
   'errors.csrf_token_mismatch.detail':
     'This request could not be verified as coming from this site. Reload the page and try again.',
@@ -66,6 +68,8 @@ export const FRAMEWORK_ERRORS: readonly ErrorDefinition[] = Object.freeze(
       ['METHOD_NOT_ALLOWED', 405, 'Method not allowed'],
       // 419 "Page expired", Laravel's status for a failed CSRF check (CONSISTENCY #30).
       ['csrf_token_mismatch', 419, 'Page expired'],
+      // An unknown Host header (CONSISTENCY #20, Laravel/Symfony behaviour).
+      ['untrusted_host', 400, 'Untrusted host'],
     ] as const
   ).map(([code, status, title]) =>
     Object.freeze({ code, status, title, owner: '@strutvane/framework' }),

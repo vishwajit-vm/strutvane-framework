@@ -90,6 +90,12 @@ export {
   sessionCookieValue,
   XSRF_COOKIE,
 } from './http/session-cookie.ts'
+export {
+  LOOPBACK_HOSTS,
+  resolveTrustedHosts,
+  type TrustedHosts,
+  UNTRUSTED_HOST_CODE,
+} from './http/trusted-hosts.ts'
 export { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from './messages.ts'
 export {
   answersResolver,
