@@ -53,9 +53,32 @@ function segmentKey(segment: PropertyKey | StandardSchemaV1PathSegment): string 
   return typeof key === 'symbol' ? key.toString() : String(key)
 }
 
-function toProblem(issue: StandardSchemaV1Issue): EnvProblem {
-  const key = (issue.path ?? []).map(segmentKey).join('.')
-  return { key, message: issue.message }
+/** What replaces an env value that a validator quoted in its message. */
+const REDACTED_VALUE = '[REDACTED]'
+/** Shorter values are not redacted: they cannot hold a secret, and would mangle the message. */
+const MIN_REDACTED_LENGTH = 4
+
+/**
+ * Remove the variable's own value from a validator's message. Zod's default messages never quote
+ * the input, but other Standard Schema validators and custom messages do (`received "…"`), and
+ * these messages end up in terminals and logs. The raw and the JSON-escaped spellings are both
+ * replaced.
+ */
+function redactValue(message: string, value: unknown): string {
+  if (typeof value !== 'string' || value.length < MIN_REDACTED_LENGTH) return message
+  let out = message
+  for (const spelling of [value, JSON.stringify(value).slice(1, -1)]) {
+    out = out.split(spelling).join(REDACTED_VALUE)
+  }
+  return out
+}
+
+function toProblem(issue: StandardSchemaV1Issue, source: EnvSource): EnvProblem {
+  const segments = (issue.path ?? []).map(segmentKey)
+  const variable = segments[0]
+  const value =
+    variable !== undefined && Object.hasOwn(source, variable) ? source[variable] : undefined
+  return { key: segments.join('.'), message: redactValue(String(issue.message), value) }
 }
 
 /**
@@ -84,7 +107,7 @@ export function defineEnv<S extends StandardSchemaV1>(
     throw new TypeError('defineEnv(schema): asynchronous validators are not supported for env')
   }
   if (result.issues) {
-    const problems = result.issues.map(toProblem)
+    const problems = result.issues.map((issue) => toProblem(issue, source))
     // Deterministic order makes the message stable and easy to scan.
     problems.sort((a, b) => a.key.localeCompare(b.key))
     throw new EnvValidationError(problems)
