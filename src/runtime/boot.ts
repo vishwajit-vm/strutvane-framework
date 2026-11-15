@@ -6,6 +6,7 @@
  */
 import { type Application, createApp } from '../core/index.ts'
 import { createHttpApp, type HttpApp } from '../http/create-http-app.ts'
+import type { CsrfOptions } from '../http/csrf.ts'
 import type { TrustProxy } from '../http/proxy.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import type { AnyModel } from '../model/define-model.ts'
@@ -27,6 +28,17 @@ export interface ApiConfig {
   readonly prefix?: string
   readonly version?: string
   readonly docs?: boolean
+}
+
+/**
+ * Session settings (`config/session.ts`) as far as the framework reads them: the cookie's base
+ * name (one source for the session layer and the CSRF check) and the CSRF options.
+ */
+export interface SessionConfig {
+  /** Base name of the session cookie. Default `strutvane_session` (`__Host-` added on https). */
+  readonly cookie?: string
+  /** CSRF exceptions and extra trusted origins; `false` turns CSRF off (not recommended). */
+  readonly csrf?: CsrfOptions | false
 }
 
 /** `/api` + `v1` → `/api/v1`, tolerating missing or doubled slashes. */
@@ -97,8 +109,15 @@ export async function bootProject(
   if (!Number.isFinite(bootTimeoutMs) || bootTimeoutMs <= 0)
     throw new RangeError('bootTimeoutMs must be a positive number')
   const appConfig = project.config['app'] as
-    | { env?: string; name?: string; publicUrl?: string; trustProxy?: TrustProxy }
+    | {
+        env?: string
+        name?: string
+        key?: string
+        publicUrl?: string
+        trustProxy?: TrustProxy
+      }
     | undefined
+  const session = project.config['session'] as SessionConfig | undefined
   // Trimmed, lowercased, empty = unset; the CLI's guard reads APP_ENV the same way.
   const env = firstAppEnv(options.env, appConfig?.env, processAppEnv()) ?? 'production'
   const app = createApp({ config: project.config, providers: project.providers })
@@ -122,6 +141,9 @@ export async function bootProject(
       info: { title: appConfig?.name ?? 'Strutvane API', version: '1.0.0' },
       ...(appConfig?.publicUrl ? { publicUrl: appConfig.publicUrl } : {}),
       ...(appConfig?.trustProxy !== undefined ? { trustProxy: appConfig.trustProxy } : {}),
+      ...(appConfig?.key ? { appKey: appConfig.key } : {}),
+      ...(session?.cookie !== undefined ? { session: { cookie: session.cookie } } : {}),
+      ...(session?.csrf !== undefined ? { csrf: session.csrf } : {}),
     })
     return { app, http, env, shutdown: async () => void (await app.shutdown()) }
   } catch (error) {

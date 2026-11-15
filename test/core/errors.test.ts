@@ -83,9 +83,10 @@ describe('error registry', () => {
     expect(() => registry.register({ code: 'NOT_FOUND', status: 404, title: 'x' })).toThrow(
       /@strutvane\/core/,
     )
-    expect(() => registry.register({ code: 'lowercase', status: 400, title: 'x' })).toThrow(
-      /SCREAMING_SNAKE_CASE/,
-    )
+    // snake_case (CONSISTENCY #68) or the older SCREAMING_SNAKE_CASE, never a mix of the two.
+    registry.register({ code: 'csrf_token_mismatch', status: 419, title: 'Page expired' })
+    for (const code of ['Mixed_Case', 'has space', '1leading', 'trailing-dash'])
+      expect(() => registry.register({ code, status: 400, title: 'x' }), code).toThrow(/snake_case/)
     expect(() => registry.register({ code: 'OK_CODE', status: 200, title: 'x' })).toThrow(
       RangeError,
     )

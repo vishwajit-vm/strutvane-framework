@@ -1,8 +1,9 @@
 /**
  * `createHttpApp(app, options)`: the Hono host for a Strutvane application.
  *
- * It wires, in order: security headers → request context (request id, locale, the
- * `http.onRequest` hook that resolves actor and tenant) → body limits → resource routes →
+ * It wires, in order: security headers → request timeout → CSRF (unsafe requests carrying the
+ * session cookie, `csrf.ts`) → request context (request id, locale, the `http.onRequest` hook
+ * that resolves actor and tenant) → body limits → resource routes →
  * `/openapi.json` and `/docs`, the manifest, `/health` and `/ready` → RFC 9457 problems for every failure
  * (validation, malformed JSON, unknown routes, unexpected exceptions).
  *
@@ -52,6 +53,7 @@ import {
   signedFilePrefix,
 } from '../storage/serve-signed.ts'
 import { DatabaseToken, ModelRegistryToken } from '../tokens.ts'
+import { type CsrfOptions, csrfProtection, exactOrigin, resolveCsrf } from './csrf.ts'
 import { DOCS_PAGE_CSP, renderDocsPage } from './docs-page.ts'
 import { normalizeError, problemResponse, toProblemBody } from './errors.ts'
 import { resolvePermissionProvider } from './permissions.ts'
@@ -76,6 +78,7 @@ import {
 } from './resource-routes.ts'
 import { type RouteDefinition, registerCustomRoutes, routePattern } from './route.ts'
 import { acceptRequestId, securityHeaders } from './security.ts'
+import { SessionCookieToken, sessionCookieName } from './session-cookie.ts'
 import { createStaticFiles, type StaticFilesOptions } from './static-files.ts'
 import { isUiRequest, UI_FALLTHROUGH_HEADER, uiExcludedPaths } from './ui-paths.ts'
 
@@ -127,6 +130,23 @@ export interface HttpAppOptions {
    * streaming the file with `nosniff`, a sandboxing CSP and active content as an attachment.
    */
   readonly signedFiles?: readonly SignedFileOptions[]
+  /**
+   * The secret behind CSRF tokens (`APP_KEY`; a purpose-bound subkey is derived from it). Default
+   * `process.env.APP_KEY`; without one, a random key lives as long as the process.
+   */
+  readonly appKey?: string
+  /**
+   * The session cookie (`config/session.ts`): its base name, default `strutvane_session`. The
+   * framework adds `__Host-` when `publicUrl` is https and publishes the result under
+   * `SessionCookieToken`, the one source the session layer and the CSRF check both read.
+   */
+  readonly session?: { readonly cookie?: string }
+  /**
+   * CSRF protection for unsafe requests that carry the session cookie (on by default):
+   * `except` lists callback paths a third party posts to, `origins` extra trusted origins.
+   * `false` turns it off for the whole app (logged at boot; only for apps without cookies).
+   */
+  readonly csrf?: CsrfOptions | false
   /** Extra readiness checks for `/ready` (the database is always checked). */
   readonly readiness?: Readonly<Record<string, () => Promise<void>>>
   /** Override the database (default: `DatabaseToken`). */
@@ -232,18 +252,35 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
 
   const http = new OpenAPIHono<HttpEnv>()
 
-  http.use(
-    '*',
-    securityHeaders({
-      isHttps: (c) =>
-        publicUrl?.protocol === 'https:' ||
-        forwardedProtocol(
-          c.req.header('x-forwarded-proto'),
-          hops,
-          new URL(c.req.url).protocol === 'https:' ? 'https' : 'http',
-        ) === 'https',
-    }),
-  )
+  const isHttps = (c: Context): boolean =>
+    publicUrl?.protocol === 'https:' ||
+    forwardedProtocol(
+      c.req.header('x-forwarded-proto'),
+      hops,
+      new URL(c.req.url).protocol === 'https:' ? 'https' : 'http',
+    ) === 'https'
+  // One source for the session cookie's name (CONSISTENCY #105): the session layer reads it from
+  // the container, the CSRF check below uses the same value. A binding that already exists (a
+  // second HTTP app on the same application) wins, so the two can never disagree.
+  const sessionCookie = app.container.has(SessionCookieToken)
+    ? app.make(SessionCookieToken)
+    : sessionCookieName({
+        ...(options.session?.cookie !== undefined ? { base: options.session.cookie } : {}),
+        secure: publicUrl?.protocol === 'https:',
+      })
+  if (!app.container.has(SessionCookieToken)) app.container.value(SessionCookieToken, sessionCookie)
+  const csrf =
+    options.csrf === false
+      ? undefined
+      : resolveCsrf(options.csrf ?? {}, {
+          appKey: options.appKey ?? process.env['APP_KEY'],
+          publicUrl,
+          cookie: sessionCookie,
+        })
+  if (csrf === undefined)
+    logger.warn('CSRF protection is off (csrf: false): cookie-authenticated writes are unchecked')
+
+  http.use('*', securityHeaders({ isHttps }))
   // Before the request hooks, so a hook that never settles is bounded too.
   http.use('*', (c, next) => {
     if (routeTimeouts.length === 0) return timeout(c, next)
@@ -251,6 +288,17 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     const own = routeTimeouts.find((r) => r.method === c.req.method && r.pattern.test(path))
     return (own?.timeout ?? timeout)(c, next)
   })
+  // Before the request hooks, so routes a hook answers itself (sign-in, sign-out) are covered.
+  if (csrf !== undefined) {
+    http.use(
+      '*',
+      csrfProtection(csrf, {
+        isHttps,
+        // The origin the client used: the scheme it connected with and the Host it asked for.
+        ownOrigin: (c) => exactOrigin(`${isHttps(c) ? 'https' : 'http'}://${requestHost(c)}`),
+      }),
+    )
+  }
   http.use('*', async (c, next) => {
     // A client-sent id is only believed from a trusted proxy (else ids could be forged).
     const requestId = acceptRequestId(c.req.header('x-request-id'), () => ids(), hops > 0)
@@ -469,6 +517,11 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   })
 
   return Object.assign(http, { openApiDocument }) as HttpApp
+}
+
+/** The host the client asked for: the `Host` header, else the request URL's host. */
+function requestHost(c: Context): string {
+  return c.req.header('host') ?? new URL(c.req.url).host
 }
 
 /**

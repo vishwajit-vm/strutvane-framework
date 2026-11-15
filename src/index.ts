@@ -51,6 +51,13 @@ export {
   type HttpRequestHookPayload,
   type HttpResponseHookPayload,
 } from './http/create-http-app.ts'
+export {
+  CSRF_ERROR_CODE,
+  type CsrfOptions,
+  csrfToken,
+  exactOrigin,
+  matchesPathPattern,
+} from './http/csrf.ts'
 export { type ListParams, parseListQuery, serializeListParams } from './http/list-query.ts'
 export {
   allowAllPermissions,
@@ -75,6 +82,14 @@ export {
   route,
 } from './http/route.ts'
 export { PERMISSIONS_POLICY, securityHeaders } from './http/security.ts'
+export {
+  DEFAULT_SESSION_COOKIE,
+  type SessionCookie,
+  SessionCookieToken,
+  sessionCookieName,
+  sessionCookieValue,
+  XSRF_COOKIE,
+} from './http/session-cookie.ts'
 export { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from './messages.ts'
 export {
   answersResolver,
@@ -185,6 +200,7 @@ export {
   type BootedProject,
   bootProject,
   mergeResources,
+  type SessionConfig,
 } from './runtime/boot.ts'
 export { type AppDatabaseConfig, databaseConfigFrom } from './runtime/database-config.ts'
 export {

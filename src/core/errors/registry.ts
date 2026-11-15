@@ -12,7 +12,10 @@ import type { ProblemCode } from '../../contracts/index.ts'
 
 /** What a problem code means. */
 export interface ErrorDefinition {
-  /** `SCREAMING_SNAKE_CASE`. */
+  /**
+   * `snake_case` (the convention for new codes, CONSISTENCY #68) or `SCREAMING_SNAKE_CASE` (the
+   * codes that shipped before it).
+   */
   readonly code: string
   /** Default HTTP status (an error instance may override it). */
   readonly status: number
@@ -30,7 +33,8 @@ export interface ErrorRegistry {
   list(): readonly ErrorDefinition[]
 }
 
-const CODE = /^[A-Z][A-Z0-9_]*$/
+/** One case per code: `csrf_token_mismatch` or `NOT_FOUND`, never `Not_Found`. */
+const CODE = /^(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9_]*)$/
 
 /** The built-in codes from `@strutvane/contracts` (RFC-0002 and RFC-0003). */
 export const BUILTIN_ERRORS: readonly ErrorDefinition[] = Object.freeze(
@@ -69,7 +73,9 @@ export function createErrorRegistry(options: { readonly builtin?: boolean } = {}
   const registry: ErrorRegistry = {
     register(definition) {
       if (!CODE.test(definition.code)) {
-        throw new TypeError(`Error code "${definition.code}" must be SCREAMING_SNAKE_CASE`)
+        throw new TypeError(
+          `Error code "${definition.code}" must be snake_case (or SCREAMING_SNAKE_CASE)`,
+        )
       }
       if (
         !Number.isInteger(definition.status) ||
