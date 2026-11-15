@@ -34,11 +34,19 @@ function endless(chunk = new Uint8Array(64 * 1024)) {
   return { body, cancel, pulls: () => pulls }
 }
 
-const within = <T>(p: Promise<T>, ms = 5000): Promise<T> =>
-  Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ])
+const within = async <T>(p: Promise<T>, ms = 5000): Promise<T> => {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      p,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), ms)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 /** Send raw bytes and collect the reply until the server closes or `ms` pass. */
 function raw(port: number, text: string, ms = 1000): Promise<string> {
@@ -48,12 +56,15 @@ function raw(port: number, text: string, ms = 1000): Promise<string> {
     socket.on('data', (d) => {
       out += d.toString('latin1')
     })
-    const done = () => resolve(out)
-    socket.on('close', done)
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       socket.destroy()
       done()
     }, ms)
+    const done = () => {
+      clearTimeout(timer)
+      resolve(out)
+    }
+    socket.on('close', done)
   })
 }
 
