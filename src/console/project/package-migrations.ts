@@ -19,9 +19,11 @@
  */
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
+import { parseSync } from 'oxc-parser'
 import type { Project } from '../framework/command.ts'
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
+import { collectImports, isNode } from '../registry/ast.ts'
 import { assertCompatible, isInNodeModules, isInside } from './contributions.ts'
 import {
   dependencyNames,
@@ -61,9 +63,15 @@ export function enabledPackages(root: string): ReadonlySet<string> {
   const file = join(root, 'strutvane.config.ts')
   if (!existsSync(file)) return new Set()
   const source = readFileSync(file, 'utf8')
+  // Parsed, not pattern-matched: an import inside a block comment or a template string is not
+  // an import, and must not enable a package's migrations. A file that does not parse enables
+  // nothing (fail closed); loading the config reports the syntax error itself.
+  const parsed = parseSync('strutvane.config.ts', source, { sourceType: 'module' })
+  const program: unknown = parsed.program
+  if (parsed.errors.length > 0 || !isNode(program)) return new Set()
   const out = new Set<string>()
-  for (const match of source.matchAll(/^\s*import\s+(?!type\s)[^;]*?\sfrom\s+['"]([^'"]+)['"]/gm)) {
-    const name = packageOfSpecifier(match[1] ?? '')
+  for (const binding of collectImports(program).values()) {
+    const name = packageOfSpecifier(binding.source)
     if (name) out.add(name)
   }
   return out
