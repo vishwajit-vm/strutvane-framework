@@ -209,6 +209,24 @@ function defaultMatcher(): (key: string) => boolean {
   return sharedMatcher
 }
 
+/**
+ * `target[key] = value` as an own data property. Plain assignment of an own `"__proto__"` key
+ * (common in parsed JSON) would replace the output's prototype instead, so that part of the
+ * logged value would silently vanish from the log line.
+ */
+function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
+  if (key === '__proto__') {
+    Object.defineProperty(target, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+  } else {
+    target[key] = value
+  }
+}
+
 /** Serialise an Error (stack, code and cause chain) without ever throwing. */
 export function serializeError(error: Error, depth = 0): LogError {
   const code = (error as { code?: unknown }).code
@@ -278,11 +296,11 @@ export function toLoggable(
           child = '[Unreadable]'
         }
         if (isSensitive(key)) {
-          if (child !== undefined) out[key] = REDACTED
+          if (child !== undefined) setOwn(out, key, REDACTED)
           continue
         }
         const serialized = visit(child, depth + 1)
-        if (serialized !== undefined) out[key] = serialized
+        if (serialized !== undefined) setOwn(out, key, serialized)
       }
       return out
     } catch {
