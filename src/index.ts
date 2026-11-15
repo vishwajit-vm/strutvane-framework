@@ -86,6 +86,7 @@ export {
 } from './http/resource.ts'
 export {
   type HttpBindings,
+  MAX_INCLUDED_CHILDREN,
   MAX_OFFSET,
   type ResourceAfterCommitPayload,
   type ResourceOnWritePayload,

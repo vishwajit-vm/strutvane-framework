@@ -87,6 +87,10 @@ export function documentResource(
           number: z.int().optional(),
           total: z.int().optional(),
         }),
+        truncated: z.array(z.string()).optional().meta({
+          description:
+            'hasMany includes cut at the per-request cap (1000 children); present only when cut',
+        }),
       }),
       links: z.object({ next: z.string().optional() }).optional(),
     }),

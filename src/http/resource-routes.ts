@@ -127,6 +127,16 @@ const LEGACY_HOOK: Readonly<Record<WriteChange['action'], string>> = {
   restore: 'afterRestore',
 }
 
+/**
+ * Most children one `hasMany` include loads per request (one batched query for the whole page).
+ * Over it the children are cut and the response says so: `meta.truncated` on a list, the
+ * `Strutvane-Truncated-Includes` header on a single record.
+ */
+export const MAX_INCLUDED_CHILDREN = 1000
+
+/** The header naming the relations a single-record response cut at {@link MAX_INCLUDED_CHILDREN}. */
+const TRUNCATED_HEADER = 'Strutvane-Truncated-Includes'
+
 /** Most relations one request may include. */
 const MAX_INCLUDES = 10
 
@@ -474,13 +484,17 @@ export function registerResourceRoutes(
     return transformed ?? out
   }
 
-  /** Load allow-listed relations for a page of records, batched (no N+1), in scope. */
+  /**
+   * Load allow-listed relations for a page of records, batched (no N+1), in scope. `truncated`
+   * names the `hasMany` relations cut at {@link MAX_INCLUDED_CHILDREN}.
+   */
   const loadIncludes = async (
     records: readonly DataRecord[],
     names: readonly string[],
     s: RequestState,
-  ): Promise<Map<string, Record<string, unknown>>> => {
+  ): Promise<{ byRecord: Map<string, Record<string, unknown>>; truncated: string[] }> => {
     const byRecord = new Map<string, Record<string, unknown>>(records.map((r) => [r.id, {}]))
+    const truncated: string[] = []
     for (const name of names) {
       const fieldDef = model.fields[name]
       if (fieldDef?.kind === 'belongsTo') {
@@ -505,18 +519,22 @@ export function registerResourceRoutes(
         ...(s.tenantId !== undefined ? { tenantId: s.tenantId } : {}),
         filter: await policyFilter(target, s, 'viewAny'),
       }
-      const children = await repoFor(target).findBy(
+      // One more than the cap: finding it is how a cut is detected (never silent).
+      const found = await repoFor(target).findBy(
         relation.foreignKey,
         records.map((r) => r.id),
         scope,
+        MAX_INCLUDED_CHILDREN + 1,
       )
+      if (found.length > MAX_INCLUDED_CHILDREN) truncated.push(name)
+      const children = found.slice(0, MAX_INCLUDED_CHILDREN)
       for (const r of records) (byRecord.get(r.id) as Record<string, unknown>)[name] = []
       for (const child of children) {
         const parent = byRecord.get(child[relation.foreignKey] as string)
         if (parent) (parent[name] as unknown[]).push(await serializeRecord(target, child, s))
       }
     }
-    return byRecord
+    return { byRecord, truncated }
   }
 
   /**
@@ -643,7 +661,7 @@ export function registerResourceRoutes(
         query.include && query.include.length > 0
           ? await loadIncludes(page.data, query.include, s)
           : undefined
-      const data = await Promise.all(page.data.map((r) => respond(r, s, inc?.get(r.id))))
+      const data = await Promise.all(page.data.map((r) => respond(r, s, inc?.byRecord.get(r.id))))
       const next =
         page.page.nextCursor !== undefined
           ? `${base}?${serializeListParams({ page: { size: page.page.size, cursor: page.page.nextCursor } })}`
@@ -651,7 +669,10 @@ export function registerResourceRoutes(
       return c.json(
         {
           data,
-          meta: { page: page.page },
+          meta: {
+            page: page.page,
+            ...(inc && inc.truncated.length > 0 ? { truncated: inc.truncated } : {}),
+          },
           ...(next && where === 'query' ? { links: { next } } : {}),
         },
         200,
@@ -743,9 +764,10 @@ export function registerResourceRoutes(
         const allowed = await deps.permissions.filterableFields?.(s.actor, model.permission)
         await assertReadableIncludes(s, names, allowed, ['query', 'include'])
       }
-      const inc =
-        names.length > 0 ? (await loadIncludes([record], names, s)).get(record.id) : undefined
-      return c.json(await respond(record, s, inc), 200)
+      const loaded = names.length > 0 ? await loadIncludes([record], names, s) : undefined
+      if (loaded && loaded.truncated.length > 0)
+        c.header(TRUNCATED_HEADER, loaded.truncated.join(','))
+      return c.json(await respond(record, s, loaded?.byRecord.get(record.id)), 200)
     })
   }
 
