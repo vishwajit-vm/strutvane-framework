@@ -96,12 +96,7 @@ export const nodeIo: DevkitIo = {
     }
   },
   async writeText(path, content, options = {}) {
-    await mkdir(
-      dirname(path),
-      options.dirMode === undefined
-        ? { recursive: true }
-        : { recursive: true, mode: options.dirMode },
-    )
+    await ensureDir(dirname(path), options.dirMode)
     if (options.mode === undefined) {
       await writeFile(path, content, 'utf8')
       return
@@ -111,7 +106,7 @@ export const nodeIo: DevkitIo = {
     await chmod(path, options.mode)
   },
   async rename(from, to) {
-    await mkdir(dirname(to), { recursive: true })
+    await ensureDir(dirname(to))
     await retryWhileBusy(() => rename(from, to))
   },
   async remove(path) {
@@ -182,6 +177,11 @@ const BUSY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES'])
 export interface BusyRetryOptions {
   /** Default `process.platform`. Only Windows retries: elsewhere these codes are real refusals. */
   readonly platform?: NodeJS.Platform
+  /**
+   * More error codes to treat as transient, on top of EPERM, EBUSY and EACCES. Only for operations
+   * where the code cannot be a real answer (see {@link ensureDir}).
+   */
+  readonly alsoRetry?: readonly string[]
   /** Total attempts. Default 12. */
   readonly attempts?: number
   /**
@@ -217,13 +217,31 @@ export async function retryWhileBusy<T>(
       return await operation()
     } catch (error) {
       const code = (error as { code?: unknown } | null)?.code
-      const busy = typeof code === 'string' && BUSY_CODES.has(code)
+      const busy =
+        typeof code === 'string' &&
+        (BUSY_CODES.has(code) || options.alsoRetry?.includes(code) === true)
       if (platform !== 'win32' || !busy || attempt >= attempts) throw error
       await new Promise((resolve) =>
         setTimeout(resolve, Math.min(delayMs * attempt, MAX_BUSY_DELAY_MS)),
       )
     }
   }
+}
+
+/**
+ * `mkdir -p`, riding out the same Windows interference as {@link retryWhileBusy}. When a filter
+ * driver (antivirus, indexer) briefly refuses to create one of the parent folders, Node's recursive
+ * mkdir reports ENOENT for the leaf, although the project root exists and nothing deleted it (seen
+ * once in the gate under load: "ENOENT: mkdir …/app/http/controllers" right after the staging
+ * folder in the same project was written). A recursive mkdir under an existing root has no
+ * legitimate ENOENT, so retrying it is safe; a root that really vanished still fails after the
+ * bounded wait.
+ */
+async function ensureDir(path: string, mode?: number): Promise<void> {
+  await retryWhileBusy(
+    () => mkdir(path, mode === undefined ? { recursive: true } : { recursive: true, mode }),
+    { alsoRetry: ['ENOENT'] },
+  )
 }
 
 /** Lowercase hex SHA-256 of a UTF-8 string. */

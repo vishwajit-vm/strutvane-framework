@@ -233,6 +233,22 @@ describe('retryWhileBusy (Windows file locks)', () => {
     expect(calls).toBe(4)
   })
 
+  test('alsoRetry adds codes (mkdir -p: a transient ENOENT); without it ENOENT is final', async () => {
+    let calls = 0
+    const flaky = async () => {
+      calls++
+      if (calls < 3) throw busy('ENOENT')
+      return 'created'
+    }
+    expect(
+      await retryWhileBusy(flaky, { platform: 'win32', delayMs: 1, alsoRetry: ['ENOENT'] }),
+    ).toBe('created')
+    expect(calls).toBe(3)
+    calls = 0
+    await rejectionOf(retryWhileBusy(flaky, { platform: 'win32', delayMs: 1 }))
+    expect(calls).toBe(1)
+  })
+
   test('each wait is capped, so the whole retry stays bounded', async () => {
     const started = Date.now()
     await rejectionOf(
