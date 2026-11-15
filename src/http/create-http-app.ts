@@ -62,6 +62,11 @@ import {
   type TrustProxy,
   trustedHops,
 } from './proxy.ts'
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  requestTimeout,
+  UPLOAD_REQUEST_TIMEOUT_MS,
+} from './request-timeout.ts'
 import { type ResourceConfig, resolveResources } from './resource.ts'
 import {
   type HttpBindings,
@@ -89,6 +94,12 @@ export interface HttpAppOptions {
   readonly publicApi?: boolean
   /** Maximum request body size in bytes. Default 1 MiB. */
   readonly bodyLimit?: number
+  /**
+   * Longest time (ms) the app may take to produce a response (headers; a streamed body is not
+   * cut). After it the client gets a 503 problem. Default {@link DEFAULT_REQUEST_TIMEOUT_MS};
+   * `0` disables it.
+   */
+  readonly requestTimeoutMs?: number
   /** API title and version for OpenAPI and the manifest. */
   readonly info?: { readonly title: string; readonly version: string }
   /**
@@ -167,6 +178,22 @@ const DEFAULT_BODY_LIMIT = 1024 * 1024
 export function createHttpApp(app: Application, options: HttpAppOptions): HttpApp {
   const env = firstAppEnv(options.env, processAppEnv()) ?? 'production'
   const basePath = (options.basePath ?? '/api/v1').replace(/\/+$/, '')
+  // Validated before anything else is built, so a bad value fails at boot, not per request.
+  const appTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const timeout = requestTimeout(appTimeoutMs)
+  const routeTimeouts = (options.routes ?? [])
+    .filter(
+      (r) =>
+        r.timeoutMs !== undefined ||
+        (r.bodyLimit !== undefined && r.bodyLimit > (options.bodyLimit ?? DEFAULT_BODY_LIMIT)),
+    )
+    .map((r) => ({
+      method: r.method.toUpperCase(),
+      pattern: routePattern(basePath, r.path),
+      timeout: requestTimeout(
+        r.timeoutMs ?? (appTimeoutMs === 0 ? 0 : Math.max(appTimeoutMs, UPLOAD_REQUEST_TIMEOUT_MS)),
+      ),
+    }))
   const logger = app.make(LoggerToken)
   const permissions = resolvePermissionProvider(app, {
     env,
@@ -217,6 +244,13 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
         ) === 'https',
     }),
   )
+  // Before the request hooks, so a hook that never settles is bounded too.
+  http.use('*', (c, next) => {
+    if (routeTimeouts.length === 0) return timeout(c, next)
+    const path = new URL(c.req.url).pathname
+    const own = routeTimeouts.find((r) => r.method === c.req.method && r.pattern.test(path))
+    return (own?.timeout ?? timeout)(c, next)
+  })
   http.use('*', async (c, next) => {
     // A client-sent id is only believed from a trusted proxy (else ids could be forged).
     const requestId = acceptRequestId(c.req.header('x-request-id'), () => ids(), hops > 0)
