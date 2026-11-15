@@ -233,6 +233,19 @@ describe('retryWhileBusy (Windows file locks)', () => {
     expect(calls).toBe(4)
   })
 
+  test('each wait is capped, so the whole retry stays bounded', async () => {
+    const started = Date.now()
+    await rejectionOf(
+      retryWhileBusy(
+        async () => {
+          throw busy('EBUSY')
+        },
+        { platform: 'win32', attempts: 3, delayMs: 60_000 },
+      ),
+    )
+    expect(Date.now() - started).toBeLessThan(5_000) // two waits of at most 500 ms each
+  })
+
   test('never retries other errors, or anything outside Windows', async () => {
     for (const [platform, code] of [
       ['win32', 'ENOENT'],

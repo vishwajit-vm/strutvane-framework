@@ -182,24 +182,36 @@ const BUSY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES'])
 export interface BusyRetryOptions {
   /** Default `process.platform`. Only Windows retries: elsewhere these codes are real refusals. */
   readonly platform?: NodeJS.Platform
-  /** Total attempts. Default 6. */
+  /** Total attempts. Default 12. */
   readonly attempts?: number
-  /** Delay before the n-th retry is `n × delayMs`. Default 20 ms (about 0.3 s in all). */
+  /**
+   * Delay before the n-th retry is `n × delayMs`, capped at {@link MAX_BUSY_DELAY_MS}. Default
+   * 50 ms: with 12 attempts, about 3 s in all.
+   */
   readonly delayMs?: number
 }
 
+/** Longest single wait between two busy retries. */
+const MAX_BUSY_DELAY_MS = 500
+
 /**
- * Run a rename or unlink, retrying briefly on Windows while the file is held open by another
- * process. Without this, a scanner touching a freshly staged file makes a whole transaction roll
- * back. Any other error, or the last busy error, is thrown unchanged.
+ * Run a rename or unlink, retrying on Windows while the file is held open by another process.
+ * Without this, a scanner touching a freshly written file makes a whole transaction roll back.
+ *
+ * Why about 3 s: antivirus scanners, indexers and editors open new files without
+ * FILE_SHARE_DELETE, and on a busy machine they hold them for a second or more. The earlier 0.3 s
+ * budget lost that race (`make:model --force` rolled back with EPERM, seen as a flaky test under
+ * load and reproduced with a file held open for 1.5 s). The wait stays bounded, so a file that is
+ * really locked still fails the change instead of hanging the command. Any other error, or the
+ * last busy error, is thrown unchanged.
  */
 export async function retryWhileBusy<T>(
   operation: () => Promise<T>,
   options: BusyRetryOptions = {},
 ): Promise<T> {
   const platform = options.platform ?? process.platform
-  const attempts = options.attempts ?? 6
-  const delayMs = options.delayMs ?? 20
+  const attempts = options.attempts ?? 12
+  const delayMs = options.delayMs ?? 50
   for (let attempt = 1; ; attempt++) {
     try {
       return await operation()
@@ -207,7 +219,9 @@ export async function retryWhileBusy<T>(
       const code = (error as { code?: unknown } | null)?.code
       const busy = typeof code === 'string' && BUSY_CODES.has(code)
       if (platform !== 'win32' || !busy || attempt >= attempts) throw error
-      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt))
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(delayMs * attempt, MAX_BUSY_DELAY_MS)),
+      )
     }
   }
 }

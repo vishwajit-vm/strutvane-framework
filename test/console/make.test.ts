@@ -2,6 +2,7 @@
  * The make:* generators: golden outputs, idempotency, dry runs that write nothing, --force and
  * owned files, registry integration, and validation errors.
  */
+import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
@@ -162,7 +163,7 @@ describe('make:model', () => {
     expect(conflict.json().error).toMatchObject({ code: 'FILE_EXISTS' })
     expect(read(root, 'app/models/tag.model.ts')).toContain('field.string()')
     const forced = await cli(['make:model', 'Tag', 'name:text', '--force', '--json'], { cwd: root })
-    expect(forced.code).toBe(0)
+    expect(forced.code, forced.stdout + forced.stderr).toBe(0)
     expect(read(root, 'app/models/tag.model.ts')).toContain('field.text()')
   })
 
@@ -460,3 +461,37 @@ describe('registry refresh after generation', () => {
     expect(existsSync(join(root, '.strutvane/registry.gen.ts'))).toBe(false)
   })
 })
+
+/**
+ * Antivirus scanners, indexers and editors open freshly written files on Windows without
+ * FILE_SHARE_DELETE, so renaming over them fails with EPERM until they let go, often for a second
+ * or more on a busy machine. `--force` must ride that out instead of rolling back (this made the
+ * suite flaky under load). Reproduced for real: another process holds the target file open.
+ */
+describe.skipIf(process.platform !== 'win32')(
+  'make:model --force over a file another process holds',
+  () => {
+    test('succeeds once the other process lets go (held 1.5 s)', async () => {
+      const root = makeProject()
+      await cli(['make:model', 'Tag', 'name:string'], { cwd: root })
+      const file = join(root, 'app/models/tag.model.ts')
+      const holder = spawn(
+        'powershell',
+        [
+          '-NoProfile',
+          '-Command',
+          `$f=[System.IO.File]::Open('${file}','Open','Read','Read'); Write-Output locked; Start-Sleep -Milliseconds 1500; $f.Close()`,
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'] },
+      )
+      const exited = new Promise((resolve) => holder.once('exit', resolve))
+      await new Promise<void>((resolve) => holder.stdout.once('data', () => resolve()))
+      const forced = await cli(['make:model', 'Tag', 'name:text', '--force', '--json'], {
+        cwd: root,
+      })
+      await exited
+      expect(forced.code, forced.stdout).toBe(0)
+      expect(read(root, 'app/models/tag.model.ts')).toContain('field.text()')
+    })
+  },
+)
