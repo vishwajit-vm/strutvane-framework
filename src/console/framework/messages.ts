@@ -120,6 +120,14 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
     'Cannot listen on {host}:{port}: this machine has no such address.',
   'cli.hint.ADDRESS_NOT_AVAILABLE':
     'Pass --host 127.0.0.1 (this machine only) or --host 0.0.0.0 (every interface).',
+  'cli.error.PROJECT_INVALID': '{detail}',
+  'cli.hint.PROJECT_INVALID': 'Fix the file named above, then run the command again.',
+  'cli.error.BOOT_FAILED': '{detail}',
+  'cli.hint.BOOT_FAILED':
+    'A service the app needs at startup failed. Check that it is running and that its settings in .env and config/ are right.',
+  'cli.error.BOOT_TIMEOUT': '{detail}',
+  'cli.hint.BOOT_TIMEOUT':
+    'Check that the database and other services in .env are reachable from this machine.',
   'cli.error.INTERNAL_ERROR': 'Unexpected error: {detail}',
   'cli.hint.INTERNAL_ERROR': 'Run again with --verbose for the stack trace, and report the bug.',
 })

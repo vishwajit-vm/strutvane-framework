@@ -65,6 +65,8 @@ export const DEFAULT_BOOT_TIMEOUT_MS = 30_000
  */
 export class BootTimeoutError extends Error {
   override readonly name = 'BootTimeoutError'
+  /** Stable code the CLI matches (never the message). */
+  readonly code = 'BOOT_TIMEOUT'
   readonly timeoutMs: number
   constructor(timeoutMs: number) {
     super(
