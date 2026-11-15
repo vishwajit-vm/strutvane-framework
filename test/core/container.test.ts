@@ -171,3 +171,29 @@ describe('dispose', () => {
     expect(factory).not.toHaveBeenCalled()
   })
 })
+
+describe('resolving after disposal', () => {
+  test('a live scope never creates an app-wide singleton in a disposed container', async () => {
+    const root = createContainer()
+    const dispose = vi.fn()
+    let created = 0
+    root.singleton(Obj, () => ({ id: ++created }), { dispose })
+    const scope = root.createScope() // e.g. a request still in flight during shutdown
+    await root.dispose()
+    expect(() => scope.make(Obj)).toThrow(expect.objectContaining({ code: 'DISPOSED' }))
+    expect(created).toBe(0) // no instance whose cleanup could never run
+  })
+
+  test('the same holds for a singleton reached as a dependency, and for scoped services', async () => {
+    const root = createContainer()
+    root.singleton(Num, () => 1)
+    root.bind(Str, (r) => String(r.make(Num)))
+    root.scoped(Obj, () => ({ id: 2 }))
+    const scope = root.createScope()
+    await scope.dispose()
+    expect(() => scope.make(Obj)).toThrow(expect.objectContaining({ code: 'DISPOSED' }))
+    const other = root.createScope()
+    await root.dispose()
+    expect(() => other.make(Str)).toThrow(expect.objectContaining({ code: 'DISPOSED' }))
+  })
+})
