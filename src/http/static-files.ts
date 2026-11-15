@@ -3,7 +3,8 @@
  * the API, so `sv start` gives one URL for both (docs/05 §1: "UI on :3000").
  *
  * - Only `GET`/`HEAD`. Paths are URL-decoded per segment and must stay inside `root`: `..`,
- *   backslashes, NUL bytes, encoded slashes and dot-files are refused (404, never a hint).
+ *   backslashes, NUL bytes, encoded slashes and dot-files are refused (404, never a hint), and on
+ *   Windows so are 8.3 short names and trailing dots or spaces (aliases of other names).
  * - Content types come from a fixed extension table; unknown extensions are served as
  *   `application/octet-stream` with `nosniff`, so nothing is ever guessed as HTML.
  * - Files under `assets/` carry content hashes (Vite), so they are cached for a year as
@@ -64,11 +65,22 @@ const TYPES: Readonly<Record<string, string>> = Object.freeze({
 /** A request handler: a `Response` for paths it serves, `undefined` otherwise. */
 export type StaticFilesHandler = (request: Request) => Promise<Response | undefined>
 
+/** An 8.3 short-name component (`ENV~1`, `PROGRA~2.JS`): Windows aliases a long name with it. */
+const SHORT_NAME = /~\d/
+
 /**
  * Decode a URL path into safe relative segments, or `undefined` when it could escape the root or
  * name something that must never be served.
+ *
+ * On Windows, names that the file system resolves to *another* name are refused too, because each
+ * would get past the dot-file check: 8.3 short names (`/ENV~1` opens `.env`) and segments ending
+ * in a dot or a space (`/secret.` opens `secret`). `platform` is a parameter so both rule sets are
+ * tested on every OS.
  */
-export function safeSegments(pathname: string): string[] | undefined {
+export function safeSegments(
+  pathname: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] | undefined {
   const out: string[] = []
   for (const raw of pathname.split('/')) {
     if (raw === '') continue
@@ -85,7 +97,8 @@ export function safeSegments(pathname: string): string[] | undefined {
       seg.includes('/') ||
       seg.includes('\\') ||
       seg.includes('\0') ||
-      seg.includes(':')
+      seg.includes(':') ||
+      (platform === 'win32' && (SHORT_NAME.test(seg) || /[. ]$/.test(seg)))
     )
       return undefined
     out.push(seg)

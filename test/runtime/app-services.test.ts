@@ -3,7 +3,7 @@
 // per-route body limit and guaranteed temp-file cleanup), signed links served at /storage/<disk>,
 // and `sv start` serving the built UI next to the API without ever shadowing it.
 import { existsSync, readdirSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -266,6 +266,34 @@ describe('serving the built UI', () => {
       ).toBe(404)
     } finally {
       await apiOnly.stop()
+    }
+  })
+
+  test('Windows aliases of hidden files are refused: 8.3 short names, trailing dots and spaces', async () => {
+    // On Windows `.env` is also reachable as `ENV~1` (its 8.3 short name), and `secret.` or
+    // `secret ` open `secret`: each would get past the dot-file and exact-name checks.
+    for (const alias of [
+      '/ENV~1',
+      '/GIT~1/config',
+      '/assets/PROGRA~2.JS',
+      '/a/index.html.',
+      '/a/index.html%20',
+      '/x%20.',
+    ]) {
+      expect(safeSegments(alias, 'win32'), alias).toBeUndefined()
+    }
+    expect(safeSegments('/assets/app~beta.js', 'win32')).toEqual(['assets', 'app~beta.js'])
+    expect(safeSegments('/assets/index-B1x~9.js', 'linux')).toEqual(['assets', 'index-B1x~9.js'])
+    if (process.platform === 'win32') {
+      const root = await mkdtemp(join(tmpdir(), 'sv-static-'))
+      cleanups.push(() => rm(root, { recursive: true, force: true }))
+      await writeFile(join(root, '.env'), 'APP_KEY=secret')
+      await writeFile(join(root, 'index.html'), '<!doctype html>')
+      const serve = createStaticFiles({ root })
+      for (const path of ['/ENV~1', '/index.html.', '/index.html%20']) {
+        const res = await serve(new Request(`http://x${path}`))
+        expect(res ? await res.text() : '', path).not.toContain('APP_KEY')
+      }
     }
   })
 
