@@ -15,6 +15,27 @@ afterAll(cleanupTempDirs)
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('watch mode', () => {
+  test('a failing start releases every watcher and timer (the process can exit)', async () => {
+    const root = copyFixture()
+    const handles = () =>
+      process.getActiveResourcesInfo().filter((r) => r === 'FSEventWrap' || r === 'Timeout').length
+    const before = handles()
+    // The initial build fails: here the result callback throws; a link in place of the output
+    // folder or an unreadable file does the same.
+    expect(() =>
+      watchProject(root, {
+        settleMs: 60_000,
+        folderCheckMs: 60_000,
+        onResult: () => {
+          throw new Error('initial build failed')
+        },
+      }),
+    ).toThrow('initial build failed')
+    // Closed handles leave the list once libuv has run their close callbacks.
+    await waitFor(() => handles() <= before, 5_000, 'watchers released')
+    expect(handles()).toBeLessThanOrEqual(before)
+  })
+
   test('a change made immediately after start is picked up (native watchers start late)', async () => {
     const root = copyFixture()
     const results: WriteResult[] = []

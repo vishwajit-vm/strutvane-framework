@@ -124,34 +124,45 @@ export function watchProject(root: string, options: WatchOptions): WatchHandle {
     }
   }
 
-  const rootWatcher = watch(root, { recursive: false }, (_event, filename) => {
-    if (filename === null || WATCHED_DIRS.some((d) => filename === d)) schedule()
-  })
-  rootWatcher.on('error', (error) => options.onError?.(error))
-
-  // Safety net for platforms that report nothing when a watched folder appears or disappears.
-  const folderCheck = setInterval(() => {
-    if (WATCHED_DIRS.some((name) => existsSync(join(root, name)) !== watchers.has(name))) schedule()
-  }, options.folderCheckMs ?? 1_000)
-  folderCheck.unref()
-
-  attach()
-  rebuild()
-  // Catch changes made while the native watchers were still starting (see `settleMs`).
-  const settle = setTimeout(schedule, options.settleMs ?? 250)
-  settle.unref()
-
-  return {
-    rebuild,
-    close(): void {
-      if (closed) return
-      closed = true
-      if (timer !== undefined) clearTimeout(timer)
-      clearTimeout(settle)
-      clearInterval(folderCheck)
-      rootWatcher.close()
-      for (const watcher of watchers.values()) watcher.close()
-      watchers.clear()
-    },
+  let rootWatcher: FSWatcher | undefined
+  let folderCheck: NodeJS.Timeout | undefined
+  let settle: NodeJS.Timeout | undefined
+  const close = (): void => {
+    if (closed) return
+    closed = true
+    if (timer !== undefined) clearTimeout(timer)
+    if (settle !== undefined) clearTimeout(settle)
+    if (folderCheck !== undefined) clearInterval(folderCheck)
+    rootWatcher?.close()
+    for (const watcher of watchers.values()) watcher.close()
+    watchers.clear()
   }
+
+  // If starting fails (a watcher cannot attach, or the initial build throws, e.g. for a link in
+  // place of the output folder), release everything opened so far before rethrowing: a leaked
+  // native watcher would keep the CLI process alive after it reported the error.
+  try {
+    rootWatcher = watch(root, { recursive: false }, (_event, filename) => {
+      if (filename === null || WATCHED_DIRS.some((d) => filename === d)) schedule()
+    })
+    rootWatcher.on('error', (error) => options.onError?.(error))
+
+    // Safety net for platforms that report nothing when a watched folder appears or disappears.
+    folderCheck = setInterval(() => {
+      if (WATCHED_DIRS.some((name) => existsSync(join(root, name)) !== watchers.has(name)))
+        schedule()
+    }, options.folderCheckMs ?? 1_000)
+    folderCheck.unref()
+
+    attach()
+    rebuild()
+    // Catch changes made while the native watchers were still starting (see `settleMs`).
+    settle = setTimeout(schedule, options.settleMs ?? 250)
+    settle.unref()
+  } catch (error) {
+    close()
+    throw error
+  }
+
+  return { rebuild, close }
 }
