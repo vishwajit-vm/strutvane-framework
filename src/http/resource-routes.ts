@@ -752,6 +752,10 @@ export function registerResourceRoutes(
   if (routeEnabled(resource, 'create')) {
     app.post(base, async (c) => {
       const s = state(c)
+      // Anonymous callers are authorized before validation: issues would describe the schema
+      // (field names, types, what is required) to someone who may not create anything. An
+      // authenticated caller is validated first and authorized with the input (record rules).
+      if (s.actor === null) await authorize(s, 'create')
       const raw = await readJsonBody(c)
       const parsed = schemas.create.safeParse(raw)
       if (!parsed.success) throw new ValidationError(issuesFromZod(parsed.error.issues, [], raw))
