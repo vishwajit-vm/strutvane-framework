@@ -84,6 +84,7 @@ import {
   registerResourceRoutes,
 } from './resource-routes.ts'
 import { type RouteDefinition, registerCustomRoutes, routePattern } from './route.ts'
+import { routerPath } from './router-path.ts'
 import { acceptRequestId, securityHeaders } from './security.ts'
 import { SessionCookieToken, sessionCookieName } from './session-cookie.ts'
 import { createStaticFiles, type StaticFilesOptions } from './static-files.ts'
@@ -318,7 +319,8 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   // Before the request hooks, so a hook that never settles is bounded too.
   http.use('*', (c, next) => {
     if (routeTimeouts.length === 0) return timeout(c, next)
-    const path = new URL(c.req.url).pathname
+    // The router's own decoding: `/sl%6Fw` is the `/slow` route and gets its timeout.
+    const path = routerPath(c.req.raw)
     const own = routeTimeouts.find((r) => r.method === c.req.method && r.pattern.test(path))
     return (own?.timeout ?? timeout)(c, next)
   })
@@ -402,7 +404,9 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       limit: bodyLimit({ maxSize: r.bodyLimit as number, onError: tooLarge }),
     }))
   http.use('*', (c, next) => {
-    const path = new URL(c.req.url).pathname
+    // Matched on the path the router serves (decoded), never the raw one: `/sm%61ll` reaches
+    // the `/small` route and must get its limit, not the app-wide one.
+    const path = routerPath(c.req.raw)
     const own = routeLimits.find((r) => r.method === c.req.method && r.pattern.test(path))
     return (own?.limit ?? defaultLimit)(c, next)
   })
