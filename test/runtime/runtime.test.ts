@@ -31,7 +31,9 @@ const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
   // Bounded: on Windows a just-closed libSQL file can stay locked for a while; temp dirs may linger.
   const pending = Promise.all(cleanups.splice(0).map((c) => c()))
-  await Promise.race([pending, new Promise((resolve) => setTimeout(resolve, 3000))])
+  let timer: NodeJS.Timeout | undefined
+  await Promise.race([pending, new Promise((resolve) => (timer = setTimeout(resolve, 3000)))])
+  clearTimeout(timer)
 })
 
 async function project(files?: Record<string, string>) {
