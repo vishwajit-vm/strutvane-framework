@@ -260,8 +260,16 @@ export async function parseMultipart(
   try {
     await done
   } catch (error) {
-    // Wait (briefly) for open temp files to close: Windows cannot delete open files.
-    await Promise.race([Promise.allSettled(closed), new Promise((r) => setTimeout(r, 2000))])
+    // Wait (briefly) for open temp files to close: Windows cannot delete open files. The timer is
+    // cleared either way, so a rejected upload never leaves a 2 s timer behind it.
+    let wait: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      Promise.allSettled(closed),
+      new Promise((r) => {
+        wait = setTimeout(r, 2000)
+      }),
+    ])
+    clearTimeout(wait)
     await cleanup()
     throw error
   }
