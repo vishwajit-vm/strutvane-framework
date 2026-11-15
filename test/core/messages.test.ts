@@ -217,3 +217,28 @@ describe('catalogs and the override chain', () => {
     expect(messages.missingKeys('en-GB')).toEqual([])
   })
 })
+
+describe('inherited object members are never messages or params', () => {
+  const inherited = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']
+
+  test('a key named like an Object.prototype member is missing, not a function', () => {
+    const messages = createMessages({ app: [defineMessages('en', { greet: 'Hi' })] })
+    const overrides = { field: { en: { other: 'x' } }, resource: { '*': { other: 'y' } } }
+    for (const key of inherited) {
+      expect(messages.resolve(key), key).toBeUndefined()
+      expect(messages.has(key, { overrides }), key).toBe(false)
+      expect(messages.format(key, {}, { overrides }), key).toBe(key)
+    }
+  })
+
+  test('a placeholder named like an Object.prototype member renders as missing', () => {
+    for (const name of inherited.filter((n) => n !== '__proto__')) {
+      const result = formatMessage(`a {${name}} b`)
+      expect(result.text, name).toBe(`a {${name}} b`)
+      expect(result.missing, name).toEqual([name])
+      const plural = formatMessage(`{${name}, plural, one {one} other {many}}`)
+      expect(plural.missing, name).toEqual([name])
+    }
+    expect(formatMessage('{toString}', { toString: 'own' }).text).toBe('own')
+  })
+})

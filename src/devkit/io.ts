@@ -112,10 +112,11 @@ export const nodeIo: DevkitIo = {
   },
   async rename(from, to) {
     await mkdir(dirname(to), { recursive: true })
-    await rename(from, to)
+    await retryWhileBusy(() => rename(from, to))
   },
   async remove(path) {
-    await rm(path, { recursive: true, force: true })
+    // Node retries EBUSY, EPERM, ENOTEMPTY… itself when asked to.
+    await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   },
   async removeFile(path) {
     const info = await nodeIo.inspect(path)
@@ -127,7 +128,7 @@ export const nodeIo: DevkitIo = {
       )
     }
     try {
-      await unlink(path)
+      await retryWhileBusy(() => unlink(path))
     } catch (error) {
       if (!isNotFound(error)) throw error
     }
@@ -172,6 +173,43 @@ export const nodeIo: DevkitIo = {
     await walk(dir)
     return results.sort()
   },
+}
+
+/** Error codes Windows reports while another process (antivirus, indexer, editor) holds a file. */
+const BUSY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES'])
+
+/** Options for {@link retryWhileBusy}. */
+export interface BusyRetryOptions {
+  /** Default `process.platform`. Only Windows retries: elsewhere these codes are real refusals. */
+  readonly platform?: NodeJS.Platform
+  /** Total attempts. Default 6. */
+  readonly attempts?: number
+  /** Delay before the n-th retry is `n × delayMs`. Default 20 ms (about 0.3 s in all). */
+  readonly delayMs?: number
+}
+
+/**
+ * Run a rename or unlink, retrying briefly on Windows while the file is held open by another
+ * process. Without this, a scanner touching a freshly staged file makes a whole transaction roll
+ * back. Any other error, or the last busy error, is thrown unchanged.
+ */
+export async function retryWhileBusy<T>(
+  operation: () => Promise<T>,
+  options: BusyRetryOptions = {},
+): Promise<T> {
+  const platform = options.platform ?? process.platform
+  const attempts = options.attempts ?? 6
+  const delayMs = options.delayMs ?? 20
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await operation()
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code
+      const busy = typeof code === 'string' && BUSY_CODES.has(code)
+      if (platform !== 'win32' || !busy || attempt >= attempts) throw error
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt))
+    }
+  }
 }
 
 /** Lowercase hex SHA-256 of a UTF-8 string. */

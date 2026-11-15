@@ -13,9 +13,10 @@
  *
  * @module
  */
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { parseEnv } from 'node:util'
 import type { Provider } from '../core/index.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import { isRouteDefinition, type RouteDefinition } from '../http/route.ts'
@@ -66,10 +67,22 @@ export async function importDefault(file: string): Promise<unknown> {
   return mod.default
 }
 
-/** Load `.env` from `root` without overriding variables that are already set. */
+/**
+ * Load `.env` from `root` without overriding variables that are already set (even to `''`).
+ *
+ * Parsed with Node's own `.env` parser, like `process.loadEnvFile`, but after removing a UTF-8
+ * byte-order mark: Node keeps the mark as part of the first key, so a `.env` saved "with BOM"
+ * (some Windows editors do) would silently lose its first variable, while the CLI's checks, which
+ * strip the mark, report it as set.
+ */
 export function loadDotEnv(root: string): void {
   const file = join(root, '.env')
-  if (existsSync(file)) process.loadEnvFile(file)
+  if (!existsSync(file)) return
+  const text = readFileSync(file, 'utf8')
+  const values = parseEnv(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
+  for (const [key, value] of Object.entries(values)) {
+    if (process.env[key] === undefined) process.env[key] = value
+  }
 }
 
 const isModel = (v: unknown): v is AnyModel =>

@@ -360,3 +360,25 @@ describe('clock', () => {
     expect(isoNow()).toMatch(/^\d{4}-/)
   })
 })
+
+describe('own keys that collide with Object.prototype', () => {
+  test('a logged object with an own "__proto__" key keeps its data and redaction', () => {
+    const value = JSON.parse('{"__proto__": {"note": "kept", "password": "pw-canary"}, "x": 1}')
+    const out = toLoggable(value) as Record<string, unknown>
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(Object.hasOwn(out, '__proto__')).toBe(true)
+    const line = JSON.stringify(out)
+    expect(line).toContain('"note":"kept"')
+    expect(line).not.toContain('pw-canary')
+    expect(JSON.parse(line)).toEqual(
+      JSON.parse('{"__proto__": {"note": "kept", "password": "[REDACTED]"}, "x": 1}'),
+    )
+  })
+
+  test('the logger writes such fields instead of dropping them', () => {
+    const lines: string[] = []
+    const logger = createLogger({ sink: (l) => lines.push(l) })
+    logger.info('m', JSON.parse('{"__proto__": {"a": 1}}'))
+    expect(lines[0]).toContain('"__proto__":{"a":1}')
+  })
+})

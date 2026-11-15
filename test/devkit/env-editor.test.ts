@@ -1,5 +1,8 @@
 /** `.env` + `.env.example` editing: never overwrite, never leak a secret into the example. */
+import { parseEnv as nodeParseEnv } from 'node:util'
+import fc from 'fast-check'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { parseEnv as cliParseEnv } from '../../src/console/project/env-file.ts'
 import {
   createEnvEditor,
   envKeys,
@@ -120,8 +123,56 @@ describe('add', () => {
     expect(formatEnvValue('postgres://u@h:5432/db')).toBe('postgres://u@h:5432/db')
     expect(formatEnvValue('')).toBe('')
     expect(formatEnvValue('two words')).toBe('"two words"')
-    expect(formatEnvValue('say "hi" \\o/')).toBe('"say \\"hi\\" \\\\o/"')
     expect(formatEnvValue('#not-a-comment')).toBe('"#not-a-comment"')
+  })
+
+  test('values with double quotes or backslashes are single-quoted (taken literally)', () => {
+    expect(formatEnvValue('say "hi" \\o/')).toBe(`'say "hi" \\o/'`)
+    expect(formatEnvValue('C:\\new\\table')).toBe(`'C:\\new\\table'`)
+  })
+
+  test('a value no quoting style can carry unchanged is refused, never written corrupted', () => {
+    for (const value of [`it's "both"`, `it's a\\b`, 'nul\0byte', 'bell\x07', 'del\x7f']) {
+      expect(() => formatEnvValue(value)).toThrowError(
+        expect.objectContaining({ code: 'INVALID_ENV_VALUE' }),
+      )
+    }
+  })
+
+  test('every written value reads back unchanged with the runtime and CLI env parsers', () => {
+    const tricky = fc.constantFrom(
+      '"',
+      "'",
+      '\\',
+      '\\n',
+      '#',
+      ' #',
+      '$',
+      `\${X}`,
+      '`',
+      ' ',
+      '\t',
+      '=',
+      'é',
+      '\u2028',
+      '😀',
+    )
+    const value = fc
+      .array(fc.oneof(tricky, fc.string({ maxLength: 4 })), { maxLength: 8 })
+      .map((parts) => parts.join(''))
+    fc.assert(
+      fc.property(value, (raw) => {
+        let line: string
+        try {
+          line = `KEY=${formatEnvValue(raw)}\n`
+        } catch {
+          return // refused values are never written
+        }
+        expect(nodeParseEnv(line)['KEY']).toBe(raw)
+        expect(cliParseEnv(line).entries.get('KEY')?.value).toBe(raw)
+      }),
+      { numRuns: 2000 },
+    )
   })
 
   test.each([

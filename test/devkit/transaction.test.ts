@@ -2,7 +2,7 @@
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { type DevkitError, TransactionAbortedError } from '../../src/devkit/errors.ts'
-import { type DevkitIo, nodeIo } from '../../src/devkit/io.ts'
+import { type DevkitIo, nodeIo, retryWhileBusy } from '../../src/devkit/io.ts'
 import {
   commitTransaction,
   hasInterruptedTransaction,
@@ -166,9 +166,90 @@ describe('crash recovery', () => {
     await expect(recoverTransactions({ io: nodeIo, projectRoot })).rejects.toThrow(/backup missing/)
   })
 
+  test('a cleanup failure after a successful commit never makes the change undoable', async () => {
+    // e.g. Windows refusing to delete the staging folder while a scanner holds a file in it.
+    let failures = 0
+    const io: DevkitIo = {
+      ...nodeIo,
+      async remove(path) {
+        if (failures === 0) {
+          failures++
+          throw Object.assign(new Error('simulated EPERM'), { code: 'EPERM' })
+        }
+        return nodeIo.remove(path)
+      },
+    }
+    await commitTransaction(ops, { io, projectRoot })
+    expect(failures).toBe(1)
+    const applied = { 'a.txt': 'A2\n', 'b.txt': 'B2\n', 'new/c.txt': 'C\n' }
+    expect(await hasInterruptedTransaction(nodeIo, projectRoot)).toBe(false)
+    // Recovery has nothing to undo and only clears the leftover folder.
+    expect(await recoverTransactions({ io: nodeIo, projectRoot })).toBe(0)
+    expect(await snapshot(projectRoot)).toEqual(applied)
+    // And the next change is not blocked.
+    await commitTransaction([{ path: 'd.txt', content: 'D\n' }], { io: nodeIo, projectRoot })
+    expect(await readFile(projectRoot, 'd.txt')).toBe('D\n')
+  })
+
   test('leftover empty staging folders are cleaned up', async () => {
     await nodeIo.writeText(join(stagingDir(projectRoot), 'junk', 'staged', '0'), 'x')
     expect(await recoverTransactions({ io: nodeIo, projectRoot })).toBe(0)
     expect(await nodeIo.exists(stagingDir(projectRoot))).toBe(false)
+  })
+})
+
+describe('retryWhileBusy (Windows file locks)', () => {
+  const busy = (code: string) => Object.assign(new Error(code), { code })
+
+  test.each(['EPERM', 'EBUSY', 'EACCES'])(
+    'retries %s on Windows until it succeeds',
+    async (code) => {
+      let calls = 0
+      const result = await retryWhileBusy(
+        async () => {
+          calls++
+          if (calls < 3) throw busy(code)
+          return 'done'
+        },
+        { platform: 'win32', delayMs: 1 },
+      )
+      expect(result).toBe('done')
+      expect(calls).toBe(3)
+    },
+  )
+
+  test('gives up after the last attempt with the original error', async () => {
+    let calls = 0
+    const error = await rejectionOf(
+      retryWhileBusy(
+        async () => {
+          calls++
+          throw busy('EPERM')
+        },
+        { platform: 'win32', attempts: 4, delayMs: 1 },
+      ),
+    )
+    expect((error as { code?: string }).code).toBe('EPERM')
+    expect(calls).toBe(4)
+  })
+
+  test('never retries other errors, or anything outside Windows', async () => {
+    for (const [platform, code] of [
+      ['win32', 'ENOENT'],
+      ['linux', 'EPERM'],
+      ['darwin', 'EACCES'],
+    ] as const) {
+      let calls = 0
+      await rejectionOf(
+        retryWhileBusy(
+          async () => {
+            calls++
+            throw busy(code)
+          },
+          { platform, delayMs: 1 },
+        ),
+      )
+      expect(calls, `${platform} ${code}`).toBe(1)
+    }
   })
 })

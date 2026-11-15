@@ -196,11 +196,16 @@ async function execute(
     throw unresolved(resolution, plugins)
   }
 
-  // Built-ins first (fast path: no plugin code is loaded), then the merged set.
+  // Built-ins first (fast path: no plugin code is loaded), then the merged set. Only an exact
+  // built-in name (or alias) takes the fast path: an abbreviation such as `make:mod` could also be
+  // the exact name of a contributed command, or match one, which only the merged set can tell.
   const builtinTable = createCommandTable(options.builtins.filter((c) => c.placeholder !== true))
   let resolution = resolveCommand(builtinTable, words)
+  const exactBuiltin =
+    resolution.kind === 'found' &&
+    builtinTable.get(words.slice(0, resolution.consumed).join(':')) !== undefined
   let sources: ReadonlyMap<string, string> = new Map()
-  if (resolution.kind !== 'found') {
+  if (!exactBuiltin) {
     const merged = await allCommands()
     sources = merged.sources
     resolution = resolveCommand(createCommandTable(merged.commands), words)

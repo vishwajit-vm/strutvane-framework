@@ -158,3 +158,48 @@ describe('request context', () => {
     })
   })
 })
+
+describe('env errors never carry values, whatever the validator says', () => {
+  // Some validators (and custom messages) quote the received input in their issue messages.
+  const echoing = (keys: readonly string[]): StandardSchemaV1<unknown, never> => ({
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (input) => {
+        const env = input as Record<string, string | undefined>
+        return {
+          issues: keys.map((key) => ({
+            message: `Invalid: expected a URL but received "${env[key]}" (${JSON.stringify(env[key])})`,
+            path: [key],
+          })),
+        }
+      },
+    },
+  })
+
+  test('a value echoed in an issue message is redacted in problems and the message', () => {
+    const secret = 'pg://app:S3cr3t-canary@db/app'
+    const other = 'another "quoted" value'
+    let error: unknown
+    try {
+      defineEnv(echoing(['DATABASE_URL', 'OTHER']), { DATABASE_URL: secret, OTHER: other })
+    } catch (e) {
+      error = e
+    }
+    const e = error as EnvValidationError
+    expect(e).toBeInstanceOf(EnvValidationError)
+    for (const text of [e.message, ...e.problems.map((p) => p.message)]) {
+      expect(text).not.toContain('S3cr3t-canary')
+      expect(text).not.toContain('quoted')
+      expect(text).toContain('[REDACTED]')
+    }
+  })
+
+  test('short values are left alone so messages stay readable', () => {
+    try {
+      defineEnv(echoing(['PORT']), { PORT: 'x' })
+    } catch (e) {
+      expect((e as EnvValidationError).problems[0]?.message).toContain('"x"')
+    }
+  })
+})

@@ -154,7 +154,8 @@ function render(
         out += pound ?? '#'
         break
       case 'arg': {
-        const value = params[node.name]
+        // Own params only: `{constructor}` must render as missing, not as an inherited function.
+        const value = Object.hasOwn(params, node.name) ? params[node.name] : undefined
         if (value === undefined) {
           missing.add(node.name)
           out += `{${node.name}}`
@@ -164,7 +165,7 @@ function render(
         break
       }
       case 'plural': {
-        const raw = params[node.name]
+        const raw = Object.hasOwn(params, node.name) ? params[node.name] : undefined
         const value = typeof raw === 'number' ? raw : Number(raw)
         if (raw === undefined || !Number.isFinite(value)) missing.add(node.name)
         const n = Number.isFinite(value) ? value : 0

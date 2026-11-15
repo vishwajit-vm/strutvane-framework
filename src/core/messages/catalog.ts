@@ -90,6 +90,15 @@ export interface MessagesOptions {
 
 type LayerMap = Map<string, Record<string, string>> // locale → merged dictionary
 
+/**
+ * `dict[key]` for own keys only. Keys and locales can come from outside (error codes, field
+ * paths, override maps), and a plain-object lookup of `constructor` or `toString` would return an
+ * inherited function instead of "no such message".
+ */
+function own<T>(dict: Readonly<Record<string, T>> | undefined, key: string): T | undefined {
+  return dict !== undefined && Object.hasOwn(dict, key) ? dict[key] : undefined
+}
+
 function toLayer(catalogs: readonly MessageCatalog[]): LayerMap {
   const layer: LayerMap = new Map()
   for (const c of catalogs) layer.set(c.locale, { ...layer.get(c.locale), ...c.messages })
@@ -111,11 +120,11 @@ export function createMessages(options: MessagesOptions = {}): Messages {
     const overrideLayers = [lookup.overrides?.field, lookup.overrides?.resource]
     for (const locale of chain) {
       for (const o of overrideLayers) {
-        const hit = o?.[locale]?.[key] ?? o?.['*']?.[key]
+        const hit = own(own(o, locale), key) ?? own(own(o, '*'), key)
         if (hit !== undefined) return hit
       }
       for (const layer of layers) {
-        const hit = layer.get(locale)?.[key]
+        const hit = own(layer.get(locale), key)
         if (hit !== undefined) return hit
       }
     }
@@ -144,7 +153,9 @@ export function createMessages(options: MessagesOptions = {}): Messages {
         for (const key of Object.keys(layer.get(fallback) ?? {})) reference.add(key)
       const missing: string[] = []
       for (const key of reference) {
-        const found = target.some((l) => layers.some((layer) => layer.get(l)?.[key] !== undefined))
+        const found = target.some((l) =>
+          layers.some((layer) => own(layer.get(l), key) !== undefined),
+        )
         if (!found) missing.push(key)
       }
       return missing.sort()

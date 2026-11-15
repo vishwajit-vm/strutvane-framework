@@ -242,6 +242,10 @@ class ContainerImpl implements Container {
       cacheOwner = this
     }
     if (cacheOwner.#instances.has(token.id)) return cacheOwner.#instances.get(token.id)
+    // A disposed owner has already run its cleanups: an instance created now (a live request scope
+    // resolving a singleton during shutdown) would never be disposed, e.g. a pool that keeps the
+    // process alive. Fail instead.
+    cacheOwner.#assertAlive()
     // Singletons must not depend on scoped services through this resolver: resolve them from the
     // owner so a request scope can never be captured inside an app-wide singleton.
     const ownerResolver: Resolver =

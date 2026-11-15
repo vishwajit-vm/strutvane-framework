@@ -194,6 +194,13 @@ describe('which packages may contribute migrations', () => {
         "import local from './app/providers/app.ts'",
         "import fs from 'node:fs'",
         '// import evil from "@strutvane/commented"',
+        '/*',
+        'import hidden from "@strutvane/block-commented"',
+        '*/',
+        'const text = `',
+        "import quoted from '@strutvane/in-a-string'",
+        '`',
+        "import { type OnlyTypes } from '@strutvane/types-only'",
         'export default { providers: [auth, logs] }',
       ].join('\n'),
     })
@@ -203,5 +210,15 @@ describe('which packages may contribute migrations', () => {
     expect(packageOfSpecifier('../x')).toBeUndefined()
     expect(packageOfSpecifier('node:fs')).toBeUndefined()
     expect(enabledPackages(join(root, 'missing')).size).toBe(0)
+  })
+
+  test('a strutvane.config.ts that does not parse enables no package (fail closed)', () => {
+    const root = makeProject({
+      'strutvane.config.ts': [
+        "import auth from '@strutvane/auth/provider'",
+        'export default {',
+      ].join('\n'),
+    })
+    expect(enabledPackages(root).size).toBe(0)
   })
 })
