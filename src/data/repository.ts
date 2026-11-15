@@ -76,6 +76,21 @@ export interface Scope {
   readonly trashed?: 'without' | 'with' | 'only'
 }
 
+/**
+ * Options for a write ({@link Repository.create}, `update`, `delete`, `restore`).
+ *
+ * @example
+ * await repo.create(input, scope, { onWrite: (record, tx) => audit.write(record, tx) })
+ */
+export interface WriteOptions {
+  /**
+   * Runs inside the write's transaction, after the row is written and checked, with the row (for
+   * a delete: the row as it was) and the transaction. Throwing rolls the write back, so work that
+   * must go with the write (an audit record, a counter) can never disagree with it.
+   */
+  readonly onWrite?: (record: DataRecord, tx: Database) => Promise<void>
+}
+
 /** A create or update would leave the row outside what the caller may write. 403. */
 export class PolicyViolationError extends ForbiddenError {
   override readonly name = 'PolicyViolationError'
@@ -132,20 +147,25 @@ const MAX_SEARCH = 200
 /** The per-model data access API. */
 export interface Repository {
   readonly model: ModelDefinition
-  create(input: Readonly<Record<string, unknown>>, scope?: Scope): Promise<DataRecord>
+  create(
+    input: Readonly<Record<string, unknown>>,
+    scope?: Scope,
+    write?: WriteOptions,
+  ): Promise<DataRecord>
   find(id: string, scope?: Scope): Promise<DataRecord | undefined>
   findOrFail(id: string, scope?: Scope): Promise<DataRecord>
   update(
     id: string,
     patch: Readonly<Record<string, unknown>>,
     scope?: Scope,
+    write?: WriteOptions,
   ): Promise<DataRecord | undefined>
   /** Soft-deletes when the model has `softDeletes`, otherwise deletes. `false` if not found. */
-  delete(id: string, scope?: Scope): Promise<boolean>
+  delete(id: string, scope?: Scope, write?: WriteOptions): Promise<boolean>
   /** Permanently deletes, even for soft-delete models. */
   forceDelete(id: string, scope?: Scope): Promise<boolean>
   /** Restores a soft-deleted row. `undefined` if no such deleted row is visible. */
-  restore(id: string, scope?: Scope): Promise<DataRecord | undefined>
+  restore(id: string, scope?: Scope, write?: WriteOptions): Promise<DataRecord | undefined>
   list(options?: ListOptions, scope?: Scope): Promise<ListPage>
   count(filter?: BoundFilter, scope?: Scope): Promise<number>
   /** Load rows by id (visible in scope), in no particular order. */
@@ -307,7 +327,7 @@ export function createRepository(options: RepositoryOptions): Repository {
   const repo: Repository = {
     model,
 
-    create: (input, scope = {}) =>
+    create: (input, scope = {}, write = {}) =>
       translateErrors(model, () =>
         inTx(scope, async (tx) => {
           await checkReferences(input, scope, tx)
@@ -330,8 +350,13 @@ export function createRepository(options: RepositoryOptions): Repository {
             tx,
           )
           await assertWritable(id, scope, tx)
-          const created = await selectOne(id, { ...unfiltered(scope), trashed: 'with' }, tx)
-          return created as DataRecord
+          const created = (await selectOne(
+            id,
+            { ...unfiltered(scope), trashed: 'with' },
+            tx,
+          )) as DataRecord
+          await write.onWrite?.(created, tx)
+          return created
         }),
       ),
 
@@ -347,7 +372,7 @@ export function createRepository(options: RepositoryOptions): Repository {
       return found
     },
 
-    update: (id, patch, scope = {}) =>
+    update: (id, patch, scope = {}, write = {}) =>
       translateErrors(model, async () => {
         const clean = validId(id)
         if (!clean) return undefined
@@ -371,16 +396,19 @@ export function createRepository(options: RepositoryOptions): Repository {
             )
           }
           await assertWritable(clean, scope, tx)
-          return selectOne(clean, unfiltered(scope), tx)
+          const updated = await selectOne(clean, unfiltered(scope), tx)
+          if (updated) await write.onWrite?.(updated, tx)
+          return updated
         })
       }),
 
-    delete: (id, scope = {}) =>
+    delete: (id, scope = {}, write = {}) =>
       translateErrors(model, async () => {
         const clean = validId(id)
         if (!clean) return false
         return inTx(scope, async (tx) => {
-          if (!(await selectOne(clean, scope, tx))) return false
+          const existing = await selectOne(clean, scope, tx)
+          if (!existing) return false
           const conds = join([frag('"id" = ?', [clean]), ...unaliased(scope)], ' AND ')
           if (model.options.softDeletes) {
             const ts = now().toISOString()
@@ -395,6 +423,7 @@ export function createRepository(options: RepositoryOptions): Repository {
           } else {
             await run(frag(`DELETE FROM ${table} WHERE ${conds.text}`, conds.params), tx)
           }
+          await write.onWrite?.(existing, tx)
           return true
         })
       }),
@@ -412,7 +441,7 @@ export function createRepository(options: RepositoryOptions): Repository {
         })
       }),
 
-    restore: async (id, scope = {}) => {
+    restore: async (id, scope = {}, write = {}) => {
       if (!model.options.softDeletes) return undefined
       const clean = validId(id)
       if (!clean) return undefined
@@ -428,7 +457,9 @@ export function createRepository(options: RepositoryOptions): Repository {
           frag(`UPDATE ${table} SET ${sets} WHERE ${conds.text}`, [...vals, ...conds.params]),
           tx,
         )
-        return selectOne(clean, { ...unfiltered(scope), trashed: 'with' }, tx)
+        const restored = await selectOne(clean, { ...unfiltered(scope), trashed: 'with' }, tx)
+        if (restored) await write.onWrite?.(restored, tx)
+        return restored
       })
     },
 

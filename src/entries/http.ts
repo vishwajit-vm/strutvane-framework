@@ -16,6 +16,8 @@ export {
   type ResourceConfig,
   type ResourceContext,
   type ResourceHooks,
+  type WriteChange,
+  type WriteContext,
 } from '../http/resource.ts'
 export {
   type RouteContext,

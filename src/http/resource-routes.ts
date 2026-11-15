@@ -2,8 +2,9 @@
  * The resource engine: every model gets list, show, create, update, delete and restore routes,
  * plus `POST /<path>/query` for filter trees, all running the same pipeline (docs/06 §5.3):
  *
- * `parse → validate → authorize → scope (tenant + policy filter) → hooks.before → handler →
- * hooks.after → event → serialize`
+ * `parse → validate → authorize → scope (tenant + policy filter) → hooks.before → write
+ * (in a transaction: the row, then onWrite hooks) → commit → after-commit hooks and event
+ * (failures logged, never sent) → serialize`
  *
  * Authorization is two-step and deny-by-default:
  * 1. Is the action allowed at all? `create`: `can(actor, "<model>.create", input)`. Row actions (list,
@@ -38,6 +39,7 @@ import {
   type DataRecord,
   type Repository,
   type Scope,
+  type WriteOptions,
 } from '../data/repository.ts'
 import type { Database } from '../database/types.ts'
 import type { ModelDefinition } from '../model/define-model.ts'
@@ -55,6 +57,8 @@ import {
   type ResourceAction,
   type ResourceContext,
   routeEnabled,
+  type WriteChange,
+  type WriteContext,
 } from './resource.ts'
 
 /** Per-request state set by the app middleware. */
@@ -84,8 +88,44 @@ export interface HttpEnv {
   Variables: { sv: RequestState }
 }
 
+/**
+ * The `resource.onWrite` hook payload: run inside the write's transaction for every create,
+ * update, delete and restore made through the API. This is where audit belongs (an audit sink
+ * bound to `db` writes in the same transaction, so audit and data never disagree). Throwing rolls
+ * the write back.
+ */
+export interface ResourceOnWritePayload {
+  readonly resource: string
+  /** The permission type (`deal`). */
+  readonly type: string
+  readonly action: WriteChange['action']
+  readonly record: DataRecord
+  readonly previous?: DataRecord
+  readonly actor: Actor | null
+  readonly tenantId: string | undefined
+  readonly requestId: string
+  /** The model's `audit` option. */
+  readonly audited: boolean
+  /** The transaction the write runs in. */
+  readonly db: Database
+}
+
+/**
+ * The `resource.afterCommit` hook payload: run after the commit. Handlers observe; a failure is
+ * logged and never changes the response.
+ */
+export type ResourceAfterCommitPayload = Omit<ResourceOnWritePayload, 'db'>
+
 /** Deepest row an offset page may reach (`page[number] × page[size]`); use cursors beyond it. */
 export const MAX_OFFSET = 10_000
+
+/** The `after*` hook name per write action, for after-commit failure logs. */
+const LEGACY_HOOK: Readonly<Record<WriteChange['action'], string>> = {
+  create: 'afterCreate',
+  update: 'afterUpdate',
+  delete: 'afterDelete',
+  restore: 'afterRestore',
+}
 
 /** Most relations one request may include. */
 const MAX_INCLUDES = 10
@@ -191,6 +231,12 @@ export function registerResourceRoutes(
     s.labels = labels
     return s
   }
+  const nameOf = (target: Parameters<ResourceContext['repositoryFor']>[0]): string =>
+    typeof target === 'string'
+      ? target
+      : 'definition' in target
+        ? target.definition.name
+        : target.name
   const ctxOf = (s: RequestState): ResourceContext => ({
     model,
     actor: s.actor,
@@ -198,19 +244,105 @@ export function registerResourceRoutes(
     requestId: s.requestId,
     locale: s.locale,
     repository: repo,
-    repositoryFor: (target) =>
-      repoFor(
-        deps.registry.require(
-          typeof target === 'string'
-            ? target
-            : 'definition' in target
-              ? target.definition.name
-              : target.name,
-        ),
-      ),
+    repositoryFor: (target) => repoFor(deps.registry.require(nameOf(target))),
     scope: s.tenantId !== undefined ? { tenantId: s.tenantId } : {},
     app: deps.app,
   })
+
+  /** The context for `onWrite`: every repository writes through the transaction `tx`. */
+  const writeCtxOf = (s: RequestState, tx: Database): WriteContext => {
+    const onTx = (target: ModelDefinition): Repository =>
+      createRepository({
+        db: tx,
+        model: target,
+        registry: deps.registry,
+        ids: deps.ids,
+        now: deps.now,
+      })
+    return {
+      ...ctxOf(s),
+      db: tx,
+      repository: onTx(model),
+      repositoryFor: (target) => onTx(deps.registry.require(nameOf(target))),
+    }
+  }
+
+  /**
+   * Stage 1, inside the transaction: the resource's `onWrite`, then `resource.onWrite` handlers
+   * (audit). Any throw rolls the write back.
+   */
+  const inTransaction = (
+    s: RequestState,
+    action: WriteChange['action'],
+    previous?: DataRecord,
+  ): WriteOptions => ({
+    onWrite: async (record, tx) => {
+      const change: WriteChange = { action, record, ...(previous ? { previous } : {}) }
+      await resource.hooks?.onWrite?.(change, writeCtxOf(s, tx))
+      const payload: ResourceOnWritePayload = {
+        resource: model.name,
+        type: model.permission,
+        action,
+        record,
+        ...(previous ? { previous } : {}),
+        actor: s.actor,
+        tenantId: s.tenantId,
+        requestId: s.requestId,
+        audited: model.options.audit,
+        db: tx,
+      }
+      await deps.hooks.run('resource.onWrite', payload)
+    },
+  })
+
+  /**
+   * Stage 2, after the commit: the `after*` hook, `afterCommit`, `resource.afterCommit` handlers
+   * and the domain event, each on its own. The write has happened, so a failure is logged and
+   * never changes the response: a 500 here would make the client retry a write that succeeded.
+   */
+  const afterCommit = async (
+    s: RequestState,
+    change: WriteChange,
+    legacy: (() => void | Promise<void>) | undefined,
+    event: string,
+  ): Promise<void> => {
+    const payload: ResourceAfterCommitPayload = {
+      resource: model.name,
+      type: model.permission,
+      action: change.action,
+      record: change.record,
+      ...(change.previous ? { previous: change.previous } : {}),
+      actor: s.actor,
+      tenantId: s.tenantId,
+      requestId: s.requestId,
+      audited: model.options.audit,
+    }
+    const own = resource.hooks?.afterCommit
+    const steps: (readonly [string, (() => unknown) | undefined])[] = [
+      [LEGACY_HOOK[change.action], legacy],
+      ['afterCommit', own && (() => own(change, ctxOf(s)))],
+      ['resource.afterCommit', () => deps.hooks.run('resource.afterCommit', payload)],
+      ['event', () => emit(event, change.record, s)],
+    ]
+    for (const [stage, run] of steps) {
+      if (!run) continue
+      try {
+        await run()
+      } catch (error) {
+        deps.logger.error('A hook failed after the commit; the write itself succeeded', {
+          stage,
+          resource: model.name,
+          action: change.action,
+          id: change.record.id,
+          requestId: s.requestId,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message, stack: error.stack }
+              : String(error),
+        })
+      }
+    }
+  }
 
   /** Step 1: may the actor perform this action at all? */
   const authorize = async (
@@ -629,13 +761,22 @@ export function registerResourceRoutes(
       input = (await resource.hooks?.beforeCreate?.(input, ctxOf(s))) ?? input
       // The created row must satisfy the create policy (checked in the transaction) and may only
       // reference rows the actor can see.
-      const created = await repo.create(input, {
-        ...(s.tenantId !== undefined ? { tenantId: s.tenantId } : {}),
-        check: await policyFilter(model, s, ACTION_PERMISSIONS.create),
-        references: await referenceFilters(input, s),
-      })
-      await resource.hooks?.afterCreate?.(created, ctxOf(s))
-      await emit('created', created, s)
+      const created = await repo.create(
+        input,
+        {
+          ...(s.tenantId !== undefined ? { tenantId: s.tenantId } : {}),
+          check: await policyFilter(model, s, ACTION_PERMISSIONS.create),
+          references: await referenceFilters(input, s),
+        },
+        inTransaction(s, 'create'),
+      )
+      const afterCreate = resource.hooks?.afterCreate
+      await afterCommit(
+        s,
+        { action: 'create', record: created },
+        afterCreate && (() => afterCreate(created, ctxOf(s))),
+        'created',
+      )
       c.header('Location', `${base}/${created.id}`)
       return c.json(await respond(created, s), 201)
     })
@@ -664,10 +805,16 @@ export function registerResourceRoutes(
         await scopeFor(s, ACTION_PERMISSIONS.update, {
           references: await referenceFilters(patch, s),
         }),
+        inTransaction(s, 'update', existing),
       )
       if (!updated) throw new NotFoundError(model.label)
-      await resource.hooks?.afterUpdate?.(updated, existing, ctxOf(s))
-      await emit('updated', updated, s)
+      const afterUpdate = resource.hooks?.afterUpdate
+      await afterCommit(
+        s,
+        { action: 'update', record: updated, previous: existing },
+        afterUpdate && (() => afterUpdate(updated, existing, ctxOf(s))),
+        'updated',
+      )
       return c.json(await respond(updated, s), 200)
     })
   }
@@ -679,11 +826,19 @@ export function registerResourceRoutes(
       const existing = await findVisible(c.req.param('id'), s, ACTION_PERMISSIONS.delete)
       await authorize(s, 'delete', existing)
       await resource.hooks?.beforeDelete?.(existing, ctxOf(s))
-      if (!(await repo.delete(existing.id, await scopeFor(s, ACTION_PERMISSIONS.delete)))) {
-        throw new NotFoundError(model.label)
-      }
-      await resource.hooks?.afterDelete?.(existing, ctxOf(s))
-      await emit('deleted', existing, s)
+      const deleted = await repo.delete(
+        existing.id,
+        await scopeFor(s, ACTION_PERMISSIONS.delete),
+        inTransaction(s, 'delete'),
+      )
+      if (!deleted) throw new NotFoundError(model.label)
+      const afterDelete = resource.hooks?.afterDelete
+      await afterCommit(
+        s,
+        { action: 'delete', record: existing },
+        afterDelete && (() => afterDelete(existing, ctxOf(s))),
+        'deleted',
+      )
       return c.body(null, 204)
     })
   }
@@ -698,10 +853,16 @@ export function registerResourceRoutes(
       const restored = await repo.restore(
         existing.id,
         await scopeFor(s, ACTION_PERMISSIONS.restore),
+        inTransaction(s, 'restore'),
       )
       if (!restored) throw new NotFoundError(model.label)
-      await resource.hooks?.afterRestore?.(restored, ctxOf(s))
-      await emit('restored', restored, s)
+      const afterRestore = resource.hooks?.afterRestore
+      await afterCommit(
+        s,
+        { action: 'restore', record: restored },
+        afterRestore && (() => afterRestore(restored, ctxOf(s))),
+        'restored',
+      )
       return c.json(await respond(restored, s), 200)
     })
   }

@@ -7,6 +7,7 @@
 import type { Actor } from '../contracts/index.ts'
 import type { Application } from '../core/index.ts'
 import type { DataRecord, Repository, Scope } from '../data/repository.ts'
+import type { Database } from '../database/types.ts'
 import type { AnyModel, ModelDefinition } from '../model/define-model.ts'
 
 /** The standard actions and their permission suffixes. */
@@ -42,10 +43,39 @@ export interface ResourceContext {
   readonly app: Application
 }
 
+/** A write the API made: what happened, to which row, and the row before an update. */
+export interface WriteChange {
+  readonly action: 'create' | 'update' | 'delete' | 'restore'
+  /** The row as written (for a delete: the row as it was). */
+  readonly record: DataRecord
+  /** The row before the change (updates only). */
+  readonly previous?: DataRecord
+}
+
+/**
+ * What an `onWrite` hook receives: the request context, bound to the write's transaction.
+ * `repository` and `repositoryFor` write through the same transaction, so their changes commit or
+ * roll back with the write.
+ */
+export interface WriteContext extends ResourceContext {
+  /** The transaction the write runs in. */
+  readonly db: Database
+}
+
 /** A hook may return a replacement value, or nothing to keep the original. */
 type MaybeReplace<T> = T | undefined | Promise<T | undefined>
 
-/** Per-resource lifecycle hooks (docs/06 §5.3). Throw a Strutvane error to stop the request. */
+/**
+ * Per-resource lifecycle hooks (docs/06 §5.3). Throw a Strutvane error to stop the request.
+ *
+ * Writes have two stages after the `before*` hooks:
+ * 1. {@link ResourceHooks.onWrite} runs **inside** the write's transaction. Throwing rolls the
+ *    write back and answers with that error. Use it for work that must happen with the write.
+ * 2. After the commit, `after*`, {@link ResourceHooks.afterCommit} and the domain event run. The
+ *    write has happened, so a failure there is **logged and never changes the response** (a 500
+ *    for a committed write would make the client retry and write twice). Use it for side effects
+ *    that may fail on their own: mail, webhooks, cache warming.
+ */
 export interface ResourceHooks {
   beforeList?(ctx: ResourceContext): void | Promise<void>
   beforeShow?(id: string, ctx: ResourceContext): void | Promise<void>
@@ -53,16 +83,36 @@ export interface ResourceHooks {
     input: Record<string, unknown>,
     ctx: ResourceContext,
   ): MaybeReplace<Record<string, unknown>>
+  /**
+   * Inside the transaction, for create, update, delete and restore. Throwing rolls back.
+   *
+   * @example
+   * onWrite: async (change, ctx) => {
+   *   await ctx.repositoryFor('Ledger').create({ note: `${change.action} ${change.record.id}` }, ctx.scope)
+   * }
+   */
+  onWrite?(change: WriteChange, ctx: WriteContext): void | Promise<void>
+  /**
+   * After the commit, for every write action. A failure is logged, never sent to the client.
+   *
+   * @example
+   * afterCommit: async (change) => { await webhooks.send('deal.changed', change.record.id) }
+   */
+  afterCommit?(change: WriteChange, ctx: ResourceContext): void | Promise<void>
+  /** After the commit (a failure is logged, never sent to the client). */
   afterCreate?(record: DataRecord, ctx: ResourceContext): void | Promise<void>
   beforeUpdate?(
     patch: Record<string, unknown>,
     existing: DataRecord,
     ctx: ResourceContext,
   ): MaybeReplace<Record<string, unknown>>
+  /** After the commit (a failure is logged, never sent to the client). */
   afterUpdate?(record: DataRecord, previous: DataRecord, ctx: ResourceContext): void | Promise<void>
   beforeDelete?(record: DataRecord, ctx: ResourceContext): void | Promise<void>
+  /** After the commit (a failure is logged, never sent to the client). */
   afterDelete?(record: DataRecord, ctx: ResourceContext): void | Promise<void>
   beforeRestore?(record: DataRecord, ctx: ResourceContext): void | Promise<void>
+  /** After the commit (a failure is logged, never sent to the client). */
   afterRestore?(record: DataRecord, ctx: ResourceContext): void | Promise<void>
   /** Last chance to shape each record in a response (after hidden fields are removed). */
   transformResponse?(

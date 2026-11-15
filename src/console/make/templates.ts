@@ -271,6 +271,8 @@ export const RESOURCE_HOOKS: readonly string[] = [
   'afterDelete',
   'beforeRestore',
   'afterRestore',
+  'onWrite',
+  'afterCommit',
 ]
 
 /** Parameters of each hook, matching `ResourceHooks` in `@strutvane/framework`. */
@@ -283,6 +285,8 @@ const HOOK_PARAMS: Readonly<Record<string, readonly string[]>> = {
   afterDelete: ['record', 'ctx'],
   beforeRestore: ['record', 'ctx'],
   afterRestore: ['record', 'ctx'],
+  onWrite: ['change', 'ctx'],
+  afterCommit: ['change', 'ctx'],
 }
 
 /** `app/resources/<name>.resource.ts`. */

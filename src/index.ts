@@ -21,6 +21,7 @@ export {
   type RepositoryOptions,
   type Scope,
   TenantRequiredError,
+  type WriteOptions,
 } from './data/repository.ts'
 export {
   connectDatabase,
@@ -80,8 +81,15 @@ export {
   type ResourceConfig,
   type ResourceContext,
   type ResourceHooks,
+  type WriteChange,
+  type WriteContext,
 } from './http/resource.ts'
-export { type HttpBindings, MAX_OFFSET } from './http/resource-routes.ts'
+export {
+  type HttpBindings,
+  MAX_OFFSET,
+  type ResourceAfterCommitPayload,
+  type ResourceOnWritePayload,
+} from './http/resource-routes.ts'
 export {
   type RouteContext,
   type RouteDefinition,
