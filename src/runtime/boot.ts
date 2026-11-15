@@ -55,7 +55,11 @@ export function mergeResources(
   return models.map((m) => byName.get(m.definition.name) ?? m)
 }
 
-/** Boot a loaded project. Shuts the app down again if building the HTTP app fails. */
+/**
+ * Boot a loaded project. Shuts the app down again if a provider fails to boot or building the
+ * HTTP app fails, so providers that already started (database pools, queue connections) are
+ * stopped instead of keeping the process alive behind the error.
+ */
 export async function bootProject(
   project: LoadedProject,
   options: {
@@ -73,8 +77,8 @@ export async function bootProject(
   const env = firstAppEnv(options.env, appConfig?.env, processAppEnv()) ?? 'production'
   const app = createApp({ config: project.config, providers: project.providers })
   app.container.value(ProjectModelsToken, project.models)
-  await app.boot()
   try {
+    await app.boot()
     const api = project.config['api'] as ApiConfig | undefined
     const http = createHttpApp(app, {
       resources: mergeResources(project.models, project.resources),
