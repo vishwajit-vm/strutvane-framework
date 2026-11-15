@@ -59,17 +59,30 @@ const attempt = (url: string): Promise<string> =>
     (e: unknown) => `failed ${String((e as { cause?: { code?: string } }).cause?.code ?? e)}`,
   )
 
+/**
+ * A handler that takes `ms` to answer, and a promise that resolves once a request reached it.
+ * Tests wait for that instead of sleeping: under load a fixed sleep can end before the request
+ * has even arrived, and a connection with no request yet is idle, so close() rightly drops it.
+ */
+function slowHandler(ms: number) {
+  let arrived!: () => void
+  const started = new Promise<void>((resolve) => {
+    arrived = resolve
+  })
+  const handler = async () => {
+    arrived()
+    await sleep(ms)
+    return new Response('done')
+  }
+  return { handler, started }
+}
+
 describe('serve: close() drains in-flight requests', () => {
   it('a request in flight when close() is called still gets its full response', async () => {
-    server = await serve(
-      async () => {
-        await sleep(300)
-        return new Response('done')
-      },
-      { port: 0 },
-    )
+    const slow = slowHandler(300)
+    server = await serve(slow.handler, { port: 0 })
     const inFlight = attempt(`${server.url}/slow`)
-    await sleep(50)
+    await slow.started
     const closing = server.close()
     expect(await inFlight).toBe('200 done')
     await closing
@@ -77,16 +90,11 @@ describe('serve: close() drains in-flight requests', () => {
   })
 
   it('no new connections are accepted while draining', async () => {
-    server = await serve(
-      async () => {
-        await sleep(300)
-        return new Response('done')
-      },
-      { port: 0 },
-    )
+    const slow = slowHandler(300)
+    server = await serve(slow.handler, { port: 0 })
     const url = server.url
     const inFlight = attempt(`${url}/slow`)
-    await sleep(50)
+    await slow.started
     const closing = server.close()
     expect(await attempt(`${url}/late`)).toMatch(/^failed/)
     expect(await inFlight).toBe('200 done')
@@ -96,19 +104,24 @@ describe('serve: close() drains in-flight requests', () => {
 
   it('a request that outlives the grace period is cut off, so close() always finishes', async () => {
     let signal: AbortSignal | undefined
+    let arrived!: () => void
+    const started = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
     server = await serve(
       (request) => {
         signal = request.signal
+        arrived()
         return new Promise<Response>(() => undefined) // never answers
       },
       { port: 0 },
     )
     const stuck = attempt(`${server.url}/stuck`)
-    await sleep(50)
-    const started = Date.now()
+    await started
+    const closing = Date.now()
     await server.close({ graceMs: 200 })
     server = undefined
-    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(Date.now() - closing).toBeLessThan(5_000)
     expect(await stuck).toMatch(/^failed/)
     // The handler learns the client is gone, so it can stop its work.
     for (let i = 0; i < 50 && !signal?.aborted; i++) await sleep(20)

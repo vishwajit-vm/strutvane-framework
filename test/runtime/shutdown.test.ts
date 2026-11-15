@@ -98,6 +98,7 @@ describe('graceful shutdown of a real served app (child process)', () => {
         'app/http/routes/slow.ts': `import { route } from '${IMPORTS.http}'
 export default [
   route.get('/slow', { public: true, handler: async () => {
+    process.send?.({ type: 'started' })
     await new Promise((r) => setTimeout(r, 700))
     return { finished: true }
   } }),
@@ -128,11 +129,18 @@ process.disconnect()
       child.once('message', (m) => resolve((m as { url: string }).url))
       child.once('exit', () => reject(new Error(`child exited early: ${stderr}`)))
     })
+    // Wait until the request reached the handler (a fixed sleep can end first under load, and a
+    // connection without a request yet is idle, so the drain rightly drops it).
+    const started = new Promise<void>((resolve) =>
+      child.on('message', (m) => {
+        if ((m as { type?: string }).type === 'started') resolve()
+      }),
+    )
     const inFlight = fetch(`${url}/api/v1/slow`).then(async (r) => ({
       status: r.status,
       body: await r.json(),
     }))
-    await new Promise((r) => setTimeout(r, 200))
+    await started
     child.send(SHUTDOWN_MESSAGE)
     expect(await inFlight).toEqual({ status: 200, body: { finished: true } })
     expect(await exited).toBe(0)
