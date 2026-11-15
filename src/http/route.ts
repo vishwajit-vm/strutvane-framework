@@ -135,6 +135,12 @@ export interface RouteOptions<Params = Readonly<Record<string, string>>> {
    * body limit (1 MiB). Multipart limits still apply per file on top of it.
    */
   readonly bodyLimit?: number
+  /**
+   * Request timeout for this route in ms (`0` = none). Default: the app's `requestTimeoutMs`, or
+   * `UPLOAD_REQUEST_TIMEOUT_MS` for a route that raises `bodyLimit` (an upload endpoint, whose
+   * multipart parser enforces its own idle and total deadlines while the body streams in).
+   */
+  readonly timeoutMs?: number
   readonly handler: RouteHandler<Params>
 }
 

@@ -55,10 +55,31 @@ export function mergeResources(
   return models.map((m) => byName.get(m.definition.name) ?? m)
 }
 
+/** Default upper bound for booting every provider ({@link bootProject} `bootTimeoutMs`). */
+export const DEFAULT_BOOT_TIMEOUT_MS = 30_000
+
 /**
- * Boot a loaded project. Shuts the app down again if a provider fails to boot or building the
- * HTTP app fails, so providers that already started (database pools, queue connections) are
- * stopped instead of keeping the process alive behind the error.
+ * A provider's `boot()` never settled (a connection that neither succeeds nor fails, a hook that
+ * waits forever). Booting is abandoned and the providers that did boot are shut down, so
+ * `sv start` reports this and exits instead of hanging silently.
+ */
+export class BootTimeoutError extends Error {
+  override readonly name = 'BootTimeoutError'
+  /** Stable code the CLI matches (never the message). */
+  readonly code = 'BOOT_TIMEOUT'
+  readonly timeoutMs: number
+  constructor(timeoutMs: number) {
+    super(
+      `The app did not finish booting within ${timeoutMs} ms: a provider's boot() never settled (check database, cache or mail connections).`,
+    )
+    this.timeoutMs = timeoutMs
+  }
+}
+
+/**
+ * Boot a loaded project. When booting fails or times out, or building the HTTP app fails, the
+ * app is shut down again, so the providers that did boot release their connections and timers
+ * (otherwise the process could not exit after reporting the error).
  */
 export async function bootProject(
   project: LoadedProject,
@@ -68,8 +89,13 @@ export async function bootProject(
     readonly web?: string
     /** Let unmatched UI requests fall through to the dev server (`sv dev` with Vite). */
     readonly uiFallthrough?: boolean
+    /** Upper bound for booting every provider. Default {@link DEFAULT_BOOT_TIMEOUT_MS}. */
+    readonly bootTimeoutMs?: number
   } = {},
 ): Promise<BootedProject> {
+  const bootTimeoutMs = options.bootTimeoutMs ?? DEFAULT_BOOT_TIMEOUT_MS
+  if (!Number.isFinite(bootTimeoutMs) || bootTimeoutMs <= 0)
+    throw new RangeError('bootTimeoutMs must be a positive number')
   const appConfig = project.config['app'] as
     | { env?: string; name?: string; publicUrl?: string; trustProxy?: TrustProxy }
     | undefined
@@ -77,8 +103,10 @@ export async function bootProject(
   const env = firstAppEnv(options.env, appConfig?.env, processAppEnv()) ?? 'production'
   const app = createApp({ config: project.config, providers: project.providers })
   app.container.value(ProjectModelsToken, project.models)
+  // One guarded block (kernel and resilience audits both fixed this): a failed or timed-out boot,
+  // or a failure building the HTTP app, shuts down whatever providers did boot.
   try {
-    await app.boot()
+    await withDeadline(app.boot(), bootTimeoutMs)
     const api = project.config['api'] as ApiConfig | undefined
     const http = createHttpApp(app, {
       resources: mergeResources(project.models, project.resources),
@@ -99,5 +127,20 @@ export async function bootProject(
   } catch (error) {
     await app.shutdown()
     throw error
+  }
+}
+
+/** Settle like `work`, or reject with {@link BootTimeoutError} after `ms`. */
+async function withDeadline(work: Promise<void>, ms: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new BootTimeoutError(ms)), ms)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
   }
 }

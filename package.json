@@ -103,7 +103,9 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "changeset publish",
-    "test:perf": "vitest run --config vitest.perf.config.ts"
+    "test:perf": "vitest run --config vitest.perf.config.ts",
+    "test:soak": "vitest run --config vitest.soak.config.ts",
+    "test:tripwire": "vitest run --config vitest.tripwire.config.ts"
   },
   "dependencies": {
     "@clack/prompts": "1.9.0",

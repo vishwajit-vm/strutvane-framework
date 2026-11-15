@@ -29,7 +29,7 @@ import {
 import { importDefault, type LoadedProject, loadProject } from './runtime/project.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
 import { assertCanListen } from './runtime/serve.ts'
-import { startServer, stopOnSignals } from './runtime/server.ts'
+import { exitCodeForStop, startServer, stopOnSignals } from './runtime/server.ts'
 
 /** The parts of the CLI's command context these commands use. */
 export interface CommandContextLike {
@@ -289,8 +289,10 @@ const startCommand: ContributedCommand = {
       ...(host ? { hostname: host } : {}),
     })
     ctx.out.success(`Listening on ${started.server.url} (APP_ENV=${started.project.env})`)
-    await stopOnSignals(started)
-    return undefined
+    // Keep the signal's exit code (143 for SIGTERM, ADR-0015), so a process manager can tell a
+    // requested stop from a crash; Ctrl+C is reported as 130 by the CLI itself.
+    const reason = await stopOnSignals(started)
+    return reason === 'SIGTERM' ? { exitCode: exitCodeForStop(reason) } : undefined
   },
 }
 
@@ -320,16 +322,10 @@ const devCommand: ContributedCommand = {
       .map((p) => `--watch-path=${p}`)
     const args = [...watch, main, root, str(ctx.flags['port']) ?? '', str(ctx.flags['host']) ?? '']
     ctx.out.info('Watching app/, config/ and .env for changes.')
-    const code = await new Promise<number>((resolve) => {
-      // The child re-reads nothing on its own: it gets the CLI's APP_ENV explicitly.
-      const appEnv = commandAppEnv(ctx)
-      const env = appEnv !== undefined ? { ...process.env, APP_ENV: appEnv } : process.env
-      const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit', env })
-      const forward = (signal: NodeJS.Signals) => () => child.kill(signal)
-      process.on('SIGINT', forward('SIGINT'))
-      process.on('SIGTERM', forward('SIGTERM'))
-      child.on('exit', (exitCode) => resolve(exitCode ?? 0))
-    })
+    // The child re-reads nothing on its own: it gets the CLI's APP_ENV explicitly.
+    const appEnv = commandAppEnv(ctx)
+    const env = appEnv !== undefined ? { ...process.env, APP_ENV: appEnv } : process.env
+    const code = await runChild(args, { cwd: root, env, forwardSignals: true })
     return code === 0 ? undefined : { exitCode: code }
   },
 }
@@ -364,14 +360,52 @@ const buildCommand: ContributedCommand = {
     )
     const vite = await projectViteBin(root)
     if (vite === undefined) return undefined
-    const code = await new Promise<number>((resolve) => {
-      spawn(process.execPath, [vite, 'build'], { cwd: root, stdio: 'inherit' }).on('exit', (c) =>
-        resolve(c ?? 1),
-      )
-    })
+    const code = await runChild([vite, 'build'], { cwd: root })
     if (code === 0) ctx.out.success('Web UI built')
     return code === 0 ? undefined : { exitCode: code }
   },
+}
+
+/**
+ * Run `node <args>` with inherited stdio and resolve with its exit code. Never rejects and never
+ * crashes the CLI: a child that cannot start (a missing working directory, EMFILE, EAGAIN) emits
+ * `error`, possibly without `exit`; with no listener that is an uncaught exception, and waiting
+ * for `exit` alone would hang. Such a child counts as exit code 1. With `forwardSignals`, Ctrl+C
+ * and SIGTERM are passed to the child, and the listeners are removed once it is gone.
+ */
+export function runChild(
+  args: readonly string[],
+  options: {
+    readonly cwd: string
+    readonly env?: NodeJS.ProcessEnv
+    readonly forwardSignals?: boolean
+  },
+): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [...args], {
+      cwd: options.cwd,
+      stdio: 'inherit',
+      ...(options.env ? { env: options.env } : {}),
+    })
+    const onSigint = (): void => void child.kill('SIGINT')
+    const onSigterm = (): void => void child.kill('SIGTERM')
+    if (options.forwardSignals) {
+      process.on('SIGINT', onSigint)
+      process.on('SIGTERM', onSigterm)
+    }
+    let settled = false
+    const done = (code: number): void => {
+      if (settled) return
+      settled = true
+      process.off('SIGINT', onSigint)
+      process.off('SIGTERM', onSigterm)
+      resolve(code)
+    }
+    child.on('error', () => done(1))
+    child.on('exit', (code, signal) =>
+      done(code ?? (signal === 'SIGINT' ? 130 : signal === 'SIGTERM' ? 143 : 1)),
+    )
+  })
 }
 
 /** Every contributed command. */

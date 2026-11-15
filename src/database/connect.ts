@@ -48,6 +48,18 @@ export type DatabaseConfig =
          * for a public API). Long-running jobs should use their own connection settings.
          */
         readonly statementTimeoutMs?: number
+        /**
+         * How long a query waits for a pooled connection, including opening a new one, in
+         * milliseconds. Default {@link DEFAULT_CONNECTION_TIMEOUT_MS}. Bounds the wait when the
+         * pool is exhausted or the server is unreachable, instead of queueing forever.
+         */
+        readonly connectionTimeoutMs?: number
+        /**
+         * Client-side limit per query, in milliseconds: the backstop when the server stops
+         * answering (frozen, partitioned), where `statement_timeout` cannot fire. Default
+         * `statementTimeoutMs + 2000`, or 30 s when the statement timeout is off; `0` disables it.
+         */
+        readonly queryTimeoutMs?: number
       }
       readonly auth?: PostgresAuth
     }
@@ -57,6 +69,9 @@ export type DatabaseConfig =
 
 /** Default Postgres `statement_timeout` (ms) for pooled connections. */
 export const DEFAULT_STATEMENT_TIMEOUT_MS = 5_000
+
+/** Default wait (ms) for a pooled Postgres connection before the query fails. */
+export const DEFAULT_CONNECTION_TIMEOUT_MS = 5_000
 
 /** Thrown for configured features that are designed but not implemented yet. */
 export class NotImplementedError extends Error {
@@ -74,6 +89,13 @@ export function pgPoolOptions(config: PostgresConfig): Record<string, unknown> {
   const statementTimeout = config.pool?.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS
   if (!Number.isInteger(statementTimeout) || statementTimeout < 0)
     throw new RangeError('pool.statementTimeoutMs must be a non-negative integer')
+  const connectionTimeout = config.pool?.connectionTimeoutMs ?? DEFAULT_CONNECTION_TIMEOUT_MS
+  if (!Number.isInteger(connectionTimeout) || connectionTimeout < 0)
+    throw new RangeError('pool.connectionTimeoutMs must be a non-negative integer')
+  const queryTimeout =
+    config.pool?.queryTimeoutMs ?? (statementTimeout > 0 ? statementTimeout + 2_000 : 30_000)
+  if (!Number.isInteger(queryTimeout) || queryTimeout < 0)
+    throw new RangeError('pool.queryTimeoutMs must be a non-negative integer')
   return {
     ...(config.url ? { connectionString: config.url } : {}),
     ...(config.host ? { host: config.host } : {}),
@@ -89,6 +111,11 @@ export function pgPoolOptions(config: PostgresConfig): Record<string, unknown> {
     // A default cap on every statement: one expensive query (a deep page, a count over a huge
     // table) must not hold a connection forever. `0` disables it explicitly.
     ...(statementTimeout > 0 ? { statement_timeout: statementTimeout } : {}),
+    // Client-side bounds (node-postgres has none by default): a pool with every connection taken,
+    // an unreachable host, or a server that stops answering mid-query would otherwise hold the
+    // request, and its connection, forever. `0` means no limit in node-postgres too.
+    connectionTimeoutMillis: connectionTimeout,
+    ...(queryTimeout > 0 ? { query_timeout: queryTimeout } : {}),
   }
 }
 

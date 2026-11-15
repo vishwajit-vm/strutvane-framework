@@ -94,6 +94,9 @@ const DEVKIT_EXIT: Readonly<Record<string, ExitCode>> = {
   INTERRUPTED_TRANSACTION: EXIT.FAILURE,
   // Not devkit's, but matched the same way: the registry compiler refusing to write via a link.
   UNSAFE_OUTPUT_PATH: EXIT.VALIDATION,
+  // The framework's: a project file that cannot be loaded, and a boot that never finished.
+  PROJECT_INVALID: EXIT.VALIDATION,
+  BOOT_TIMEOUT: EXIT.FAILURE,
 }
 
 /**
@@ -202,6 +205,23 @@ function stringParams(params: ErrorParams, extra: Record<string, IssueParam>): E
   return { ...params, ...extra }
 }
 
+/**
+ * `true` for core's `ProviderError` raised while a provider booted: a service the app needs at
+ * startup (database, cache, mail) failed. That is the environment, not a bug. Matched by the stable
+ * `name` and the documented `phase` and `provider` fields, never with `instanceof` (core may be
+ * loaded from the project).
+ */
+function isBootFailure(value: unknown): value is Error & { readonly provider: string } {
+  return (
+    value instanceof Error &&
+    value.name === 'ProviderError' &&
+    'phase' in value &&
+    value.phase === 'boot' &&
+    'provider' in value &&
+    typeof value.provider === 'string'
+  )
+}
+
 /** Normalise anything thrown into a {@link CliFailure}. Never throws. */
 export function toFailure(error: unknown): CliFailure {
   if (error instanceof CliError) {
@@ -235,6 +255,16 @@ export function toFailure(error: unknown): CliFailure {
       exitCode: EXIT.VALIDATION,
       // Strings, so the catalog never formats a port as "3,000".
       params: { host: error.host, port: String(error.port), detail: error.message },
+      issues: [],
+      error,
+      unexpected: false,
+    }
+  }
+  if (isBootFailure(error)) {
+    return {
+      code: 'BOOT_FAILED',
+      exitCode: EXIT.FAILURE,
+      params: { provider: error.provider, detail: error.message },
       issues: [],
       error,
       unexpected: false,

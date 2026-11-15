@@ -263,3 +263,16 @@ describe('sizes', () => {
     expect(formatBytes(3 * 1024 ** 3)).toBe('3 GB')
   })
 })
+
+describe('parseMultipart leaves nothing running', () => {
+  it('a rejected upload leaves no timer behind (nothing delays shutdown or piles up per request)', async () => {
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length
+    const before = timers()
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        parse(form([{ name: 'f', file: { bytes: EXE, filename: 'a.exe' } }]), { maxFiles: 0 }),
+      ).rejects.toMatchObject({ code: 'TOO_MANY_FILES' })
+    }
+    expect(timers()).toBeLessThanOrEqual(before)
+  })
+})

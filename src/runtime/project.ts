@@ -26,6 +26,8 @@ import { normaliseAppEnv } from './app-env.ts'
 /** Thrown when a project file is missing or has the wrong shape. */
 export class ProjectLoadError extends Error {
   override readonly name = 'ProjectLoadError'
+  /** Stable code: the CLI reports it as a configuration error (exit 3), not as a bug. */
+  readonly code = 'PROJECT_INVALID'
 }
 
 /** A loaded project. */
@@ -106,10 +108,23 @@ export async function loadProject(
   if (options.dotenv !== false) loadDotEnv(root)
   const rel = (file: string) => relative(root, file).replaceAll('\\', '/')
 
+  // A file that fails to import (a syntax error, a throw at the top level, a missing import) is
+  // reported with its path; Node's own message ("Expression expected") does not name it.
+  const load = async (file: string): Promise<unknown> => {
+    try {
+      return await importDefault(file)
+    } catch (error) {
+      throw new ProjectLoadError(
+        `${rel(file)} could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
+    }
+  }
+
   const configFile = join(root, 'strutvane.config.ts')
   if (!existsSync(configFile))
     throw new ProjectLoadError(`No strutvane.config.ts in ${root} (is this a Strutvane project?)`)
-  const main = (await importDefault(configFile)) as
+  const main = (await load(configFile)) as
     | { app?: Record<string, unknown>; providers?: unknown }
     | undefined
   if (!main || !Array.isArray(main.providers))
@@ -119,7 +134,7 @@ export async function loadProject(
 
   const config: Record<string, unknown> = {}
   for (const file of conventionFiles(root, 'config', '.ts')) {
-    config[basename(file, '.ts')] = await importDefault(file)
+    config[basename(file, '.ts')] = await load(file)
   }
   config['app'] = {
     ...(config['app'] as Record<string, unknown> | undefined),
@@ -129,21 +144,21 @@ export async function loadProject(
 
   const models: AnyModel[] = []
   for (const file of conventionFiles(root, 'app/models', '.model.ts')) {
-    const value = await importDefault(file)
+    const value = await load(file)
     if (!isModel(value))
       throw new ProjectLoadError(`${rel(file)} must default-export defineModel(...)`)
     models.push(value)
   }
   const resources: ResourceConfig[] = []
   for (const file of conventionFiles(root, 'app/resources', '.resource.ts')) {
-    const value = await importDefault(file)
+    const value = await load(file)
     if (!isResource(value))
       throw new ProjectLoadError(`${rel(file)} must default-export defineResource(Model, {...})`)
     resources.push(value)
   }
   const routes: RouteDefinition[] = []
   for (const file of conventionFiles(root, 'app/http/routes', '.ts')) {
-    const value = await importDefault(file)
+    const value = await load(file)
     if (!Array.isArray(value) || !value.every(isRouteDefinition))
       throw new ProjectLoadError(`${rel(file)} must default-export an array of route.<method>(...)`)
     routes.push(...value)

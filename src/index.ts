@@ -25,6 +25,7 @@ export {
 export {
   connectDatabase,
   type DatabaseConfig,
+  DEFAULT_CONNECTION_TIMEOUT_MS,
   DEFAULT_STATEMENT_TIMEOUT_MS,
   NotImplementedError,
   type PostgresAuth,
