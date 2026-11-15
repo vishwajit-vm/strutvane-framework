@@ -20,7 +20,7 @@ import { makeProject, projectFiles } from './project-fixture.ts'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
-  for (const c of cleanups.splice(0)) await c()
+  await Promise.all(cleanups.splice(0).map((c) => c()))
 })
 
 const IDENTITY = 'node_modules/@acme/identity'

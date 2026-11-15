@@ -86,11 +86,34 @@ export async function makeProject(
     await mkdir(dirname(join(root, path)), { recursive: true })
     await writeFile(join(root, path), content)
   }
-  // libSQL on Windows can hold the database file briefly after close(); retry, then give up
-  // quietly (it is a temp directory).
-  const cleanup = () =>
-    rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }).catch(
-      () => undefined,
-    )
-  return { root, cleanup }
+  return { root, cleanup: () => removeProject(root) }
+}
+
+/** Longest a project cleanup may take before the test run moves on. */
+const CLEANUP_DEADLINE_MS = 5_000
+
+/**
+ * Remove a test project, quickly and boundedly.
+ *
+ * libSQL (0.5.x) keeps a SQLite file open on Windows until the statement objects that used it are
+ * garbage-collected: `close()` alone does not release it. Without a collection the file stays
+ * locked for seconds (until the next major GC), and `rm` sat in its retry loop that long for
+ * every project, sequentially: under load that pushed `afterEach` hooks past their 60 s timeout.
+ * So collect first (the test workers run with `--expose-gc`), which releases the file at once,
+ * then remove with a short retry. Bounded: whatever is still locked after the deadline is left to
+ * the OS temp cleaner instead of stalling the run (it is a temp directory).
+ */
+export async function removeProject(root: string): Promise<void> {
+  ;(globalThis as { gc?: () => void }).gc?.()
+  const removal = rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }).catch(
+    () => undefined,
+  )
+  let timer: NodeJS.Timeout | undefined
+  await Promise.race([
+    removal,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, CLEANUP_DEADLINE_MS)
+    }),
+  ])
+  clearTimeout(timer)
 }

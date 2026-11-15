@@ -11,6 +11,9 @@ export default mergeConfig(
       exclude: [...configDefaults.exclude, 'test/console/fixtures/**'],
       testTimeout: 60_000,
       hookTimeout: 60_000,
+      // Lets test cleanup force a garbage collection: libSQL releases a SQLite file on Windows only
+      // when its statements are collected (see removeProject in test/runtime/project-fixture.ts).
+      execArgv: ['--expose-gc'],
       coverage: { exclude: ['src/console/bin.ts'] },
     },
   }),
