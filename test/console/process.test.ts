@@ -3,7 +3,7 @@
  * with Ctrl+C, the real spawner (Windows shell rules), prompters, contribution containment and
  * Windows path handling.
  */
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { mkdirSync, symlinkSync } from 'node:fs'
 import { join, parse } from 'node:path'
@@ -54,30 +54,44 @@ afterAll(cleanupTempDirs)
 const BIN = fileURLToPath(new URL('../../src/console/bin.ts', import.meta.url))
 
 describe('the real executable (child process)', () => {
-  const run = (cwd: string, args: string[]) =>
-    spawnSync(process.execPath, [BIN, ...args], {
-      cwd,
-      encoding: 'utf8',
-      env: { ...process.env, NO_COLOR: '1' },
+  /**
+   * Run the real bin. Asynchronous, so independent runs overlap: each one is a cold Node start
+   * that strips the types of the whole CLI from source (about a second on an idle machine, many
+   * more under load). Five of them one after another, each blocking the worker with spawnSync,
+   * is what pushed this test past its timeout on a busy machine.
+   */
+  const run = (cwd: string, args: string[]): Promise<{ status: number | null; stdout: string }> =>
+    new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [BIN, ...args], {
+        cwd,
+        env: { ...process.env, NO_COLOR: '1' },
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      let stdout = ''
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        stdout += chunk
+      })
+      child.once('error', reject)
+      child.once('close', (status) => resolve({ status, stdout }))
     })
 
-  test('--version, --json envelope on stdout, exit codes', () => {
+  test('--version, --json envelope on stdout, exit codes', async () => {
     const root = makeProject()
-    const version = run(root, ['--version'])
+    const [version, about, unknown, generated] = await Promise.all([
+      run(root, ['--version']),
+      run(root, ['about', '--json']),
+      run(root, ['nope', '--json']),
+      run(root, ['make:model', 'Tag', 'name:string', '--no-test']),
+    ])
     expect(version.status).toBe(0)
     expect(version.stdout).toMatch(/^strutvane \d+\.\d+\.\d+/)
-
-    const about = run(root, ['about', '--json'])
     expect(about.status).toBe(0)
     expect(JSON.parse(about.stdout)).toMatchObject({ schemaVersion: 1, ok: true, command: 'about' })
-
-    const unknown = run(root, ['nope', '--json'])
     expect(unknown.status).toBe(2)
     expect(JSON.parse(unknown.stdout).error.code).toBe('UNKNOWN_COMMAND')
-
-    const generated = run(root, ['make:model', 'Tag', 'name:string', '--no-test'])
     expect(generated.status).toBe(0)
-    expect(run(root, ['make:model', 'Tag', 'name:text']).status).toBe(4)
+    // This one needs the file the run above generated.
+    expect((await run(root, ['make:model', 'Tag', 'name:text'])).status).toBe(4)
   })
 })
 
