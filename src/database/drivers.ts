@@ -18,16 +18,73 @@ import {
   type TransactionOptions,
 } from './types.ts'
 
+/** PGlite's per-query options, as far as they are used here. */
+export interface PgliteQueryOptions {
+  /** Text-format parsers by type OID. */
+  readonly parsers?: Readonly<Record<number, (value: string, typeId: number) => unknown>>
+}
+
 /** The subset of the PGlite API used here (structural, so PGlite stays an optional peer). */
 export interface PgliteLike {
-  query<R>(sql: string, params?: unknown[]): Promise<{ rows: R[]; affectedRows?: number }>
+  query<R>(
+    sql: string,
+    params?: unknown[],
+    options?: PgliteQueryOptions,
+  ): Promise<{ rows: R[]; affectedRows?: number }>
   transaction<T>(fn: (tx: PgliteTxLike) => Promise<T>): Promise<T>
   close(): Promise<void>
 }
 /** A PGlite transaction handle. */
 export interface PgliteTxLike {
-  query<R>(sql: string, params?: unknown[]): Promise<{ rows: R[]; affectedRows?: number }>
+  query<R>(
+    sql: string,
+    params?: unknown[],
+    options?: PgliteQueryOptions,
+  ): Promise<{ rows: R[]; affectedRows?: number }>
 }
+
+/** Postgres type OIDs of `timestamptz` and `timestamp`. */
+const TIMESTAMPTZ_OID = 1184
+const TIMESTAMP_OID = 1114
+
+const PG_TIMESTAMP =
+  /^(\d{4,})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(?:([+-])(\d{2})(?::?(\d{2}))?(?::?(\d{2}))?)?( BC)?$/
+
+/**
+ * Parse Postgres timestamp text output (`0050-03-04 05:06:07.123+00`, `… BC`) into a `Date`
+ * exactly. JavaScript's own parser reads this non-ISO text with legacy rules that map a year
+ * below 100 to 19xx/20xx (`0050` → `1950`), so years 0001–0099 came back wrong from PGlite. A
+ * timestamp without a zone is read as UTC. Anything else (`infinity`) is an invalid `Date`, which
+ * the value layer refuses.
+ *
+ * @example
+ * parsePgTimestamp('0050-03-04 05:06:07+00').toISOString() // '0050-03-04T05:06:07.000Z'
+ */
+export function parsePgTimestamp(text: string): Date {
+  const m = PG_TIMESTAMP.exec(text)
+  if (!m) return new Date(Number.NaN)
+  const [, y, mo, d, h, mi, sec, frac, sign, oh, om, os, bc] = m
+  const year = bc ? 1 - Number(y) : Number(y)
+  const date = new Date(0)
+  // setUTCFullYear takes the year literally (no 0–99 → 1900–1999 mapping, unlike Date.UTC).
+  date.setUTCFullYear(year, Number(mo) - 1, Number(d))
+  date.setUTCHours(
+    Number(h),
+    Number(mi),
+    Number(sec),
+    Number((frac ?? '0').padEnd(3, '0').slice(0, 3)),
+  )
+  const offsetSeconds = (Number(oh ?? 0) * 60 + Number(om ?? 0)) * 60 + Number(os ?? 0)
+  return new Date(date.getTime() - (sign === '-' ? -1 : 1) * offsetSeconds * 1000)
+}
+
+/** The parsers every PGlite query runs with (see {@link parsePgTimestamp}). */
+const PGLITE_OPTIONS: PgliteQueryOptions = Object.freeze({
+  parsers: Object.freeze({
+    [TIMESTAMPTZ_OID]: (value: string) => parsePgTimestamp(value),
+    [TIMESTAMP_OID]: (value: string) => parsePgTimestamp(value),
+  }),
+})
 
 /** Wrap a PGlite instance. */
 export function pgliteDatabase(client: PgliteLike): Database {
@@ -35,16 +92,18 @@ export function pgliteDatabase(client: PgliteLike): Database {
   const fromTx = (tx: PgliteTxLike): Database => ({
     dialect: 'postgres',
     query: async <R extends Row>(sql: string, params: readonly unknown[] = []) =>
-      (await tx.query<R>(sql, [...params])).rows,
-    execute: async (sql, params = []) => (await tx.query(sql, [...params])).affectedRows ?? 0,
+      (await tx.query<R>(sql, [...params], PGLITE_OPTIONS)).rows,
+    execute: async (sql, params = []) =>
+      (await tx.query(sql, [...params], PGLITE_OPTIONS)).affectedRows ?? 0,
     transaction: (fn) => fn(fromTx(tx)), // already inside a transaction: reuse it
     close: async () => undefined,
   })
   return {
     dialect: 'postgres',
     query: async <R extends Row>(sql: string, params: readonly unknown[] = []) =>
-      (await client.query<R>(sql, [...params])).rows,
-    execute: async (sql, params = []) => (await client.query(sql, [...params])).affectedRows ?? 0,
+      (await client.query<R>(sql, [...params], PGLITE_OPTIONS)).rows,
+    execute: async (sql, params = []) =>
+      (await client.query(sql, [...params], PGLITE_OPTIONS)).affectedRows ?? 0,
     transaction: (fn, options) =>
       client.transaction(async (tx) => {
         await setTenant(fromTx(tx), options)
