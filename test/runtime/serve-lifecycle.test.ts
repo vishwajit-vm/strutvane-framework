@@ -49,3 +49,78 @@ describe('serve: errors after listening', () => {
     }
   })
 })
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/** A request whose outcome is recorded instead of thrown. */
+const attempt = (url: string): Promise<string> =>
+  fetch(url).then(
+    async (r) => `${r.status} ${await r.text()}`,
+    (e: unknown) => `failed ${String((e as { cause?: { code?: string } }).cause?.code ?? e)}`,
+  )
+
+describe('serve: close() drains in-flight requests', () => {
+  it('a request in flight when close() is called still gets its full response', async () => {
+    server = await serve(
+      async () => {
+        await sleep(300)
+        return new Response('done')
+      },
+      { port: 0 },
+    )
+    const inFlight = attempt(`${server.url}/slow`)
+    await sleep(50)
+    const closing = server.close()
+    expect(await inFlight).toBe('200 done')
+    await closing
+    server = undefined
+  })
+
+  it('no new connections are accepted while draining', async () => {
+    server = await serve(
+      async () => {
+        await sleep(300)
+        return new Response('done')
+      },
+      { port: 0 },
+    )
+    const url = server.url
+    const inFlight = attempt(`${url}/slow`)
+    await sleep(50)
+    const closing = server.close()
+    expect(await attempt(`${url}/late`)).toMatch(/^failed/)
+    expect(await inFlight).toBe('200 done')
+    await closing
+    server = undefined
+  })
+
+  it('a request that outlives the grace period is cut off, so close() always finishes', async () => {
+    let signal: AbortSignal | undefined
+    server = await serve(
+      (request) => {
+        signal = request.signal
+        return new Promise<Response>(() => undefined) // never answers
+      },
+      { port: 0 },
+    )
+    const stuck = attempt(`${server.url}/stuck`)
+    await sleep(50)
+    const started = Date.now()
+    await server.close({ graceMs: 200 })
+    server = undefined
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(await stuck).toMatch(/^failed/)
+    // The handler learns the client is gone, so it can stop its work.
+    for (let i = 0; i < 50 && !signal?.aborted; i++) await sleep(20)
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('close() is idempotent: concurrent and repeated calls share one shutdown', async () => {
+    server = await serve(() => new Response('ok'), { port: 0 })
+    const a = server.close()
+    const b = server.close()
+    await Promise.all([a, b])
+    await server.close()
+    server = undefined
+  })
+})

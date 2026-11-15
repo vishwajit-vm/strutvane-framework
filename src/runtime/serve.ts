@@ -54,8 +54,27 @@ export interface RunningServer {
   readonly port: number
   /** Where the server listens (`http://<bind address>:<port>`), not the public URL. */
   readonly url: string
-  close(): Promise<void>
+  /**
+   * Stop gracefully: stop accepting connections, close idle keep-alive connections, let requests
+   * already in flight finish (their responses carry `Connection: close`), and after `graceMs`
+   * (default {@link DEFAULT_CLOSE_GRACE_MS}) cut off whatever is left, aborting those requests'
+   * signals. Idempotent: every call returns the same shutdown.
+   */
+  close(options?: CloseOptions): Promise<void>
 }
+
+/** Options for {@link RunningServer.close}. */
+export interface CloseOptions {
+  /** How long in-flight requests may take to finish before their connections are cut. */
+  readonly graceMs?: number
+}
+
+/**
+ * Default grace period for in-flight requests on {@link RunningServer.close}. Below the usual
+ * process-manager kill delay (Docker and Kubernetes send SIGKILL 10 s and 30 s after SIGTERM),
+ * so requests drain and the app still shuts down its providers and flushes logs in time.
+ */
+export const DEFAULT_CLOSE_GRACE_MS = 8_000
 
 /** Options for {@link serve}. */
 export interface ServeOptions {
@@ -251,7 +270,9 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
   const hops = trustedHops(options.trustProxy)
   const publicUrl = parsePublicUrl(options.publicUrl)
   const bindHost = hostname.includes(':') ? `[${hostname}]` : hostname
+  const inFlight = new InFlight()
   const server = createServer((req, res) => {
+    inFlight.add(res)
     // Fires when the client disconnects before the response finished (or the server closes).
     const controller = new AbortController()
     res.once('close', () => {
@@ -299,7 +320,44 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
   })
   return Promise.resolve()
     .then(() => options.prepare?.(server))
-    .then(() => listen(server, options.port, hostname, bindHost, options.onError))
+    .then(() => listen(server, options.port, hostname, bindHost, options.onError, inFlight))
+}
+
+/**
+ * The responses still being produced, so `close()` can wait for them instead of resetting their
+ * connections (which is what `closeAllConnections()` alone does to every in-flight request).
+ */
+class InFlight {
+  readonly #open = new Set<ServerResponse>()
+  #draining = false
+  #idle: (() => void) | undefined
+
+  add(res: ServerResponse): void {
+    // A request that arrives on a kept-alive connection during a drain is still answered, but
+    // its connection closes afterwards so the client reconnects elsewhere.
+    if (this.#draining) res.shouldKeepAlive = false
+    this.#open.add(res)
+    res.once('close', () => {
+      this.#open.delete(res)
+      if (this.#open.size === 0) this.#idle?.()
+    })
+  }
+
+  /** Resolve once nothing is in flight, or after `graceMs`, whichever comes first. */
+  drain(graceMs: number): Promise<void> {
+    this.#draining = true
+    for (const res of this.#open) if (!res.headersSent) res.shouldKeepAlive = false
+    if (this.#open.size === 0) return Promise.resolve()
+    return new Promise((resolve) => {
+      // Ref'd on purpose: the deadline must fire even if nothing else keeps the loop alive.
+      const timer = setTimeout(done, graceMs)
+      function done(): void {
+        clearTimeout(timer)
+        resolve()
+      }
+      this.#idle = done
+    })
+  }
 }
 
 /**
@@ -408,6 +466,7 @@ function listen(
   hostname: string,
   bindHost: string,
   onError: ((error: unknown) => void) | undefined,
+  inFlight: InFlight,
 ): Promise<RunningServer> {
   return new Promise((resolve, reject) => {
     const onListenError = (error: Error): void => {
@@ -428,14 +487,28 @@ function listen(
         }
       })
       const { port } = server.address() as AddressInfo
+      let closing: Promise<void> | undefined
+      const close = async (graceMs: number): Promise<void> => {
+        const closed = new Promise<void>((done, fail) => {
+          server.close((error) => (error ? fail(error) : done()))
+        })
+        // Stop accepting, drop idle keep-alive connections, let in-flight requests finish, then
+        // cut whatever outlived the grace period (their request signals abort).
+        server.closeIdleConnections()
+        await inFlight.drain(graceMs)
+        server.closeAllConnections()
+        await closed
+      }
       resolve({
         port,
         url: `http://${bindHost}:${port}`,
-        close: () =>
-          new Promise<void>((done, fail) => {
-            server.close((error) => (error ? fail(error) : done()))
-            server.closeAllConnections()
-          }),
+        close: (options = {}) => {
+          const graceMs = options.graceMs ?? DEFAULT_CLOSE_GRACE_MS
+          if (!Number.isFinite(graceMs) || graceMs < 0)
+            return Promise.reject(new RangeError('graceMs must be a non-negative number'))
+          closing ??= close(graceMs)
+          return closing
+        },
       })
     })
   })
