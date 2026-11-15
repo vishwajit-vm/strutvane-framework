@@ -644,10 +644,12 @@ export function registerResourceRoutes(
   if (routeEnabled(resource, 'update')) {
     app.patch(`${base}/:id`, async (c) => {
       const s = state(c)
+      // Authorized first: a caller who may update nothing gets 401/403, never the field-level
+      // validation issues that would describe the resource's schema.
+      await authorizeRows(s, 'update')
       const raw = await readJsonBody(c)
       const parsed = schemas.update.safeParse(raw)
       if (!parsed.success) throw new ValidationError(issuesFromZod(parsed.error.issues, [], raw))
-      await authorizeRows(s, 'update')
       const existing = await findVisible(c.req.param('id'), s, ACTION_PERMISSIONS.update)
       await beforeWrite('update', parsed.data as Record<string, unknown>, s)
       let patch = parsed.data as Record<string, unknown>

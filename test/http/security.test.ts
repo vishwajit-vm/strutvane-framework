@@ -337,6 +337,37 @@ describe('includes, discovery and custom routes', () => {
     expect(json.body).toEqual({ a: 1 })
   })
 
+  it('callers without the update permission learn nothing from body validation', async () => {
+    const provider: PermissionProvider = {
+      can: async (actor) => ({ allowed: actor?.id === 'admin', reason: 'test' }),
+      filterFor: async (actor) => (actor?.id === 'admin' ? { op: 'true' } : { op: 'false' }),
+    }
+    t = await createTestApp({ dialect: 'sqlite', resources: [Account], permissions: provider })
+    const created = await t
+      .actingAs(person('admin'))
+      .request<{ id: string }>('POST', `${BASE}/accounts`, { body: { name: 'a', owner: 'x' } })
+    expect(created.status).toBe(201)
+    const path = `${BASE}/accounts/${created.body.id}`
+    for (const body of [{ nope: 1, name: 5 }, '{not json', { name: 'ok' }]) {
+      const init =
+        typeof body === 'string'
+          ? { body, headers: { 'content-type': 'application/json' } }
+          : { body }
+      expect((await t.request<Problem>('PATCH', path, init)).status).toBe(401)
+      expect((await t.actingAs(person('bob')).request<Problem>('PATCH', path, init)).status).toBe(
+        403,
+      )
+    }
+    expect(
+      (
+        await t.request<Problem>('PATCH', path, {
+          body: 'x',
+          headers: { 'content-type': 'text/plain' },
+        })
+      ).status,
+    ).toBe(401)
+  })
+
   it('custom route scopeFor applies the same policy path as the CRUD routes', async () => {
     let policy: QueryFilter = { op: 'eq', field: 'owner', value: { $actor: 'id' } }
     const provider: PermissionProvider = {
