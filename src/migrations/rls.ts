@@ -43,6 +43,29 @@ export function disableTenantRls(table: string): string[] {
   ]
 }
 
+/**
+ * A deparsed expression reduced to its tokens: lower case, no whitespace, parentheses or `::text`
+ * casts, so `pg_get_expr` output compares equal across Postgres versions' formatting.
+ */
+function normaliseExpr(expr: string): string {
+  return expr
+    .toLowerCase()
+    .replaceAll('::text', '')
+    .replace(/[\s()]/g, '')
+}
+
+const TENANT_CHECK = normaliseExpr(`"tenant_id" = ${TENANT_EXPR}`.replaceAll('"', ''))
+
+/**
+ * Whether a restrictive policy's `USING` and `WITH CHECK` (joined by a newline) are both exactly
+ * the tenant comparison. Matching the whole expression, not a substring, matters: a policy that
+ * mentions the tenant setting but ORs anything else in (`… OR true`) isolates nothing.
+ */
+function isTenantPolicy(expressions: string): boolean {
+  const [using = '', check = ''] = expressions.split('\n')
+  return normaliseExpr(using) === TENANT_CHECK && normaliseExpr(check) === TENANT_CHECK
+}
+
 /** One problem found by {@link tenancyAudit}. */
 export interface TenancyFinding {
   /** The table, view or function concerned (`*` for the connection's role). */
@@ -63,9 +86,10 @@ export interface TenancyFinding {
  * commonly lost is checked, because RLS is only as strong as its weakest path around it:
  *
  * - every table with a `tenant_id` column has RLS **enabled** and **forced**;
- * - it has a **restrictive** policy for all commands whose `USING` and `WITH CHECK` both compare
- *   `tenant_id` with `NULLIF(current_setting('app.tenant_id', true), '')` (`tenant-policy-mismatch`
- *   otherwise: a restrictive policy on something else isolates nothing);
+ * - it has a **restrictive** policy for all commands whose `USING` and `WITH CHECK` are both
+ *   exactly `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`
+ *   (`tenant-policy-mismatch` otherwise: a restrictive policy on something else, or one that ORs
+ *   anything into the comparison, isolates nothing);
  * - the current role does not **own** a tenant table (an owner can `ALTER TABLE … DISABLE ROW
  *   LEVEL SECURITY` or drop the policies) and is neither superuser nor `BYPASSRLS`;
  * - no **view** over a tenant table runs with its owner's rights: views need
@@ -82,17 +106,17 @@ export async function tenancyAudit(db: Database): Promise<TenancyFinding[]> {
     enabled: boolean
     forced: boolean
     restrictive: boolean
-    tenant_policy: boolean
+    policies: string[]
     owned: boolean
   }>(
     `SELECT c.relname AS table_name, c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced,
             EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid AND NOT p.polpermissive) AS restrictive,
-            EXISTS (
-              SELECT 1 FROM pg_catalog.pg_policy p
+            ARRAY(
+              SELECT coalesce(pg_catalog.pg_get_expr(p.polqual, p.polrelid), '') || chr(10) ||
+                     coalesce(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid), '')
+                FROM pg_catalog.pg_policy p
                WHERE p.polrelid = c.oid AND NOT p.polpermissive AND p.polcmd = '*'
-                 AND lower(pg_catalog.pg_get_expr(p.polqual, p.polrelid)) LIKE '%tenant_id%nullif(current_setting(''app.tenant_id''%'
-                 AND lower(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid)) LIKE '%tenant_id%nullif(current_setting(''app.tenant_id''%'
-            ) AS tenant_policy,
+            ) AS policies,
             pg_catalog.pg_has_role(current_user, c.relowner, 'USAGE') AS owned
        FROM pg_catalog.pg_class c
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -109,7 +133,7 @@ export async function tenancyAudit(db: Database): Promise<TenancyFinding[]> {
     if (!r.enabled) findings.push({ table: r.table_name, problem: 'rls-disabled' })
     if (!r.forced) findings.push({ table: r.table_name, problem: 'rls-not-forced' })
     if (!r.restrictive) findings.push({ table: r.table_name, problem: 'no-restrictive-policy' })
-    else if (!r.tenant_policy)
+    else if (!r.policies.some(isTenantPolicy))
       findings.push({ table: r.table_name, problem: 'tenant-policy-mismatch' })
     // A bypassing role is reported once below; ownership adds nothing to that finding.
     if (r.owned && !bypass) findings.push({ table: r.table_name, problem: 'role-owns-table' })

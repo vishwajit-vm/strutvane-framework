@@ -182,4 +182,34 @@ describe('tenancy audit: ways around RLS', () => {
     )
     expect(await auditAsApp()).toEqual([{ table: 'invoices', problem: 'tenant-policy-mismatch' }])
   })
+
+  it('a restrictive policy that mentions the tenant setting but also lets other rows through is flagged', async () => {
+    const tenant = "tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid"
+    for (const loose of [
+      `${tenant} OR true`,
+      `tenant_id IS NULL OR ${tenant}`,
+      `${tenant} OR id IS NOT NULL`,
+    ]) {
+      await fx.db.execute('DROP POLICY IF EXISTS "tenant_isolation" ON invoices')
+      await fx.db.execute(
+        `CREATE POLICY "tenant_isolation" ON invoices AS RESTRICTIVE FOR ALL USING (${loose}) WITH CHECK (${tenant})`,
+      )
+      expect(await auditAsApp(), loose).toEqual([
+        { table: 'invoices', problem: 'tenant-policy-mismatch' },
+      ])
+      await fx.db.execute('DROP POLICY "tenant_isolation" ON invoices')
+      await fx.db.execute(
+        `CREATE POLICY "tenant_isolation" ON invoices AS RESTRICTIVE FOR ALL USING (${tenant}) WITH CHECK (${loose})`,
+      )
+      expect(await auditAsApp(), loose).toEqual([
+        { table: 'invoices', problem: 'tenant-policy-mismatch' },
+      ])
+    }
+    // The exact policy the migrations write, re-created by hand, still passes.
+    await fx.db.execute('DROP POLICY "tenant_isolation" ON invoices')
+    await fx.db.execute(
+      `CREATE POLICY "tenant_isolation" ON invoices AS RESTRICTIVE FOR ALL USING (${tenant}) WITH CHECK (${tenant})`,
+    )
+    expect(await auditAsApp()).toEqual([])
+  })
 })
