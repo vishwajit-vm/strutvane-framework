@@ -60,6 +60,12 @@ export type DatabaseConfig =
          * `statementTimeoutMs + 2000`, or 30 s when the statement timeout is off; `0` disables it.
          */
         readonly queryTimeoutMs?: number
+        /**
+         * Postgres `lock_timeout` per connection, in milliseconds: how long a statement waits for
+         * a lock before failing. Unset by default (the server's own default). Migrations use
+         * their own connection with this set (`DB_MIGRATION_LOCK_TIMEOUT`, default 10 s).
+         */
+        readonly lockTimeoutMs?: number
       }
       readonly auth?: PostgresAuth
     }
@@ -96,6 +102,16 @@ export function pgPoolOptions(config: PostgresConfig): Record<string, unknown> {
     config.pool?.queryTimeoutMs ?? (statementTimeout > 0 ? statementTimeout + 2_000 : 30_000)
   if (!Number.isInteger(queryTimeout) || queryTimeout < 0)
     throw new RangeError('pool.queryTimeoutMs must be a non-negative integer')
+  const lockTimeout = config.pool?.lockTimeoutMs
+  if (lockTimeout !== undefined && (!Number.isInteger(lockTimeout) || lockTimeout < 0))
+    throw new RangeError('pool.lockTimeoutMs must be a non-negative integer')
+  // Session settings sent at connect time (`-c name=value`). An explicit 0 statement timeout is
+  // sent as such, so a role or database default (`ALTER ROLE … SET statement_timeout`) cannot
+  // bring a limit back for a connection that must not have one (migrations).
+  const settings = [
+    ...(config.pool?.statementTimeoutMs === 0 ? ['statement_timeout=0'] : []),
+    ...(lockTimeout !== undefined ? [`lock_timeout=${lockTimeout}`] : []),
+  ]
   return {
     ...(config.url ? { connectionString: config.url } : {}),
     ...(config.host ? { host: config.host } : {}),
@@ -116,6 +132,7 @@ export function pgPoolOptions(config: PostgresConfig): Record<string, unknown> {
     // request, and its connection, forever. `0` means no limit in node-postgres too.
     connectionTimeoutMillis: connectionTimeout,
     ...(queryTimeout > 0 ? { query_timeout: queryTimeout } : {}),
+    ...(settings.length > 0 ? { options: settings.map((s) => `-c ${s}`).join(' ') } : {}),
   }
 }
 

@@ -17,6 +17,7 @@
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative } from 'node:path'
+import { type EnvSource, EnvValidationError } from '../core/index.ts'
 import { connectDatabase, type DatabaseConfig } from '../database/connect.ts'
 import type { Database, Dialect } from '../database/types.ts'
 import {
@@ -45,6 +46,60 @@ export interface MigrationTarget {
   readonly dialect: Dialect
 }
 
+/** Default Postgres `lock_timeout` for migrations (ms), overridden by `DB_MIGRATION_LOCK_TIMEOUT`. */
+export const DEFAULT_MIGRATION_LOCK_TIMEOUT_MS = 10_000
+
+const DURATION = /^(\d{1,9})(ms|s|min)?$/
+const UNIT_MS: Readonly<Record<string, number>> = { ms: 1, s: 1000, min: 60_000 }
+
+/**
+ * `DB_MIGRATION_LOCK_TIMEOUT` in ms: a whole number of milliseconds, or with a unit (`250ms`,
+ * `30s`, `2min`). Unset means {@link DEFAULT_MIGRATION_LOCK_TIMEOUT_MS}; anything else is an
+ * {@link EnvValidationError} naming the key (the CLI reports it as a config error, exit 3).
+ */
+function migrationLockTimeoutMs(env: EnvSource): number {
+  const raw = env['DB_MIGRATION_LOCK_TIMEOUT']
+  if (raw === undefined) return DEFAULT_MIGRATION_LOCK_TIMEOUT_MS
+  const match = DURATION.exec(raw.trim())
+  if (!match)
+    throw new EnvValidationError([
+      {
+        key: 'DB_MIGRATION_LOCK_TIMEOUT',
+        message:
+          'must be a duration such as 10s, 30000 (milliseconds) or 2min; 0 waits for locks forever',
+      },
+    ])
+  return Number(match[1]) * (UNIT_MS[match[2] ?? 'ms'] ?? 1)
+}
+
+/**
+ * The connection migrations (and seeders) run on: the app's connection with Postgres limits made
+ * for schema changes instead of API requests.
+ * - **No statement timeout** (the app pool has 5 s): an index build or table rewrite legitimately
+ *   runs for minutes, and killing it half way leaves the deploy stuck. No client-side query
+ *   timeout either, for the same reason.
+ * - **A lock timeout** (default 10 s): a migration that needs a lock held by live traffic fails
+ *   fast and can be retried, instead of queueing every request behind its own lock request.
+ * - **One connection**: migrations run in order on one session.
+ * SQLite and PGlite have no such server settings and are returned unchanged.
+ */
+export function migrationConnection(
+  connection: DatabaseConfig,
+  env: EnvSource = process.env,
+): DatabaseConfig {
+  if (connection.driver !== 'postgres') return connection
+  return {
+    ...connection,
+    pool: {
+      ...connection.pool,
+      max: 1,
+      statementTimeoutMs: 0,
+      queryTimeoutMs: 0,
+      lockTimeoutMs: migrationLockTimeoutMs(env),
+    },
+  }
+}
+
 /** Resolve the migration directory and connection from `config/database.ts`. */
 export function migrationTarget(project: LoadedProject): MigrationTarget {
   const raw = project.config['database'] as AppDatabaseConfig | undefined
@@ -55,7 +110,7 @@ export function migrationTarget(project: LoadedProject): MigrationTarget {
     )
   }
   const dirSetting = raw?.migrations?.directory ?? 'database/migrations'
-  const connection = databaseConfigFrom(raw, project.root)
+  const connection = migrationConnection(databaseConfigFrom(raw, project.root))
   const dialect: Dialect = connection.driver === 'sqlite' ? 'sqlite' : 'postgres'
   return {
     dir: isAbsolute(dirSetting) ? dirSetting : join(project.root, dirSetting),
