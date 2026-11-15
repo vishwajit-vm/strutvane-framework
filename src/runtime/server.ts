@@ -138,15 +138,67 @@ export async function startServer(options: StartServerOptions): Promise<StartedS
   }
 }
 
-/** Stop gracefully on SIGINT/SIGTERM. Resolves once stopped. */
-export function stopOnSignals(started: StartedServer): Promise<void> {
+/** Why the server stopped (see {@link stopOnSignals}). */
+export type StopReason = 'SIGINT' | 'SIGTERM' | 'shutdown-message'
+
+/**
+ * The IPC message that asks for a graceful shutdown (the PM2 convention). On Windows an external
+ * `SIGTERM` terminates the process without running any handler (ADR-0015), so process managers
+ * and `sv` that start the app with an IPC channel send this message instead.
+ */
+export const SHUTDOWN_MESSAGE = 'shutdown'
+
+/** Where signals and IPC messages come from (the process; replaceable in tests). */
+export interface ShutdownSource {
+  on(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown
+  on(event: 'message', listener: (message: unknown) => void): unknown
+  off(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown
+  off(event: 'message', listener: (message: unknown) => void): unknown
+  /** Present when the process has an IPC channel (started with `fork` or `stdio: 'ipc'`). */
+  readonly send?: unknown
+}
+
+/** Exit code for a stop reason: 128 + the signal number (143 for SIGTERM), 0 for a request. */
+export function exitCodeForStop(reason: StopReason): number {
+  return reason === 'SIGTERM' ? 143 : reason === 'SIGINT' ? 130 : 0
+}
+
+/**
+ * Stop gracefully on SIGINT/SIGTERM, or on the {@link SHUTDOWN_MESSAGE} IPC message when the
+ * process has an IPC channel. Resolves with the reason once stopped (in-flight requests drained,
+ * providers shut down). A failing stop is logged, never swallowed. After the first trigger the
+ * listeners are removed, so a second Ctrl+C or SIGTERM gets Node's default: exit immediately.
+ */
+export function stopOnSignals(
+  started: StartedServer,
+  options: { readonly source?: ShutdownSource } = {},
+): Promise<StopReason> {
+  const source: ShutdownSource = options.source ?? process
+  const ipc = typeof source.send === 'function'
   return new Promise((resolve) => {
-    const stop = () => {
-      process.off('SIGINT', stop)
-      process.off('SIGTERM', stop)
-      void started.stop().then(resolve, resolve)
+    const onSigint = (): void => trigger('SIGINT')
+    const onSigterm = (): void => trigger('SIGTERM')
+    const onMessage = (message: unknown): void => {
+      if (message === SHUTDOWN_MESSAGE) trigger('shutdown-message')
     }
-    process.on('SIGINT', stop)
-    process.on('SIGTERM', stop)
+    const trigger = (reason: StopReason): void => {
+      source.off('SIGINT', onSigint)
+      source.off('SIGTERM', onSigterm)
+      if (ipc) source.off('message', onMessage)
+      started.stop().then(
+        () => resolve(reason),
+        (error: unknown) => {
+          try {
+            started.project.app.make(LoggerToken).error('Graceful shutdown failed', { error })
+          } catch {
+            // The logger itself is gone: the exit code still reports the stop.
+          }
+          resolve(reason)
+        },
+      )
+    }
+    source.on('SIGINT', onSigint)
+    source.on('SIGTERM', onSigterm)
+    if (ipc) source.on('message', onMessage)
   })
 }
