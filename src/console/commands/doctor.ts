@@ -16,14 +16,22 @@ import { type AnyCommand, defineCommand, type Project } from '../framework/comma
 import { CliError, toFailure } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
 import { renderMessages } from '../framework/run.ts'
+import { ABSORBED_PACKAGES, isAbsorbedPackage } from '../project/absorbed.ts'
 import { channelSpec } from '../project/channel.ts'
 import { checkEnv } from '../project/env-check.ts'
 import { packageMigrations } from '../project/package-migrations.ts'
 import { loadPluginCommands } from '../project/plugin-commands.ts'
-import { declaredRange, dependencyNames, readInstalledPackage } from '../project/project.ts'
-import { parseVersion } from '../project/semver.ts'
+import {
+  declaredRange,
+  dependencyNames,
+  detectPackageManager,
+  packageManagerCommand,
+  readInstalledPackage,
+} from '../project/project.ts'
+import { compareVersions, parseVersion } from '../project/semver.ts'
 import { RegistryCompiler } from '../registry/compiler.ts'
 import { verifyContentHash } from '../registry/emit.ts'
+import { CLI_PACKAGE } from '../version.ts'
 import { isStrutvanePackage } from './about.ts'
 
 /** The outcome of one check. */
@@ -43,12 +51,23 @@ const fail = (id: string, message: string, hint?: string): DoctorCheck =>
 /** The minimum supported Node.js major version (D-decision: Node 24+). */
 export const MIN_NODE_MAJOR = 24
 
+/**
+ * The minimum supported Node.js version, as in `engines.node` (`>=24.3`). Earlier 24.x releases
+ * break arguments in PowerShell (blueprint §5), so 24.0–24.2 fail like 22 does.
+ */
+export const MIN_NODE_VERSION = '24.3.0'
+
 /** Node.js version check. */
 export function checkNode(version: string): DoctorCheck {
-  const major = parseVersion(version)?.major ?? 0
-  return major >= MIN_NODE_MAJOR
+  const parsed = parseVersion(version)
+  const min = parseVersion(MIN_NODE_VERSION)
+  const supported =
+    parsed !== undefined &&
+    min !== undefined &&
+    compareVersions({ ...parsed, prerelease: [] }, min) >= 0
+  return supported
     ? ok('node', `Node.js ${version}`)
-    : fail('node', `Node.js ${version} is too old`, `Install Node.js ${MIN_NODE_MAJOR} or newer.`)
+    : fail('node', `Node.js ${version} is too old`, `Install Node.js ${MIN_NODE_VERSION} or newer.`)
 }
 
 function checkPackageJson(project: Project, cliVersion: string): DoctorCheck[] {
@@ -58,17 +77,62 @@ function checkPackageJson(project: Project, cliVersion: string): DoctorCheck[] {
       ? ok('esm', 'package.json has "type": "module"')
       : warn('esm', 'package.json is not ESM', 'Strutvane apps are ESM: add "type": "module".'),
   )
+  // The CLI ships in the framework, so the framework dependency is what pins the CLI version.
+  // Named on this CLI's release channel: before 1.0, a bare name resolves `latest`, which is only
+  // the npm name placeholder (see project/channel.ts). The command is the project's own package
+  // manager's, so the hint never installs a second kernel or uses a tool the app does not have.
+  const { command, args } = packageManagerCommand(detectPackageManager(project), 'add', [
+    channelSpec(CLI_PACKAGE, cliVersion),
+  ])
   checks.push(
-    declaredRange(project.packageJson, '@strutvane/cli') !== undefined
-      ? ok('cli-local', '@strutvane/cli is a project dependency')
+    declaredRange(project.packageJson, CLI_PACKAGE) !== undefined
+      ? ok('cli-local', `${CLI_PACKAGE} is a project dependency`)
       : warn(
           'cli-local',
-          '@strutvane/cli is not in package.json',
-          // Named on this CLI's release channel: before 1.0, a bare name resolves `latest`, which
-          // is only the npm name placeholder (see project/channel.ts).
-          `Add it (pnpm add -D ${channelSpec('@strutvane/cli', cliVersion)}) so everyone runs the same CLI version.`,
+          `${CLI_PACKAGE} is not in package.json`,
+          `Add it (${command} ${args.join(' ')}) so everyone runs the same CLI version.`,
         ),
   )
+  return checks
+}
+
+/**
+ * Absorbed packages (`@strutvane/core`, `contracts`, `devkit`, `cli`, the `strutvane` launcher)
+ * next to the framework: declared by the app, or pulled in by an add-on built for the old layout.
+ * Either way the app runs two kernels (or two owners of the same bin), so this fails.
+ */
+function checkAbsorbed(project: Project): DoctorCheck[] {
+  const declared = dependencyNames(project.packageJson).filter(isAbsorbedPackage)
+  const installed = Object.keys(ABSORBED_PACKAGES).filter(
+    (n) => !declared.includes(n) && readInstalledPackage(project.root, n) !== undefined,
+  )
+  if (declared.length === 0 && installed.length === 0)
+    return [ok('absorbed', 'No package that @strutvane/framework replaced is installed')]
+  const checks: DoctorCheck[] = []
+  if (declared.length > 0) {
+    const { command, args } = packageManagerCommand(
+      detectPackageManager(project),
+      'remove',
+      declared,
+    )
+    const moves = declared.map((n) => `${n} → ${ABSORBED_PACKAGES[n]}`).join('; ')
+    checks.push(
+      fail(
+        'absorbed',
+        `package.json still lists ${declared.join(', ')}, now part of ${CLI_PACKAGE}`,
+        `Remove them (${command} ${args.join(' ')}) and import from the framework instead (${moves}). A second copy breaks container tokens and error handling.`,
+      ),
+    )
+  }
+  if (installed.length > 0) {
+    checks.push(
+      fail(
+        'absorbed-transitive',
+        `A dependency installs ${installed.join(', ')} next to ${CLI_PACKAGE} (two kernels)`,
+        `Find it with \`npm ls ${installed.join(' ')}\` and upgrade it to a version that peer-depends on ${CLI_PACKAGE}.`,
+      ),
+    )
+  }
   return checks
 }
 
@@ -299,6 +363,7 @@ export const doctorCommand: AnyCommand = defineCommand({
     if (project !== undefined) {
       checks.push(
         ...checkPackageJson(project, ctx.version),
+        ...checkAbsorbed(project),
         ...checkPackages(project),
         ...checkEnvFiles(project),
       )

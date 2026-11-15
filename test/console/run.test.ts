@@ -68,7 +68,7 @@ describe('help and version', () => {
     const doc = r.json()
     expectEnvelope(doc as unknown as Record<string, unknown>)
     const data = doc.data as { commands: { name: string; source: string }[] }
-    expect(data.commands.find((c) => c.name === 'about')?.source).toBe('@strutvane/cli')
+    expect(data.commands.find((c) => c.name === 'about')?.source).toBe('@strutvane/framework')
     const one = await cli(['help', 'routes', '--json'], { cwd: makeProject() })
     expect((one.json().data as { name: string }).name).toBe('routes')
   })

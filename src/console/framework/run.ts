@@ -33,7 +33,7 @@ import {
   type PluginCommands,
 } from '../project/plugin-commands.ts'
 import { findProjectRoot, loadProject } from '../project/project.ts'
-import { CLI_VERSION } from '../version.ts'
+import { CLI_PACKAGE, CLI_VERSION } from '../version.ts'
 import type { AnyCommand, CommandContext, Project } from './command.ts'
 import { CliError, type CliFailure, type CliIssue, toFailure, usageError } from './errors.ts'
 import { EXIT } from './exit-codes.ts'
@@ -309,7 +309,7 @@ function describe(command: AnyCommand, source: string | undefined): unknown {
     args: command.args ?? {},
     flags: command.flags ?? {},
     examples: command.examples ?? [],
-    source: source ?? '@strutvane/cli',
+    source: source ?? CLI_PACKAGE,
   }
 }
 

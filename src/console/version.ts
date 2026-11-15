@@ -11,8 +11,12 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 
-/** The npm package that implements the CLI. */
-export const CLI_PACKAGE = '@strutvane/cli'
+/**
+ * The npm package that implements the CLI. Since the consolidation the CLI ships inside
+ * `@strutvane/framework` (bins `strutvane` and `strutvane-cli`); `@strutvane/cli` is absorbed and
+ * must not be installed next to it (see `project/absorbed.ts`).
+ */
+export const CLI_PACKAGE = '@strutvane/framework'
 
 /** Read a `version` field from a package.json URL; `0.0.0` if it is missing or unreadable. */
 export function readPackageVersion(url: URL): string {

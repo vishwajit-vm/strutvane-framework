@@ -12,6 +12,7 @@ import {
   detectPackageManager,
   readInstalledPackage,
 } from '../project/project.ts'
+import { CLI_PACKAGE } from '../version.ts'
 
 /** One Strutvane package in the project. */
 export interface AboutPackage {
@@ -64,7 +65,7 @@ export const aboutCommand: AnyCommand = defineCommand({
     out.table(
       ['', ''],
       [
-        ['@strutvane/cli', data.cli],
+        [CLI_PACKAGE, data.cli],
         ['Node.js', data.node],
         ['Platform', data.platform],
         ...(data.project === null

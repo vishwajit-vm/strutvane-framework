@@ -77,7 +77,7 @@ export async function startServer(options: StartServerOptions): Promise<StartedS
   else if (devVite?.status === 'not-installed')
     logger.info('Found a Vite config but "vite" is not installed: serving the API only', {
       configFile: devVite.configFile,
-      hint: 'install the project dependencies (e.g. pnpm install)',
+      hint: 'install the project dependencies (e.g. npm install)',
     })
   let dev: ViteDevServerLike | undefined
   const appConfig = loaded.config['app'] as

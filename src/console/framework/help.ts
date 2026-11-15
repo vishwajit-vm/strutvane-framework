@@ -6,6 +6,8 @@
  *
  * @module
  */
+
+import { CLI_PACKAGE } from '../version.ts'
 import type { AnyCommand, FlagDefinition } from './command.ts'
 import { GLOBAL_FLAGS } from './globals.ts'
 import { formatTable, type Style } from './output.ts'
@@ -50,7 +52,7 @@ export function summarize(
     .map((c) => ({
       name: c.name,
       description: c.description,
-      source: sources.get(c.name) ?? '@strutvane/cli',
+      source: sources.get(c.name) ?? CLI_PACKAGE,
     }))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }

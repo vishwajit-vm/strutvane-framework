@@ -77,7 +77,14 @@ export function isOwnedByCurrentUser(dir: string, facts: BoundaryFacts): boolean
   }
 }
 
-/** Whether a package.json object declares `@strutvane/cli` in dependencies or devDependencies. */
+/**
+ * Packages whose presence in dependencies or devDependencies marks a project: the framework, which
+ * ships the CLI, and `@strutvane/cli`, so projects created before the consolidation are still
+ * found (and `sv doctor` can then tell them to remove it).
+ */
+const CLI_PACKAGES: readonly string[] = ['@strutvane/framework', '@strutvane/cli']
+
+/** Whether a package.json object declares the CLI's package in dependencies or devDependencies. */
 export function declaresCli(manifest: unknown): boolean {
   if (typeof manifest !== 'object' || manifest === null) return false
   return ['dependencies', 'devDependencies'].some((field) => {
@@ -85,8 +92,10 @@ export function declaresCli(manifest: unknown): boolean {
     return (
       typeof deps === 'object' &&
       deps !== null &&
-      Object.hasOwn(deps, '@strutvane/cli') &&
-      typeof (deps as Record<string, unknown>)['@strutvane/cli'] === 'string'
+      CLI_PACKAGES.some(
+        (name) =>
+          Object.hasOwn(deps, name) && typeof (deps as Record<string, unknown>)[name] === 'string',
+      )
     )
   })
 }

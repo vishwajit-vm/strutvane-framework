@@ -301,9 +301,9 @@ describe('doctor', () => {
   test('a healthy project passes', async () => {
     const root = makeProject(
       { '.env.example': 'A=1\n', '.env': 'A=1\n', '.gitignore': 'node_modules\n.env\n' },
-      { devDependencies: { '@strutvane/cli': '0.1.0' } },
+      { dependencies: { '@strutvane/framework': '0.1.0' } },
     )
-    installFakePackage(root, '@strutvane/cli', { version: '0.1.0' })
+    installFakePackage(root, '@strutvane/framework', { version: '0.1.0' })
     const r = await cli(['doctor', '--json'], { cwd: root })
     expect(r.code, r.stdout).toBe(0)
     const ids = (r.json().data as { checks: { id: string; status: string }[] }).checks
@@ -334,6 +334,7 @@ describe('doctor', () => {
       node: 'ok',
       esm: 'warn',
       'cli-local': 'warn',
+      absorbed: 'fail',
       installed: 'fail',
       'release-train': 'warn',
       env: 'fail',
@@ -344,16 +345,58 @@ describe('doctor', () => {
     expect(human.stderr).toContain('check')
   })
 
-  test('the install hint for a missing @strutvane/cli names the release channel', async () => {
+  test('the install hint for a missing framework names the release channel and the project PM', async () => {
     const root = makeProject({}, {})
     const hint = async (version: string): Promise<string | undefined> => {
       const r = await cli(['doctor', '--json'], { cwd: root, version })
       const checks = (r.json().data as { checks: { id: string; hint?: string }[] }).checks
       return checks.find((c) => c.id === 'cli-local')?.hint
     }
-    expect(await hint('0.1.0-next.0')).toContain('(pnpm add -D @strutvane/cli@next)')
-    expect(await hint('1.0.0')).toContain('(pnpm add -D @strutvane/cli)')
-    expect(await hint('1.0.0-Weird.0')).toContain('(pnpm add -D @strutvane/cli)')
+    // No lockfile and no packageManager field: npm, the blueprint's package manager.
+    expect(await hint('0.1.0-next.0')).toContain('(npm install @strutvane/framework@next)')
+    expect(await hint('1.0.0')).toContain('(npm install @strutvane/framework)')
+    expect(await hint('1.0.0-Weird.0')).toContain('(npm install @strutvane/framework)')
+    // The hint never names the absorbed @strutvane/cli: installing it adds a second kernel.
+    expect(await hint('0.1.0-next.0')).not.toContain('@strutvane/cli')
+    write(root, 'pnpm-lock.yaml', '')
+    expect(await hint('0.1.0-next.0')).toContain('(pnpm add @strutvane/framework@next)')
+  })
+
+  test('absorbed packages next to the framework fail with a fix (two kernels, duplicate bins)', async () => {
+    type Check = { id: string; status: string; message: string; hint?: string }
+    const checksOf = async (root: string): Promise<{ code: number; checks: Check[] }> => {
+      const r = await cli(['doctor', '--json'], { cwd: root })
+      return { code: r.code, checks: (r.json().data as { checks: Check[] }).checks }
+    }
+    const files = { '.env.example': 'A=1\n', '.env': 'A=1\n', '.gitignore': 'node_modules\n.env\n' }
+    // An app generated before the consolidation: core, cli and the launcher declared.
+    const legacy = makeProject(files, {
+      dependencies: { '@strutvane/framework': '0.1.0', '@strutvane/core': '0.1.0' },
+      devDependencies: { '@strutvane/cli': '0.1.0', strutvane: '0.1.0' },
+    })
+    for (const n of ['@strutvane/framework', '@strutvane/core', '@strutvane/cli', 'strutvane'])
+      installFakePackage(legacy, n, { version: '0.1.0' })
+    const a = await checksOf(legacy)
+    expect(a.code).toBe(3)
+    const absorbed = a.checks.find((c) => c.id === 'absorbed')
+    expect(absorbed).toMatchObject({ status: 'fail' })
+    for (const n of ['@strutvane/core', '@strutvane/cli', 'strutvane'])
+      expect(absorbed?.message).toContain(n)
+    expect(absorbed?.hint).toMatch(/npm uninstall (@strutvane\/core|@strutvane\/cli|strutvane)/)
+    expect(absorbed?.hint).toContain('@strutvane/core → @strutvane/framework/core')
+    // Not declared, but an add-on built for the old layout installed @strutvane/core anyway.
+    const transitive = makeProject(files, {
+      dependencies: { '@strutvane/framework': '0.1.0', '@strutvane/auth': '0.1.0' },
+    })
+    for (const n of ['@strutvane/framework', '@strutvane/auth', '@strutvane/core'])
+      installFakePackage(transitive, n, { version: '0.1.0' })
+    const t = await checksOf(transitive)
+    expect(t.code).toBe(3)
+    expect(t.checks.find((c) => c.id === 'absorbed-transitive')).toMatchObject({
+      status: 'fail',
+      message: expect.stringContaining('@strutvane/core'),
+    })
+    expect(t.checks.find((c) => c.id === 'absorbed')).toBeUndefined()
   })
 
   test('env errors, registry state, lock conflicts and plugins', async () => {
@@ -486,7 +529,15 @@ describe('doctor', () => {
   })
 
   test('checkNode', () => {
-    expect(checkNode('24.0.0').status).toBe('ok')
+    // engines.node is >=24.3: earlier 24.x releases break arguments in PowerShell.
+    expect(checkNode('24.0.0')).toMatchObject({
+      status: 'fail',
+      hint: expect.stringContaining('24.3.0'),
+    })
+    expect(checkNode('24.2.9').status).toBe('fail')
+    expect(checkNode('24.3.0').status).toBe('ok')
+    expect(checkNode('v26.1.0').status).toBe('ok')
+    expect(checkNode('24.3.0-pre').status).toBe('ok')
     expect(checkNode('22.11.0')).toMatchObject({ status: 'fail' })
     expect(checkNode('garbage').status).toBe('fail')
   })
@@ -521,7 +572,7 @@ describe('registry:build / registry:watch', () => {
     const again = await cli(['registry:build', '--json'], { cwd: root })
     expect(again.json().data).toMatchObject({ written: false })
     expect(read(root, '.strutvane/registry.gen.ts')).toBe(first)
-    expect(first).toContain('// @generated by @strutvane/cli ')
+    expect(first).toContain('// @generated by @strutvane/framework ')
     const human = await cli(['registry:build'], { cwd: root })
     expect(human.stdout).toContain('Up to date: .strutvane/registry.gen.ts')
   })

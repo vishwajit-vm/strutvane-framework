@@ -79,7 +79,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=24"
+    "node": ">=24.3"
   },
   "devEngines": {
     "packageManager": {

@@ -408,10 +408,13 @@ describe('contribution containment and Windows paths', () => {
     write(root, 'packages/inner/package.json', '{}')
     mkdirSync(join(root, 'packages', 'inner', 'src'), { recursive: true })
     expect(findProjectRoot(join(root, 'packages', 'inner', 'src'))).toBe(root)
-    // A package.json alone is not a project; one that declares @strutvane/cli is.
+    // A package.json alone is not a project; one that declares the framework (which ships the
+    // CLI) is, and so is one created before the consolidation that declares @strutvane/cli.
     const plain = tempDir()
     write(plain, 'package.json', '{}')
     expect(findProjectRoot(join(plain))).toBeUndefined()
+    write(plain, 'package.json', '{"dependencies":{"@strutvane/framework":"^0.1.0"}}')
+    expect(findProjectRoot(join(plain))).toBe(plain)
     write(plain, 'package.json', '{"devDependencies":{"@strutvane/cli":"^0.1.0"}}')
     expect(findProjectRoot(join(plain))).toBe(plain)
   })
@@ -454,6 +457,9 @@ describe('contribution containment and Windows paths', () => {
     expect(isOwnedByCurrentUser(join(project, 'missing'), { ...facts, uid: 1 })).toBe(false)
     expect(declaresCli(null)).toBe(false)
     expect(declaresCli({ dependencies: { '@strutvane/cli': '1' } })).toBe(true)
+    expect(declaresCli({ dependencies: { '@strutvane/framework': '1' } })).toBe(true)
+    expect(declaresCli({ peerDependencies: { '@strutvane/framework': '1' } })).toBe(false)
+    expect(declaresCli({ dependencies: { '@strutvane/framework': 1 } })).toBe(false)
     expect(declaresCli({ peerDependencies: { '@strutvane/cli': '1' } })).toBe(false)
     expect(
       declaresCli(JSON.parse('{"devDependencies":{"__proto__":{"@strutvane/cli":"1"}}}')),

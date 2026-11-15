@@ -36,7 +36,7 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.hint.INPUT_REQUIRED': 'Pass it on the command line, or use --yes to accept defaults.',
   'cli.error.PROJECT_NOT_FOUND': 'No Strutvane project found at or above {cwd}.',
   'cli.hint.PROJECT_NOT_FOUND':
-    'Run this inside a project (a folder with strutvane.config.ts, or whose package.json lists @strutvane/cli), or pass --cwd <path>. Drive roots, the temp folder and folders above your home directory never count. On Linux and macOS the project folder must also be owned by the user running the command (in a container, build and run as the same user, e.g. node).',
+    'Run this inside a project (a folder with strutvane.config.ts, or whose package.json lists @strutvane/framework), or pass --cwd <path>. Drive roots, the temp folder and folders above your home directory never count. On Linux and macOS the project folder must also be owned by the user running the command (in a container, build and run as the same user, e.g. node).',
   'cli.error.CWD_NOT_FOUND': 'The --cwd directory does not exist: {cwd}.',
   'cli.error.INVALID_PACKAGE_JSON': 'Could not read {path}: {detail}.',
   'cli.error.INVALID_FIELD': 'Invalid field "{spec}": {detail}',
