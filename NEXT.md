@@ -43,3 +43,37 @@ Working notes for the spike 12 port (MVC app core + Laravel-style commands). Del
 - Next: fix lint, run test/exceptions test/facades test/app, measure coverage; export from
   `src/index.ts` (exceptions) and add a `./facades` subpath (Route facade must not shadow the
   routing `Route` builder); no new catalog codes (500s use core INTERNAL_ERROR).
+
+## Commands, maintenance, cache and session stores (WIP, paused 2026-11-16)
+- Committed in c22065b (swept into the exceptions commit through the shared index; all files are mine
+  except src/exceptions, src/facades, src/http/app/errors.ts and their tests).
+- Done (tsc + biome clean on these paths, test/console still green, 380 tests):
+  - `src/maintenance/` (state.ts: stat-cached state file, corrupt = down, fields re-checked;
+    maintenance.ts: `checkMaintenance` bound as default `MaintenanceCheckToken`, secret HMAC under
+    `derive('maintenance')`, bypass cookie bound to the secret, verified with every key, /up open;
+    page.ts: `--render` path checks; catalog.ts: `maintenance_mode` 503).
+  - `src/cache/` (file-lock.ts O_EXCL per-key lock with stale takeover + 503 `cache_unavailable`;
+    file-store.ts; store.ts `createCacheManager` from config/cache.ts, bound as default
+    `CacheManagerToken`; catalog.ts). `src/session/file-store.ts` bound as default `SessionStoreToken`.
+  - `src/support/env-file.ts`; `src/console/commands/app/*` spread into BUILTIN_COMMANDS as
+    `APP_COMMANDS` (optimize, optimize:clear, config/route/event cache+clear, event:list,
+    cache:clear/forget, key:rotate, env:encrypt/decrypt, down/up, session:flush, security:check
+    [--audit], route:list [--security], make:command/rule/observer); `--force-debug` is a per-command
+    flag on booting commands; key:generate finds v2 apps and says `node strut`.
+- Half-done: tests. Only test/commands/helpers.ts + caches.test.ts are written and NOT run yet.
+- Next:
+  1. Run `npx vitest run test/commands --coverage.enabled=false`, fix.
+  2. Write test/commands/{cache-store,keys,maintenance,security,make}.test.ts (port spike 12
+     commands.test.ts: env crypt round trip/wrong key/4-8-12 byte tags, key rotation keeps old
+     ciphertexts + signed links, down retry/refresh, /up, bypass cookie, 9 hostile --redirect values,
+     --render checks, corrupt state, real multi-process down/up via `writeRealApp` + spawned
+     `node -e "import main…"`, cross-process file-cache increment, session:flush, security:check
+     pass/production failures/refused boot/--audit with fakeSpawner, make:* outputs compile with tsc).
+  3. Coverage of my files (aim 95/90).
+- Needs a decision / files I don't own:
+  - `src/console/project/project.ts` findProjectRoot: also accept `bootstrap/app.ts`/`strut.js` as a
+    project marker, else v2 apps get no `.env` APP_ENV for the production guard.
+  - `src/console/framework/run.ts`: `words[0] === 'help' || words[0] === 'list'` (CONSISTENCY #13).
+  - `src/console/framework/errors.ts` toFailure: handle BootError (code, message, hint); my
+    `defineAppCommand` converts it meanwhile. CLI catalog/help still say `sv` (#127).
+  - Wire MAINTENANCE_/CACHE_ catalogs into src/messages.ts; merge `app.commands` into the CLI.
