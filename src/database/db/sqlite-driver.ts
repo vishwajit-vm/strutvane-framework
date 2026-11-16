@@ -10,6 +10,14 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import type { Driver, DriverSession, QueryResult, Row } from './driver.ts'
 import { Mutex } from './mutex.ts'
 
+/**
+ * The SQL function the ORM's SQLite driver registers for Unicode lower case (search).
+ *
+ * @example
+ * sql`${sql.id('name')}` // searched as sv_lower("name") on SQLite
+ */
+export const SQLITE_UNICODE_LOWER = 'sv_lower'
+
 /** Prepared statements kept per connection. Re-preparing is the main cost of small queries. */
 const STATEMENT_CACHE_LIMIT = 256
 
@@ -24,9 +32,12 @@ export function sqliteDriver(location: string): Driver {
   // SQLite ships with foreign keys off for backwards compatibility; Strutvane migrations rely on them.
   database.exec('PRAGMA foreign_keys = ON')
   // SQLite's built-in lower() folds only A-Z, so a case-insensitive search for 'émile' missed
-  // 'Émile' here while PostgreSQL and MySQL found it. Replace it with JavaScript's Unicode lower
-  // case (deterministic, so SQLite may still use it in indexes and constraints).
-  database.function('lower', { deterministic: true }, (value) => (typeof value === 'string' ? value.toLowerCase() : value))
+  // 'Émile' here while PostgreSQL and MySQL found it. The query builder's search folds with this
+  // Unicode lower case instead (deterministic, so SQLite may use it in indexes). The built-in
+  // lower() is left alone: policy filters (ADR-0008) rely on its ASCII-only folding.
+  database.function(SQLITE_UNICODE_LOWER, { deterministic: true }, (value) =>
+    typeof value === 'string' ? value.toLowerCase() : value,
+  )
   const statements = new Map<string, StatementSync>()
   const mutex = new Mutex()
   let closed = false
@@ -59,7 +70,10 @@ export function sqliteDriver(location: string): Driver {
   return {
     dialect: 'sqlite',
     async acquire(): Promise<DriverSession> {
-      if (closed) throw new Error('This SQLite database is closed. Create a new connection instead of reusing a closed one.')
+      if (closed)
+        throw new Error(
+          'This SQLite database is closed. Create a new connection instead of reusing a closed one.',
+        )
       const unlock = await mutex.lock()
       return { run, release: () => unlock() }
     },
@@ -77,7 +91,15 @@ type SqliteValue = null | number | bigint | string | Uint8Array
 function toSqliteValue(raw: unknown): SqliteValue {
   if (raw === null || raw === undefined) return null
   if (typeof raw === 'boolean') return raw ? 1 : 0
-  if (typeof raw === 'number' || typeof raw === 'bigint' || typeof raw === 'string' || raw instanceof Uint8Array) return raw
+  if (
+    typeof raw === 'number' ||
+    typeof raw === 'bigint' ||
+    typeof raw === 'string' ||
+    raw instanceof Uint8Array
+  )
+    return raw
   if (raw instanceof Date) return raw.toISOString()
-  throw new TypeError(`SQLite can't store a value of type ${typeof raw}. Convert it to a string, number or JSON first.`)
+  throw new TypeError(
+    `SQLite can't store a value of type ${typeof raw}. Convert it to a string, number or JSON first.`,
+  )
 }

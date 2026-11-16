@@ -317,6 +317,8 @@ export function columnType(column: ColumnDef, dialect: Dialect): string {
     case 'integer':
       return isMysqlFamily(dialect) ? 'INT' : 'INTEGER'
     case 'bigInteger':
+      // A plain 64-bit integer is signed everywhere (Laravel's bigInteger), negative values included.
+      return dialect === 'sqlite' ? 'INTEGER' : 'BIGINT'
     case 'foreignId':
       // SQLite integers are already 64-bit; MySQL keys match the unsigned id they point at.
       if (dialect === 'sqlite') return 'INTEGER'

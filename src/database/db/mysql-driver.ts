@@ -22,7 +22,33 @@
  * MariaDB (`DB_CONNECTION=mariadb`, what XAMPP ships) uses the same driver with its own dialect:
  * pass `{ dialect: 'mariadb' }`, or let {@link connectMysqlFamily} detect it from `VERSION()`.
  */
-import { createConnection, createPool, type Pool, type PoolConnection, type PoolOptions } from 'mysql2/promise'
+import type { Pool, PoolConnection } from 'mysql2/promise'
+
+/**
+ * mysql2 pool options (a URL as `uri`, or host/port/user/password/database/socketPath/ssl).
+ * Declared structurally so `mysql2` stays an optional peer: it is loaded on first use.
+ *
+ * @example
+ * const options: MysqlPoolOptions = { uri: 'mysql://app:secret@127.0.0.1:3306/app' }
+ */
+export interface MysqlPoolOptions {
+  readonly uri?: string
+  readonly host?: string
+  readonly port?: number
+  readonly user?: string
+  readonly password?: string
+  readonly database?: string
+  readonly socketPath?: string
+  readonly ssl?: string | Readonly<Record<string, unknown>>
+  readonly connectionLimit?: number
+  readonly [option: string]: unknown
+}
+
+/** mysql2/promise, loaded once on first use (an optional peer dependency). */
+function loadMysql2(): Promise<typeof import('mysql2/promise')> {
+  return import('mysql2/promise').then((module) => module.default ?? module)
+}
+
 import type { Driver, DriverSession, QueryResult, Row } from './driver.ts'
 
 /**
@@ -62,8 +88,9 @@ export function detectMysqlServer(version: string): MysqlServer {
  * @example
  * const driver = await connectMysqlFamily({ uri: process.env.DATABASE_URL })
  */
-export async function connectMysqlFamily(options: PoolOptions): Promise<Driver> {
-  const probe = await createConnection(options)
+export async function connectMysqlFamily(options: MysqlPoolOptions): Promise<Driver> {
+  const mysql = await loadMysql2()
+  const probe = await mysql.createConnection({ ...options })
   try {
     const [rows] = await probe.query('SELECT VERSION() AS version')
     const first = Array.isArray(rows) ? rows[0] : undefined
@@ -82,31 +109,44 @@ export async function connectMysqlFamily(options: PoolOptions): Promise<Driver> 
  * const driver = mysqlDriver({ uri: 'mysql://app:secret@127.0.0.1:3306/app' })
  * const maria = mysqlDriver({ uri }, { dialect: 'mariadb' })
  */
-export function mysqlDriver(options: PoolOptions, server: MysqlServer = { dialect: 'mysql' }): Driver {
-  const pool: Pool = createPool({
-    connectionLimit: 10,
-    ...options,
-    timezone: 'Z',
-    dateStrings: ['DATE'],
-    supportBigNumbers: true,
-    bigNumberStrings: false,
-    decimalNumbers: false,
-    jsonStrings: true,
-  })
+export function mysqlDriver(
+  options: MysqlPoolOptions,
+  server: MysqlServer = { dialect: 'mysql' },
+): Driver {
+  let pool: Promise<Pool> | undefined
   let closed = false
   const settings = sessionSettings(server.dialect)
-  // mysql2 runs commands on one connection in order, so this SET always precedes the first query.
-  // A failing SET is fatal for that connection (checked): it never serves queries unpinned.
-  pool.pool.on('connection', (connection) => {
-    connection.query(settings)
-  })
+  const open = (): Promise<Pool> => {
+    pool ??= loadMysql2().then((mysql) => {
+      const created = mysql.createPool({
+        connectionLimit: 10,
+        ...options,
+        timezone: 'Z',
+        dateStrings: ['DATE'],
+        supportBigNumbers: true,
+        bigNumberStrings: false,
+        decimalNumbers: false,
+        jsonStrings: true,
+      })
+      // mysql2 runs commands on one connection in order, so this SET always precedes the first
+      // query. A failing SET is fatal for that connection (checked): it never serves unpinned.
+      created.pool.on('connection', (connection) => {
+        connection.query(settings)
+      })
+      return created
+    })
+    return pool
+  }
 
   return {
     dialect: server.dialect,
     ...(server.insertReturning === undefined ? {} : { insertReturning: server.insertReturning }),
     async acquire(): Promise<DriverSession> {
-      if (closed) throw new Error('This MySQL pool is closed. Create a new connection instead of reusing a closed one.')
-      const connection = await pool.getConnection()
+      if (closed)
+        throw new Error(
+          'This MySQL pool is closed. Create a new connection instead of reusing a closed one.',
+        )
+      const connection = await (await open()).getConnection()
       let released = false
       return {
         run: (sql, params) => runOn(connection, sql, params),
@@ -121,7 +161,7 @@ export function mysqlDriver(options: PoolOptions, server: MysqlServer = { dialec
     async close() {
       if (closed) return
       closed = true
-      await pool.end()
+      if (pool !== undefined) await (await pool).end()
     },
   }
 }
@@ -143,7 +183,11 @@ export function sessionSettings(dialect: 'mysql' | 'mariadb'): string {
   )
 }
 
-async function runOn(connection: PoolConnection, sql: string, params: readonly unknown[]): Promise<QueryResult> {
+async function runOn(
+  connection: PoolConnection,
+  sql: string,
+  params: readonly unknown[],
+): Promise<QueryResult> {
   // Transaction control (BEGIN, SAVEPOINT …) can't be prepared in MySQL's binary protocol.
   if (params.length === 0 && /^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/i.test(sql)) {
     await connection.query(sql)
@@ -156,7 +200,11 @@ async function runOn(connection: PoolConnection, sql: string, params: readonly u
     return { rows, rowsAffected: rows.length }
   }
   if ('affectedRows' in result) {
-    return { rows: [], rowsAffected: result.affectedRows, ...(result.insertId > 0 ? { insertId: result.insertId } : {}) }
+    return {
+      rows: [],
+      rowsAffected: result.affectedRows,
+      ...(result.insertId > 0 ? { insertId: result.insertId } : {}),
+    }
   }
   return { rows: [], rowsAffected: 0 }
 }
@@ -171,6 +219,14 @@ type MysqlValue = null | number | bigint | string | Buffer
 function toMysqlValue(raw: unknown): MysqlValue {
   if (raw === null || raw === undefined) return null
   if (typeof raw === 'boolean') return raw ? 1 : 0
-  if (typeof raw === 'number' || typeof raw === 'bigint' || typeof raw === 'string' || Buffer.isBuffer(raw)) return raw
-  throw new TypeError(`MySQL can't take a value of type ${typeof raw} as a parameter. Convert it to a string, number or JSON first.`)
+  if (
+    typeof raw === 'number' ||
+    typeof raw === 'bigint' ||
+    typeof raw === 'string' ||
+    Buffer.isBuffer(raw)
+  )
+    return raw
+  throw new TypeError(
+    `MySQL can't take a value of type ${typeof raw} as a parameter. Convert it to a string, number or JSON first.`,
+  )
 }

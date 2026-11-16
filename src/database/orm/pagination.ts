@@ -62,7 +62,11 @@ export function encodeCursor(fingerprint: string, values: readonly CursorValue[]
  * decodeCursor(cursor, 'posts:id:asc', 1) // [42]
  */
 export function decodeCursor(cursor: string, fingerprint: string, size: number): CursorValue[] {
-  const invalid = (): OrmUsageError => new OrmUsageError('INVALID_CURSOR', 'That page cursor is invalid or was made for a different sort order. Start again from the first page.')
+  const invalid = (): OrmUsageError =>
+    new OrmUsageError(
+      'INVALID_CURSOR',
+      'That page cursor is invalid or was made for a different sort order. Start again from the first page.',
+    )
   if (cursor.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw invalid()
   let parsed: unknown
   try {
@@ -70,12 +74,14 @@ export function decodeCursor(cursor: string, fingerprint: string, size: number):
   } catch {
     throw invalid()
   }
-  if (typeof parsed !== 'object' || parsed === null || !('f' in parsed) || !('v' in parsed)) throw invalid()
+  if (typeof parsed !== 'object' || parsed === null || !('f' in parsed) || !('v' in parsed))
+    throw invalid()
   const { f, v } = parsed
   if (f !== fingerprint || !Array.isArray(v) || v.length !== size) throw invalid()
   const values: CursorValue[] = []
   for (const item of v) {
-    if (typeof item !== 'string' && typeof item !== 'number' && typeof item !== 'boolean') throw invalid()
+    if (typeof item !== 'string' && typeof item !== 'number' && typeof item !== 'boolean')
+      throw invalid()
     values.push(item)
   }
   return values

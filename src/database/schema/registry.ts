@@ -8,6 +8,9 @@
  * - **Runtime:** {@link registerSchema} receives the snapshot (also generated) and
  *   {@link tableInfo} answers the questions the ORM asks about a table, once, cached.
  */
+// Declared in the public entry, the module generated types augment (declaration merging only
+// reaches the module that declares an interface, never one that re-exports it).
+import type { TableRegistry } from '../../entries/database.ts'
 import { OrmUsageError } from '../orm/errors.ts'
 import type { ColumnDef, SchemaSnapshot, TableState } from './snapshot.ts'
 
@@ -24,14 +27,7 @@ export interface TableShapes {
   readonly json: object
 }
 
-/**
- * Every table in the app. Empty on purpose: generated code adds the tables, so the ORM never
- * imports app code.
- *
- * @example
- * declare module '#orm/schema/registry' { interface TableRegistry { posts: { row: Post; … } } }
- */
-export interface TableRegistry {}
+export type { TableRegistry }
 
 /**
  * The name of any table the migrations created.
@@ -47,7 +43,11 @@ export type TableName = keyof TableRegistry & string
  * @example
  * type PostRow = RowOf<'posts'>
  */
-export type RowOf<TTable extends TableName> = TableRegistry[TTable] extends { readonly row: infer TRow } ? TRow : never
+export type RowOf<TTable extends TableName> = TableRegistry[TTable] extends {
+  readonly row: infer TRow
+}
+  ? TRow
+  : never
 
 /**
  * What inserting a row needs: required columns are required, defaulted ones optional.
@@ -55,7 +55,11 @@ export type RowOf<TTable extends TableName> = TableRegistry[TTable] extends { re
  * @example
  * type NewPostInput = InsertOf<'posts'>
  */
-export type InsertOf<TTable extends TableName> = TableRegistry[TTable] extends { readonly insert: infer TInsert } ? TInsert : never
+export type InsertOf<TTable extends TableName> = TableRegistry[TTable] extends {
+  readonly insert: infer TInsert
+}
+  ? TInsert
+  : never
 
 /**
  * A column name of a table.
@@ -87,7 +91,11 @@ export interface TableInfo {
 }
 
 /** Column names the ORM manages itself. */
-export const SYSTEM_COLUMNS = { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' } as const
+export const SYSTEM_COLUMNS = {
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  deletedAt: 'deleted_at',
+} as const
 
 let snapshot: SchemaSnapshot | undefined
 const infoCache = new Map<string, TableInfo>()
@@ -116,8 +124,14 @@ export function tableInfo(table: string): TableInfo {
   if (cached !== undefined) return cached
   const state = snapshot?.tables[table]
   if (state === undefined) {
-    const hint = snapshot === undefined ? 'No schema is registered yet: call registerSchema(snapshot) at boot.' : 'Did you create it in a migration and run `sv migrate`?'
-    throw new OrmUsageError('UNKNOWN_TABLE', `The table "${table}" is not in the schema snapshot. ${hint}`)
+    const hint =
+      snapshot === undefined
+        ? 'No schema is registered yet: call registerSchema(snapshot) at boot.'
+        : 'Did you create it in a migration and run `sv migrate`?'
+    throw new OrmUsageError(
+      'UNKNOWN_TABLE',
+      `The table "${table}" is not in the schema snapshot. ${hint}`,
+    )
   }
   const info = deriveInfo(state)
   infoCache.set(table, info)
@@ -154,7 +168,10 @@ export function tableColumns(table: string): ReadonlySet<string> {
 export function tableState(table: string): TableState {
   const state = snapshot?.tables[table]
   if (state === undefined) {
-    throw new OrmUsageError('UNKNOWN_TABLE', `The table "${table}" is not in the schema snapshot. Did you create it in a migration and run \`sv migrate\`?`)
+    throw new OrmUsageError(
+      'UNKNOWN_TABLE',
+      `The table "${table}" is not in the schema snapshot. Did you create it in a migration and run \`sv migrate\`?`,
+    )
   }
   return state
 }
@@ -173,7 +190,10 @@ function deriveInfo(state: TableState): TableInfo {
   const columns = new Map(state.columns.map((column) => [column.name, column]))
   const primaryKey = columns.get('id')
   if (primaryKey === undefined) {
-    throw new OrmUsageError('NO_PRIMARY_KEY', `"${state.name}" has no "id" column. Models need t.id() (or t.uuid('id')) in the migration; pivot tables don't need a model.`)
+    throw new OrmUsageError(
+      'NO_PRIMARY_KEY',
+      `"${state.name}" has no "id" column. Models need t.id() (or t.uuid('id')) in the migration; pivot tables don't need a model.`,
+    )
   }
   const slugs = state.columns.filter((column) => column.kind === 'slug')
   return {
@@ -192,7 +212,9 @@ function deriveInfo(state: TableState): TableInfo {
  * unique per tenant (`unique(['tenant_id', 'slug'])`), so `my-project` may exist once per tenant.
  */
 function uniqueScopeOf(state: TableState, slugColumn: string): readonly string[] {
-  const index = state.indexes.find((candidate) => candidate.unique && candidate.columns.includes(slugColumn))
+  const index = state.indexes.find(
+    (candidate) => candidate.unique && candidate.columns.includes(slugColumn),
+  )
   return index === undefined ? [] : index.columns.filter((column) => column !== slugColumn)
 }
 
@@ -203,4 +225,10 @@ function uniqueScopeOf(state: TableState, slugColumn: string): readonly string[]
  * @example
  * const meta: JsonValue = { tags: ['a', 'b'], pinned: true }
  */
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue }

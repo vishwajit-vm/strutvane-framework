@@ -6,6 +6,10 @@ export default defineConfig({
     provider: 'src/entries/provider.ts',
     http: 'src/entries/http.ts',
     database: 'src/entries/database.ts',
+    schema: 'src/entries/schema.ts',
+    // The F-06 replay sandbox's child process: it must sit next to schema.mjs (it maps
+    // `@strutvane/framework/schema` to ./schema.mjs) and next to the code that spawns it.
+    'replay-worker': 'src/migrations/replay-worker.ts',
     commands: 'src/commands.ts',
     'serve-main': 'src/serve-main.ts',
     'testing/index': 'src/testing/index.ts',

@@ -29,7 +29,10 @@ export function useConnection(connection: Connection): void {
  */
 export function defaultConnection(): Connection {
   if (current === undefined) {
-    throw new OrmUsageError('NO_CONNECTION', 'No database connection is set yet. Call useConnection(connection) at boot (the framework does this for you).')
+    throw new OrmUsageError(
+      'NO_CONNECTION',
+      'No database connection is set yet. Call useConnection(connection) at boot (the framework does this for you).',
+    )
   }
   return current
 }

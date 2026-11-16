@@ -16,7 +16,15 @@
  *   no NOT around arbitrary groups) an unknown comparison behaves exactly like false, so this is
  *   still two-valued at the level the caller sees.
  */
-import type { ColumnRef, CompareOperator, OrderNode, SelectAst, SelectItem, WhereNode } from './ast.ts'
+import { compileFilterSql } from '../../query/compile-sql.ts'
+import type {
+  ColumnRef,
+  CompareOperator,
+  OrderNode,
+  SelectAst,
+  SelectItem,
+  WhereNode,
+} from './ast.ts'
 import { concat, identifier, type SqlFragment, sql, text, value } from './fragment.ts'
 import { type Grammar, isMysqlFamily } from './grammar.ts'
 
@@ -37,13 +45,29 @@ export function columnSql(ref: ColumnRef): SqlFragment {
  * compileSelect(ast, postgresGrammar)
  */
 export function compileSelect(ast: SelectAst, grammar: Grammar): SqlFragment {
-  const parts: SqlFragment[] = [text('SELECT '), sql.join(ast.select.map((item) => selectItemSql(item, grammar)), ', '), text(' FROM '), tableSql(ast.table, ast.alias)]
+  const parts: SqlFragment[] = [
+    text('SELECT '),
+    sql.join(
+      ast.select.map((item) => selectItemSql(item, grammar)),
+      ', ',
+    ),
+    text(' FROM '),
+    tableSql(ast.table, ast.alias),
+  ]
   for (const join of ast.joins) {
-    parts.push(text(' INNER JOIN '), tableSql(join.table, join.alias), text(' ON '), columnSql(join.left), text(' = '), columnSql(join.right))
+    parts.push(
+      text(' INNER JOIN '),
+      tableSql(join.table, join.alias),
+      text(' ON '),
+      columnSql(join.left),
+      text(' = '),
+      columnSql(join.right),
+    )
   }
   const where = compileWhere(ast.where, grammar)
   if (where !== undefined) parts.push(text(' WHERE '), where)
-  if (ast.orderBy.length > 0) parts.push(text(' ORDER BY '), sql.join(ast.orderBy.map(orderSql), ', '))
+  if (ast.orderBy.length > 0)
+    parts.push(text(' ORDER BY '), sql.join(ast.orderBy.map(orderSql), ', '))
   parts.push(...pagingSql(ast, grammar))
   return concat(...parts)
 }
@@ -55,14 +79,17 @@ export function compileSelect(ast: SelectAst, grammar: Grammar): SqlFragment {
 function pagingSql(ast: SelectAst, grammar: Grammar): SqlFragment[] {
   const parts: SqlFragment[] = []
   if (ast.limit !== undefined) parts.push(text(' LIMIT '), value(ast.limit))
-  else if (ast.offset !== undefined && grammar.limitForOffsetOnly !== undefined) parts.push(text(` LIMIT ${grammar.limitForOffsetOnly}`))
+  else if (ast.offset !== undefined && grammar.limitForOffsetOnly !== undefined)
+    parts.push(text(` LIMIT ${grammar.limitForOffsetOnly}`))
   if (ast.offset !== undefined) parts.push(text(' OFFSET '), value(ast.offset))
   return parts
 }
 
 function tableSql(table: string, alias: string): SqlFragment {
   // `posts` when the alias is the table itself, `posts AS posts__tags` in subqueries.
-  return table === alias ? identifier(table) : concat(identifier(table), text(' AS '), identifier(alias))
+  return table === alias
+    ? identifier(table)
+    : concat(identifier(table), text(' AS '), identifier(alias))
 }
 
 function selectItemSql(item: SelectItem, grammar: Grammar): SqlFragment {
@@ -74,7 +101,12 @@ function selectItemSql(item: SelectItem, grammar: Grammar): SqlFragment {
     case 'count':
       return concat(text('COUNT(*) AS '), identifier(item.as))
     case 'subquery':
-      return concat(text('('), compileSelect(item.query, grammar), text(') AS '), identifier(item.as))
+      return concat(
+        text('('),
+        compileSelect(item.query, grammar),
+        text(') AS '),
+        identifier(item.as),
+      )
   }
 }
 
@@ -89,7 +121,10 @@ function orderSql(order: OrderNode): SqlFragment {
  * @example
  * compileWhere([{ kind: 'boolean', conjunction: 'and', value: true }], sqliteGrammar)
  */
-export function compileWhere(nodes: readonly WhereNode[], grammar: Grammar): SqlFragment | undefined {
+export function compileWhere(
+  nodes: readonly WhereNode[],
+  grammar: Grammar,
+): SqlFragment | undefined {
   if (nodes.length === 0) return undefined
   const parts: SqlFragment[] = []
   nodes.forEach((node, index) => {
@@ -117,13 +152,24 @@ function whereNodeSql(node: WhereNode, grammar: Grammar): SqlFragment {
     case 'columns':
       return concat(columnSql(node.left), text(' = '), columnSql(node.right))
     case 'exists':
-      return concat(text(node.negated ? 'NOT EXISTS (' : 'EXISTS ('), compileSelect(node.query, grammar), text(')'))
+      return concat(
+        text(node.negated ? 'NOT EXISTS (' : 'EXISTS ('),
+        compileSelect(node.query, grammar),
+        text(')'),
+      )
     case 'boolean':
       return text(node.value ? '1 = 1' : '1 = 0')
+    case 'filter':
+      return compileFilterSql(node.filter, grammar, node.alias)
   }
 }
 
-function compareSql(column: ColumnRef, operator: CompareOperator, bound: unknown, grammar: Grammar): SqlFragment {
+function compareSql(
+  column: ColumnRef,
+  operator: CompareOperator,
+  bound: unknown,
+  grammar: Grammar,
+): SqlFragment {
   const isNotEqual = operator === '!=' || operator === '<>'
   if (bound === null) {
     // Laravel turns where(col, null) into IS NULL; we do the same, and its negation into IS NOT NULL.
@@ -139,7 +185,10 @@ function compareSql(column: ColumnRef, operator: CompareOperator, bound: unknown
 function inSql(column: ColumnRef, values: readonly unknown[], negated: boolean): SqlFragment {
   // An empty IN list is invalid SQL; it means "nothing matches" (or "everything" when negated).
   if (values.length === 0) return text(negated ? '1 = 1' : '1 = 0')
-  const list = sql.join(values.map((item) => value(item)), ', ')
+  const list = sql.join(
+    values.map((item) => value(item)),
+    ', ',
+  )
   const membership = concat(columnSql(column), text(' IN ('), list, text(')'))
   // NOT IN is NULL-safe here: a NULL column is "not in the list", like JavaScript's !list.includes(x).
   return negated ? concat(text('NOT COALESCE('), membership, text(', FALSE)')) : membership
@@ -152,14 +201,39 @@ function inSql(column: ColumnRef, values: readonly unknown[], negated: boolean):
  * @example
  * compileInsert('tags', { name: 'news' }, mysqlGrammar)
  */
-export function compileInsert(table: string, record: Readonly<Record<string, unknown>>, grammar: Grammar): SqlFragment {
+export function compileInsert(
+  table: string,
+  record: Readonly<Record<string, unknown>>,
+  grammar: Grammar,
+): SqlFragment {
   const columns = Object.keys(record)
   const returning = text(grammar.supportsReturning ? ' RETURNING *' : '')
   // An all-defaults row: standard SQL says DEFAULT VALUES, MySQL says () VALUES ().
-  if (columns.length === 0) return concat(text('INSERT INTO '), identifier(table), text(isMysqlFamily(grammar.dialect) ? ' () VALUES ()' : ' DEFAULT VALUES'), returning)
-  const names = sql.join(columns.map((column) => identifier(column)), ', ')
-  const values = sql.join(columns.map((column) => value(record[column])), ', ')
-  return concat(text('INSERT INTO '), identifier(table), text(' ('), names, text(') VALUES ('), values, text(')'), returning)
+  if (columns.length === 0)
+    return concat(
+      text('INSERT INTO '),
+      identifier(table),
+      text(isMysqlFamily(grammar.dialect) ? ' () VALUES ()' : ' DEFAULT VALUES'),
+      returning,
+    )
+  const names = sql.join(
+    columns.map((column) => identifier(column)),
+    ', ',
+  )
+  const values = sql.join(
+    columns.map((column) => value(record[column])),
+    ', ',
+  )
+  return concat(
+    text('INSERT INTO '),
+    identifier(table),
+    text(' ('),
+    names,
+    text(') VALUES ('),
+    values,
+    text(')'),
+    returning,
+  )
 }
 
 /**
@@ -169,9 +243,17 @@ export function compileInsert(table: string, record: Readonly<Record<string, unk
  * @example
  * compileUpdate('posts', { title: 'New' }, where, sqliteGrammar, true)
  */
-export function compileUpdate(table: string, changes: Readonly<Record<string, unknown>>, where: readonly WhereNode[], grammar: Grammar, returning: boolean): SqlFragment {
+export function compileUpdate(
+  table: string,
+  changes: Readonly<Record<string, unknown>>,
+  where: readonly WhereNode[],
+  grammar: Grammar,
+  returning: boolean,
+): SqlFragment {
   const assignments = sql.join(
-    Object.keys(changes).map((column) => concat(identifier(column), text(' = '), value(changes[column]))),
+    Object.keys(changes).map((column) =>
+      concat(identifier(column), text(' = '), value(changes[column])),
+    ),
     ', ',
   )
   const parts = [text('UPDATE '), identifier(table), text(' SET '), assignments]
@@ -187,7 +269,13 @@ export function compileUpdate(table: string, changes: Readonly<Record<string, un
  * @example
  * compileDelete('posts', where, postgresGrammar)
  */
-export function compileDelete(table: string, where: readonly WhereNode[], grammar: Grammar): SqlFragment {
+export function compileDelete(
+  table: string,
+  where: readonly WhereNode[],
+  grammar: Grammar,
+): SqlFragment {
   const condition = compileWhere(where, grammar)
-  return condition === undefined ? concat(text('DELETE FROM '), identifier(table)) : concat(text('DELETE FROM '), identifier(table), text(' WHERE '), condition)
+  return condition === undefined
+    ? concat(text('DELETE FROM '), identifier(table))
+    : concat(text('DELETE FROM '), identifier(table), text(' WHERE '), condition)
 }

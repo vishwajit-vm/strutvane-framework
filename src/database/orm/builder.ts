@@ -22,10 +22,23 @@
  * The builder is mutable, like Laravel's: each method changes it and returns it. Use `clone()`
  * to branch a query.
  */
+import type { Actor, QueryFilter } from '../../contracts/index.ts'
+import { bindFilter } from '../../query/bind.ts'
+import { tableQueryFields } from '../../query/table-fields.ts'
 import type { Row } from '../db/driver.ts'
 import type { ColumnOf } from '../schema/registry.ts'
+import { tableState } from '../schema/registry.ts'
 import type { ColumnDef } from '../schema/snapshot.ts'
-import type { ColumnRef, CompareOperator, Conjunction, JoinNode, OrderNode, SelectAst, SelectItem, WhereNode } from '../sql/ast.ts'
+import type {
+  ColumnRef,
+  CompareOperator,
+  Conjunction,
+  JoinNode,
+  OrderNode,
+  SelectAst,
+  SelectItem,
+  WhereNode,
+} from '../sql/ast.ts'
 import { columnSql, compileSelect } from '../sql/compile.ts'
 import { concat, SqlFragment, text, value } from '../sql/fragment.ts'
 import type { RenderedSql } from '../sql/grammar.ts'
@@ -33,11 +46,23 @@ import { applyCast, toDatabase } from './casts.ts'
 import { ormConfig } from './config.ts'
 import { CastError, ModelNotFoundError, OrmUsageError } from './errors.ts'
 import type { ModelBase } from './model.ts'
-import { type CursorPage, type CursorValue, decodeCursor, encodeCursor, type Page } from './pagination.ts'
+import {
+  type CursorPage,
+  type CursorValue,
+  decodeCursor,
+  encodeCursor,
+  type Page,
+} from './pagination.ts'
 import { type ModelRuntime, type StoredCallback, setLoaded } from './runtime.ts'
 import { closest } from './suggest.ts'
 import { currentTenant } from './tenancy.ts'
-import { assertReason, assertSelectScoped, markScoped, tenantCondition, tenantMode } from './tenant-scope.ts'
+import {
+  assertReason,
+  assertSelectScoped,
+  markScoped,
+  tenantCondition,
+  tenantMode,
+} from './tenant-scope.ts'
 import type {
   AnyModelClass,
   ColumnValue,
@@ -70,7 +95,17 @@ const MAX_SEARCH_LENGTH = 200
  * @example
  * const operator: FilterOperator = 'startsWith'
  */
-export type FilterOperator = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains' | 'startsWith' | 'null'
+export type FilterOperator =
+  | 'eq'
+  | 'ne'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'in'
+  | 'contains'
+  | 'startsWith'
+  | 'null'
 
 const FILTER_SYMBOL = { eq: '=', ne: '!=', gt: '>', gte: '>=', lt: '<', lte: '<=' } as const
 
@@ -127,8 +162,15 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * Post.query().where('status', 'published').where('created_at', '>', lastWeek)
    * Post.query().where((q) => q.where('status', 'draft').orWhere('author_id', me.id))
    */
-  where<TColumn extends ColumnOf<TableOf<TClass>>>(column: TColumn, value: ColumnValue<TableOf<TClass>, TColumn>): this
-  where<TColumn extends ColumnOf<TableOf<TClass>>>(column: TColumn, operator: CompareOperator, value: ColumnValue<TableOf<TClass>, TColumn>): this
+  where<TColumn extends ColumnOf<TableOf<TClass>>>(
+    column: TColumn,
+    value: ColumnValue<TableOf<TClass>, TColumn>,
+  ): this
+  where<TColumn extends ColumnOf<TableOf<TClass>>>(
+    column: TColumn,
+    operator: CompareOperator,
+    value: ColumnValue<TableOf<TClass>, TColumn>,
+  ): this
   where(group: (query: this) => void): this
   where(...args: readonly unknown[]): this {
     this.#where.push(this.#conditionFrom('and', args))
@@ -141,8 +183,15 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * @example
    * Post.query().where('status', 'published').orWhere('author_id', me.id)
    */
-  orWhere<TColumn extends ColumnOf<TableOf<TClass>>>(column: TColumn, value: ColumnValue<TableOf<TClass>, TColumn>): this
-  orWhere<TColumn extends ColumnOf<TableOf<TClass>>>(column: TColumn, operator: CompareOperator, value: ColumnValue<TableOf<TClass>, TColumn>): this
+  orWhere<TColumn extends ColumnOf<TableOf<TClass>>>(
+    column: TColumn,
+    value: ColumnValue<TableOf<TClass>, TColumn>,
+  ): this
+  orWhere<TColumn extends ColumnOf<TableOf<TClass>>>(
+    column: TColumn,
+    operator: CompareOperator,
+    value: ColumnValue<TableOf<TClass>, TColumn>,
+  ): this
   orWhere(group: (query: this) => void): this
   orWhere(...args: readonly unknown[]): this {
     this.#where.push(this.#conditionFrom('or', args))
@@ -155,10 +204,19 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * @example
    * Post.query().whereIn('status', ['draft', 'published'])
    */
-  whereIn<TColumn extends ColumnOf<TableOf<TClass>>>(column: TColumn, values: readonly NonNullable<ColumnValue<TableOf<TClass>, TColumn>>[]): this {
+  whereIn<TColumn extends ColumnOf<TableOf<TClass>>>(
+    column: TColumn,
+    values: readonly NonNullable<ColumnValue<TableOf<TClass>, TColumn>>[],
+  ): this {
     assertInSize(column, values.length)
     const ref = this.#column(column)
-    this.#where.push({ kind: 'in', conjunction: 'and', column: ref, values: values.map((item) => this.#bind(ref, item)), negated: false })
+    this.#where.push({
+      kind: 'in',
+      conjunction: 'and',
+      column: ref,
+      values: values.map((item) => this.#bind(ref, item)),
+      negated: false,
+    })
     return this
   }
 
@@ -168,10 +226,19 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * @example
    * Post.query().whereNotIn('status', ['draft'])
    */
-  whereNotIn<TColumn extends ColumnOf<TableOf<TClass>>>(column: TColumn, values: readonly NonNullable<ColumnValue<TableOf<TClass>, TColumn>>[]): this {
+  whereNotIn<TColumn extends ColumnOf<TableOf<TClass>>>(
+    column: TColumn,
+    values: readonly NonNullable<ColumnValue<TableOf<TClass>, TColumn>>[],
+  ): this {
     assertInSize(column, values.length)
     const ref = this.#column(column)
-    this.#where.push({ kind: 'in', conjunction: 'and', column: ref, values: values.map((item) => this.#bind(ref, item)), negated: true })
+    this.#where.push({
+      kind: 'in',
+      conjunction: 'and',
+      column: ref,
+      values: values.map((item) => this.#bind(ref, item)),
+      negated: true,
+    })
     return this
   }
 
@@ -182,7 +249,12 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * Post.query().whereNull('published_on')
    */
   whereNull(column: ColumnOf<TableOf<TClass>>): this {
-    this.#where.push({ kind: 'null', conjunction: 'and', column: this.#column(column), negated: false })
+    this.#where.push({
+      kind: 'null',
+      conjunction: 'and',
+      column: this.#column(column),
+      negated: false,
+    })
     return this
   }
 
@@ -193,7 +265,12 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * Post.query().whereNotNull('published_on')
    */
   whereNotNull(column: ColumnOf<TableOf<TClass>>): this {
-    this.#where.push({ kind: 'null', conjunction: 'and', column: this.#column(column), negated: true })
+    this.#where.push({
+      kind: 'null',
+      conjunction: 'and',
+      column: this.#column(column),
+      negated: true,
+    })
     return this
   }
 
@@ -205,9 +282,32 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    */
   whereRaw(fragment: SqlFragment): this {
     if (!SqlFragment.is(fragment)) {
-      throw new OrmUsageError('RAW_SQL_NOT_FRAGMENT', 'whereRaw() needs a sql`…` fragment, not a string. Strings would let user input become SQL; put values in ${…} inside the sql tag.')
+      throw new OrmUsageError(
+        'RAW_SQL_NOT_FRAGMENT',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the message shows the sql tag syntax
+        'whereRaw() needs a sql`…` fragment, not a string. Strings would let user input become SQL; put values in ${…} inside the sql tag.',
+      )
     }
     this.#where.push({ kind: 'raw', conjunction: 'and', fragment })
+    return this
+  }
+
+  /**
+   * Keep only rows a policy filter allows (ADR-0008/0017): the same portable `QueryFilter` the
+   * in-memory check uses, bound against this table's columns (`$actor` references resolved from
+   * `actor`), then compiled with two-valued, NULL-safe semantics for this engine. A `null` actor
+   * value never matches, and a missing actor attribute throws before any SQL runs.
+   *
+   * @example
+   * Invoice.query().wherePolicy({ field: 'owner_id', op: 'eq', value: { $actor: 'id' } }, { actor })
+   */
+  wherePolicy(filter: QueryFilter, options: { readonly actor: Actor | null }): this {
+    const bound = bindFilter(filter, {
+      fields: tableQueryFields(tableState(this.#model.table), { includeHidden: true }),
+      operators: 'any',
+      actor: options.actor,
+    })
+    this.#where.push({ kind: 'filter', conjunction: 'and', alias: this.#alias, filter: bound })
     return this
   }
 
@@ -218,7 +318,10 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * @example
    * User.query().whereHas('posts', (q) => q.where('status', 'published'))
    */
-  whereHas<TName extends RelationNames<InstanceOf<TClass>>>(name: TName, constrain?: (query: RelatedQuery<InstanceOf<TClass>, TName>) => void): this {
+  whereHas<TName extends RelationNames<InstanceOf<TClass>>>(
+    name: TName,
+    constrain?: (query: RelatedQuery<InstanceOf<TClass>, TName>) => void,
+  ): this {
     const relation = this.#model.relation(name)
     const query = relation.subquery(this.#alias, `${this.#alias}__${name}`, constrain, 'exists')
     this.#where.push({ kind: 'exists', conjunction: 'and', query, negated: false })
@@ -242,7 +345,11 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    */
   whereContains(column: string, needle: string): this {
     assertWellFormed(this.#model.table, column, needle)
-    this.#where.push({ kind: 'raw', conjunction: 'and', fragment: this.#containsFragment(this.#requestColumn(column), needle) })
+    this.#where.push({
+      kind: 'raw',
+      conjunction: 'and',
+      fragment: this.#containsFragment(this.#requestColumn(column), needle),
+    })
     return this
   }
 
@@ -260,7 +367,16 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     // substr counts characters on every engine, so compare against the character count.
     // Built by the ORM from a checked column of this query: marked so the raw-condition guard
     // (which refuses raw SQL naming tenant tables) doesn't mistake the alias for a raw reference.
-    const fragment = markScoped(concat(text('substr(lower('), columnSql(ref), text('), 1, '), value([...folded].length), text(') = '), grammar.textParameter(folded)))
+    const fragment = markScoped(
+      concat(
+        text(`substr(${grammar.lowerFunction}(`),
+        columnSql(ref),
+        text('), 1, '),
+        value([...folded].length),
+        text(') = '),
+        grammar.textParameter(folded),
+      ),
+    )
     this.#where.push({ kind: 'raw', conjunction: 'and', fragment })
     return this
   }
@@ -274,9 +390,17 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   search(term: string, columns: readonly string[]): this {
     const trimmed = term.trim()
     if (trimmed === '' || columns.length === 0) return this
-    if (trimmed.length > MAX_SEARCH_LENGTH) throw new OrmUsageError('SEARCH_TOO_LONG', `Search text is limited to ${MAX_SEARCH_LENGTH} characters.`)
+    if (trimmed.length > MAX_SEARCH_LENGTH)
+      throw new OrmUsageError(
+        'SEARCH_TOO_LONG',
+        `Search text is limited to ${MAX_SEARCH_LENGTH} characters.`,
+      )
     assertWellFormed(this.#model.table, 'search', trimmed)
-    const nodes: WhereNode[] = columns.map((column) => ({ kind: 'raw', conjunction: 'or', fragment: this.#containsFragment(this.#requestColumn(column), trimmed) }))
+    const nodes: WhereNode[] = columns.map((column) => ({
+      kind: 'raw',
+      conjunction: 'or',
+      fragment: this.#containsFragment(this.#requestColumn(column), trimmed),
+    }))
     this.#where.push({ kind: 'group', conjunction: 'and', nodes })
     return this
   }
@@ -296,22 +420,46 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       case 'gte':
       case 'lt':
       case 'lte':
-        this.#where.push({ kind: 'compare', conjunction: 'and', column: ref, operator: FILTER_SYMBOL[operator], value: operand === null ? null : this.#bind(ref, operand) })
+        this.#where.push({
+          kind: 'compare',
+          conjunction: 'and',
+          column: ref,
+          operator: FILTER_SYMBOL[operator],
+          value: operand === null ? null : this.#bind(ref, operand),
+        })
         return this
       case 'in':
-        if (!Array.isArray(operand)) throw new OrmUsageError('INVALID_FILTER', `The "in" filter on "${column}" needs a list of values.`)
+        if (!Array.isArray(operand))
+          throw new OrmUsageError(
+            'INVALID_FILTER',
+            `The "in" filter on "${column}" needs a list of values.`,
+          )
         assertInSize(column, operand.length)
-        this.#where.push({ kind: 'in', conjunction: 'and', column: ref, values: operand.map((item: unknown) => this.#bind(ref, item)), negated: false })
+        this.#where.push({
+          kind: 'in',
+          conjunction: 'and',
+          column: ref,
+          values: operand.map((item: unknown) => this.#bind(ref, item)),
+          negated: false,
+        })
         return this
       case 'contains':
         return this.whereContains(column, String(operand))
       case 'startsWith':
         return this.whereStartsWith(column, String(operand))
       case 'null':
-        this.#where.push({ kind: 'null', conjunction: 'and', column: ref, negated: operand === false })
+        this.#where.push({
+          kind: 'null',
+          conjunction: 'and',
+          column: ref,
+          negated: operand === false,
+        })
         return this
       default:
-        throw new OrmUsageError('INVALID_FILTER', `"${String(operator)}" is not a filter operator. Use one of: ${Object.keys(FILTER_SYMBOL).join(', ')}, in, contains, startsWith, null.`)
+        throw new OrmUsageError(
+          'INVALID_FILTER',
+          `"${String(operator)}" is not a filter operator. Use one of: ${Object.keys(FILTER_SYMBOL).join(', ')}, in, contains, startsWith, null.`,
+        )
     }
   }
 
@@ -345,7 +493,10 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    */
   orderBy(column: ColumnOf<TableOf<TClass>>, direction: 'asc' | 'desc' = 'asc'): this {
     if (direction !== 'asc' && direction !== 'desc') {
-      throw new OrmUsageError('INVALID_DIRECTION', `Sort direction must be "asc" or "desc", not ${JSON.stringify(direction)}.`)
+      throw new OrmUsageError(
+        'INVALID_DIRECTION',
+        `Sort direction must be "asc" or "desc", not ${JSON.stringify(direction)}.`,
+      )
     }
     this.#orderBy.push({ column: this.#column(column), direction })
     return this
@@ -396,18 +547,30 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * User.query().with('posts.tags')
    * User.query().with({ posts: (q) => q.where('status', 'published') })
    */
-  with<TPath extends RelationPath<TResult>>(...paths: TPath[]): QueryBuilder<TClass, WithRelations<TResult, TPath>>
-  with<TName extends RelationNames<TResult>>(constraints: { readonly [TKey in TName]: (query: RelatedQuery<TResult, TKey>) => void }): QueryBuilder<TClass, WithRelations<TResult, TName>>
+  with<TPath extends RelationPath<TResult>>(
+    ...paths: TPath[]
+  ): QueryBuilder<TClass, WithRelations<TResult, TPath>>
+  with<TName extends RelationNames<TResult>>(
+    constraints: { readonly [TKey in TName]: (query: RelatedQuery<TResult, TKey>) => void },
+  ): QueryBuilder<TClass, WithRelations<TResult, TName>>
   with(...args: readonly unknown[]): unknown {
     const [first] = args
     if (typeof first === 'object' && first !== null) {
       for (const [name, constrain] of Object.entries(first)) {
-        if (typeof constrain !== 'function') throw new OrmUsageError('INVALID_CONSTRAINT', `The constraint for "${name}" must be a function (query) => …`)
+        if (typeof constrain !== 'function')
+          throw new OrmUsageError(
+            'INVALID_CONSTRAINT',
+            `The constraint for "${name}" must be a function (query) => …`,
+          )
         this.#addEagerPath(name, (query: never) => Reflect.apply(constrain, undefined, [query]))
       }
     } else {
       for (const path of args) {
-        if (typeof path !== 'string') throw new OrmUsageError('INVALID_RELATION_PATH', 'with() takes relation names such as "author" or "posts.tags".')
+        if (typeof path !== 'string')
+          throw new OrmUsageError(
+            'INVALID_RELATION_PATH',
+            'with() takes relation names such as "author" or "posts.tags".',
+          )
         this.#addEagerPath(path, undefined)
       }
     }
@@ -420,7 +583,9 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * @example
    * const users = await User.query().withCount('posts').get() // users[0].posts_count
    */
-  withCount<TName extends RelationNames<InstanceOf<TClass>>>(...names: TName[]): QueryBuilder<TClass, WithCounts<TResult, TName>> {
+  withCount<TName extends RelationNames<InstanceOf<TClass>>>(
+    ...names: TName[]
+  ): QueryBuilder<TClass, WithCounts<TResult, TName>> {
     for (const name of names) {
       // Resolve now so a typo fails here, with a suggestion, rather than at execution.
       this.#model.relation(name)
@@ -463,7 +628,10 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    */
   withoutGlobalScope(name: string): this {
     if (!this.#model.settings().globalScopes.has(name)) {
-      throw new OrmUsageError('UNKNOWN_SCOPE', `${this.#model.name} has no global scope "${name}". Global scopes are listed in its static globalScopes.`)
+      throw new OrmUsageError(
+        'UNKNOWN_SCOPE',
+        `${this.#model.name} has no global scope "${name}". Global scopes are listed in its static globalScopes.`,
+      )
     }
     this.#withoutScopes.add(name)
     return this
@@ -532,7 +700,15 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   async find(key: KeyOf<TClass>): Promise<TResult | undefined> {
     const primaryKey = this.#model.info().primaryKey.name
     const ref = this.#column(primaryKey)
-    return this.clone().#push({ kind: 'compare', conjunction: 'and', column: ref, operator: '=', value: this.#bind(ref, key) }).first()
+    return this.clone()
+      .#push({
+        kind: 'compare',
+        conjunction: 'and',
+        column: ref,
+        operator: '=',
+        value: this.#bind(ref, key),
+      })
+      .first()
   }
 
   /**
@@ -555,7 +731,9 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    */
   async count(): Promise<number> {
     const ast: SelectAst = { ...this.#ast([{ kind: 'count', as: 'aggregate' }]), orderBy: [] }
-    const { rows } = await this.#model.connection().run(this.#compile(withoutPaging(ast)), this.#runOptions())
+    const { rows } = await this.#model
+      .connection()
+      .run(this.#compile(withoutPaging(ast)), this.#runOptions())
     return Number(rows[0]?.['aggregate'] ?? 0)
   }
 
@@ -575,15 +753,25 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * @example
    * const page = await Post.query().latest().paginate(25, 2)
    */
-  async paginate(perPage: number = this.#model.settings().perPage, page = 1): Promise<Page<TResult>> {
+  async paginate(
+    perPage: number = this.#model.settings().perPage,
+    page = 1,
+  ): Promise<Page<TResult>> {
     assertPageSize(perPage)
-    if (!Number.isSafeInteger(page) || page < 1) throw new OrmUsageError('INVALID_PAGE', `Page numbers start at 1; got ${String(page)}.`)
+    if (!Number.isSafeInteger(page) || page < 1)
+      throw new OrmUsageError('INVALID_PAGE', `Page numbers start at 1; got ${String(page)}.`)
     const total = await this.count()
     const data = await this.clone()
       .limit(perPage)
       .offset((page - 1) * perPage)
       .get()
-    return { data, total, perPage, currentPage: page, lastPage: Math.max(1, Math.ceil(total / perPage)) }
+    return {
+      data,
+      total,
+      perPage,
+      currentPage: page,
+      lastPage: Math.max(1, Math.ceil(total / perPage)),
+    }
   }
 
   /**
@@ -594,7 +782,10 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * const first = await Post.query().orderBy('created_at', 'desc').cursorPaginate(20)
    * const second = await Post.query().orderBy('created_at', 'desc').cursorPaginate(20, first.nextCursor ?? undefined)
    */
-  async cursorPaginate(perPage: number = this.#model.settings().perPage, cursor?: string): Promise<CursorPage<TResult>> {
+  async cursorPaginate(
+    perPage: number = this.#model.settings().perPage,
+    cursor?: string,
+  ): Promise<CursorPage<TResult>> {
     assertPageSize(perPage)
     const orders = this.#cursorOrders()
     const fingerprint = `${this.#model.table}:${orders.map((order) => `${order.column.column}:${order.direction}`).join(',')}`
@@ -608,7 +799,13 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     const hasMore = rows.length > perPage
     const data = hasMore ? rows.slice(0, perPage) : rows
     const last = data.at(-1)
-    const nextCursor = hasMore && last !== undefined ? encodeCursor(fingerprint, orders.map((order) => cursorValue(last, order.column.column))) : null
+    const nextCursor =
+      hasMore && last !== undefined
+        ? encodeCursor(
+            fingerprint,
+            orders.map((order) => cursorValue(last, order.column.column)),
+          )
+        : null
     return { data, perPage, nextCursor }
   }
 
@@ -723,16 +920,27 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       Reflect.apply(first, undefined, [group])
       return { kind: 'group', conjunction, nodes: group.#where }
     }
-    if (typeof first !== 'string') throw new OrmUsageError('INVALID_WHERE', 'where() takes a column name, or a function that groups conditions.')
+    if (typeof first !== 'string')
+      throw new OrmUsageError(
+        'INVALID_WHERE',
+        'where() takes a column name, or a function that groups conditions.',
+      )
     const ref = this.#column(first)
     const operator = args.length >= 3 ? parseOperator(second) : '='
     const raw = args.length >= 3 ? third : second
-    return { kind: 'compare', conjunction, column: ref, operator, value: raw === null ? null : this.#bind(ref, raw) }
+    return {
+      kind: 'compare',
+      conjunction,
+      column: ref,
+      operator,
+      value: raw === null ? null : this.#bind(ref, raw),
+    }
   }
 
   /** Check a column name against the snapshot and qualify it with this query's alias. */
   #column(name: string): ColumnRef {
-    if (!this.#model.info().columns.has(name)) throw unknownColumn(this.#model.table, name, this.#visibleColumns())
+    if (!this.#model.info().columns.has(name))
+      throw unknownColumn(this.#model.table, name, this.#visibleColumns())
     return { alias: this.#alias, column: name }
   }
 
@@ -742,7 +950,8 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * returned (`filter[password][startsWith]=a`, one character at a time; security review F-03/F-13).
    */
   #requestColumn(name: string): ColumnRef {
-    if (this.#model.settings().hidden.has(name)) throw unknownColumn(this.#model.table, name, this.#visibleColumns())
+    if (this.#model.settings().hidden.has(name))
+      throw unknownColumn(this.#model.table, name, this.#visibleColumns())
     return this.#column(name)
   }
 
@@ -758,9 +967,15 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     // Compare in the stored form: a model cast (e.g. email normalisation) applies to the value
     // too, so 'ADMIN@x' finds the row stored as 'admin@x' and never a look-alike.
     const cast = this.#model.settings().casts.get(ref.column)
-    const stored = cast === undefined ? value : applyCast(this.#model.table, ref.column, cast, value)
+    const stored =
+      cast === undefined ? value : applyCast(this.#model.table, ref.column, cast, value)
     // `nullable: true` here: a NULL comparison was handled before binding; never fail on it.
-    return toDatabase(this.#model.table, { ...column, nullable: true }, stored, this.#model.connection().grammar.dialect)
+    return toDatabase(
+      this.#model.table,
+      { ...column, nullable: true },
+      stored,
+      this.#model.connection().grammar.dialect,
+    )
   }
 
   #definition(name: string): ColumnDef {
@@ -772,14 +987,19 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   #containsFragment(ref: ColumnRef, needle: string): SqlFragment {
     const grammar = this.#model.connection().grammar
     // Fold both sides to lower case so matching is case-insensitive on every engine and collation.
-    const haystack = concat(text('lower('), columnSql(ref), text(')'))
-    return markScoped(concat(grammar.position(haystack, grammar.textParameter(needle.toLowerCase())), text(' > 0')))
+    const haystack = concat(text(`${grammar.lowerFunction}(`), columnSql(ref), text(')'))
+    return markScoped(
+      concat(grammar.position(haystack, grammar.textParameter(needle.toLowerCase())), text(' > 0')),
+    )
   }
 
   #defaultTimestamp(): ColumnOf<TableOf<TClass>> {
     const info = this.#model.info()
     if (!info.columns.has('created_at')) {
-      throw new OrmUsageError('NO_TIMESTAMPS', `"${this.#model.table}" has no created_at column; pass the column to sort by, e.g. latest('id').`)
+      throw new OrmUsageError(
+        'NO_TIMESTAMPS',
+        `"${this.#model.table}" has no created_at column; pass the column to sort by, e.g. latest('id').`,
+      )
     }
     return toColumnName<TClass>('created_at')
   }
@@ -788,7 +1008,8 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     const names = path.split('.')
     // Resolve the first level now, so a typo fails at with() with a suggestion.
     const [head] = names
-    if (head === undefined || head === '') throw new OrmUsageError('INVALID_RELATION_PATH', `"${path}" is not a relation path.`)
+    if (head === undefined || head === '')
+      throw new OrmUsageError('INVALID_RELATION_PATH', `"${path}" is not a relation path.`)
     this.#model.relation(head)
     let level = this.#eager
     names.forEach((name, index) => {
@@ -825,7 +1046,12 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       if (tenant !== undefined) conditions.push(tenant)
     }
     if (info.softDeletes && this.#trashed !== 'with') {
-      conditions.push({ kind: 'null', conjunction: 'and', column: { alias: this.#alias, column: 'deleted_at' }, negated: this.#trashed === 'only' })
+      conditions.push({
+        kind: 'null',
+        conjunction: 'and',
+        column: { alias: this.#alias, column: 'deleted_at' },
+        negated: this.#trashed === 'only',
+      })
     }
     for (const [name, scope] of this.#model.settings().globalScopes) {
       if (this.#withoutScopes.has(name)) continue
@@ -839,10 +1065,15 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   #ast(select?: readonly SelectItem[]): SelectAst {
     const scopes = this.#scopeConditions()
     // The developer's conditions go in parentheses before scopes are AND-ed on (see the header).
-    const own: WhereNode[] = this.#where.length > 0 && scopes.length > 0 ? [{ kind: 'group', conjunction: 'and', nodes: this.#where }] : this.#where
+    const own: WhereNode[] =
+      this.#where.length > 0 && scopes.length > 0
+        ? [{ kind: 'group', conjunction: 'and', nodes: this.#where }]
+        : this.#where
     const counts: SelectItem[] = this.#counts.map(({ name, constrain }) => ({
       kind: 'subquery',
-      query: this.#model.relation(name).subquery(this.#alias, `${this.#alias}__${name}_count`, constrain, 'count'),
+      query: this.#model
+        .relation(name)
+        .subquery(this.#alias, `${this.#alias}__${name}_count`, constrain, 'count'),
       as: `${name}_count`,
     }))
     return {
@@ -860,7 +1091,9 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   /** Tenant statements tell the connection their tenant, so Postgres can set it for RLS. */
   #runOptions(): { readonly tenantId?: string } {
     const tenant = currentTenant()
-    return tenantMode(this.#model.table) === 'scoped' && tenant !== undefined ? { tenantId: tenant } : {}
+    return tenantMode(this.#model.table) === 'scoped' && tenant !== undefined
+      ? { tenantId: tenant }
+      : {}
   }
 
   /** The single exit to SQL: check every tenant reference in the tree, then compile. */
@@ -871,7 +1104,10 @@ export class Builder<TClass extends AnyModelClass, TResult> {
 
   #cursorOrders(): OrderNode[] {
     const primaryKey = this.#model.info().primaryKey.name
-    const orders: OrderNode[] = this.#orderBy.length > 0 ? [...this.#orderBy] : [{ column: this.#column(primaryKey), direction: 'asc' }]
+    const orders: OrderNode[] =
+      this.#orderBy.length > 0
+        ? [...this.#orderBy]
+        : [{ column: this.#column(primaryKey), direction: 'asc' }]
     const last = orders.at(-1)
     if (!orders.some((order) => order.column.column === primaryKey)) {
       // The primary key breaks ties, so rows with equal sort values are never skipped or repeated.
@@ -898,7 +1134,13 @@ export class Builder<TClass extends AnyModelClass, TResult> {
         operator: '=',
         value: this.#bind(previous.column, values[previousIndex]),
       }))
-      const step: WhereNode = { kind: 'compare', conjunction: 'and', column: order.column, operator: order.direction === 'desc' ? '<' : '>', value: this.#bind(order.column, values[index]) }
+      const step: WhereNode = {
+        kind: 'compare',
+        conjunction: 'and',
+        column: order.column,
+        operator: order.direction === 'desc' ? '<' : '>',
+        value: this.#bind(order.column, values[index]),
+      }
       return { kind: 'group', conjunction: 'or', nodes: [...equalities, step] }
     })
     return { kind: 'group', conjunction: 'and', nodes: branches }
@@ -945,7 +1187,10 @@ export function parseRelationPaths(paths: readonly string[]): EagerTree {
 
 function parseOperator(raw: unknown): CompareOperator {
   if (typeof raw === 'string' && OPERATORS.has(raw)) return toOperator(raw)
-  throw new OrmUsageError('INVALID_OPERATOR', `${JSON.stringify(raw)} is not a supported operator. Use one of: ${[...OPERATORS].join(' ')}. For text search use whereRaw with the sql tag.`)
+  throw new OrmUsageError(
+    'INVALID_OPERATOR',
+    `${JSON.stringify(raw)} is not a supported operator. Use one of: ${[...OPERATORS].join(' ')}. For text search use whereRaw with the sql tag.`,
+  )
 }
 
 /** Narrow a string already checked against {@link OPERATORS}. */
@@ -977,37 +1222,57 @@ function withoutPaging(ast: SelectAst): SelectAst {
 function assertInSize(column: string, size: number): void {
   const max = ormConfig().maxInValues
   if (size > max) {
-    throw new OrmUsageError('TOO_MANY_VALUES', `An "in" list on "${column}" may hold at most ${max} values; got ${size}. Split the work into smaller lists, or raise the limit with configureOrm({ maxInValues }).`)
+    throw new OrmUsageError(
+      'TOO_MANY_VALUES',
+      `An "in" list on "${column}" may hold at most ${max} values; got ${size}. Split the work into smaller lists, or raise the limit with configureOrm({ maxInValues }).`,
+    )
   }
 }
 
 /** Search and text filters bind the text as-is (not through a column cast): refuse a lone surrogate there too. */
 function assertWellFormed(table: string, column: string, text: string): void {
-  if (!text.isWellFormed()) throw new CastError(table, column, 'the text contains malformed Unicode (a lone surrogate)')
+  if (!text.isWellFormed())
+    throw new CastError(table, column, 'the text contains malformed Unicode (a lone surrogate)')
 }
 
 function assertCount(what: string, count: number): number {
-  if (!Number.isSafeInteger(count) || count < 0) throw new OrmUsageError('INVALID_COUNT', `${what}() needs a whole number of 0 or more; got ${String(count)}.`)
+  if (!Number.isSafeInteger(count) || count < 0)
+    throw new OrmUsageError(
+      'INVALID_COUNT',
+      `${what}() needs a whole number of 0 or more; got ${String(count)}.`,
+    )
   return count
 }
 
 function assertPageSize(perPage: number): void {
   const max = ormConfig().maxPerPage
   if (!Number.isSafeInteger(perPage) || perPage < 1 || perPage > max) {
-    throw new OrmUsageError('INVALID_PAGE_SIZE', `Page size must be between 1 and ${max}; got ${String(perPage)}. Raise the limit with configureOrm({ maxPerPage }).`)
+    throw new OrmUsageError(
+      'INVALID_PAGE_SIZE',
+      `Page size must be between 1 and ${max}; got ${String(perPage)}. Raise the limit with configureOrm({ maxPerPage }).`,
+    )
   }
 }
 
 function unknownColumn(table: string, name: string, columns: Iterable<string>): OrmUsageError {
   const suggestion = closest(name, columns)
   const hint = suggestion === undefined ? '' : ` Did you mean "${suggestion}"?`
-  return new OrmUsageError('UNKNOWN_COLUMN', `"${table}" has no column "${name}".${hint} Columns come from your migrations.`)
+  return new OrmUsageError(
+    'UNKNOWN_COLUMN',
+    `"${table}" has no column "${name}".${hint} Columns come from your migrations.`,
+  )
 }
 
 /** A row's sort value in cursor form (dates as ISO strings). */
 function cursorValue(model: unknown, column: string): CursorValue {
-  const value: unknown = typeof model === 'object' && model !== null ? Reflect.get(model, column) : undefined
+  const value: unknown =
+    typeof model === 'object' && model !== null ? Reflect.get(model, column) : undefined
   if (value instanceof Date) return value.toISOString()
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
-  throw new CastError('cursor', column, 'only text, numbers, booleans and dates can be cursor columns')
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+    return value
+  throw new CastError(
+    'cursor',
+    column,
+    'only text, numbers, booleans and dates can be cursor columns',
+  )
 }

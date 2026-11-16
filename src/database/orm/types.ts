@@ -19,7 +19,7 @@ import type { Cast } from './casts.ts'
 export const MODEL_TYPES: unique symbol = Symbol('strutvane.modelTypes')
 
 /** Compile-time marker carrying a relation's related model class and whether it is to-many. */
-export const RELATION_TYPES: unique symbol = Symbol('strutvane.relationTypes')
+export const RELATION_TYPES: '~strutvane.relationTypes' = '~strutvane.relationTypes'
 
 /** Columns Strutvane fills itself: never mass-assignable, never accepted from input. */
 export type SystemColumn = 'id' | 'created_at' | 'updated_at' | 'deleted_at' | 'tenant_id'
@@ -50,7 +50,10 @@ export interface ModelOptions<TTable extends TableName> {
 }
 
 /** A column that may appear in `fillable`: any insertable column except Strutvane's own. */
-export type FillableColumn<TTable extends TableName> = Exclude<keyof InsertOf<TTable> & string, SystemColumn>
+export type FillableColumn<TTable extends TableName> = Exclude<
+  keyof InsertOf<TTable> & string,
+  SystemColumn
+>
 
 /** "No options given", as a type. */
 export type NoOptions = Readonly<Record<never, never>>
@@ -66,15 +69,21 @@ type KeepNull<TOriginal, TValue> = null extends TOriginal ? TValue | null : TVal
  * type PostAttributes = Attributes<'posts', { casts: { meta: Cast<PostMeta> } }> // meta: PostMeta | null
  */
 export type Attributes<TTable extends TableName, TOptions> = {
-  -readonly [TColumn in ColumnOf<TTable>]: TColumn extends keyof CastsOf<TOptions> ? KeepNull<RowOf<TTable>[TColumn], CastValue<CastsOf<TOptions>[TColumn]>> : RowOf<TTable>[TColumn]
+  -readonly [TColumn in ColumnOf<TTable>]: TColumn extends keyof CastsOf<TOptions>
+    ? KeepNull<RowOf<TTable>[TColumn], CastValue<CastsOf<TOptions>[TColumn]>>
+    : RowOf<TTable>[TColumn]
 }
 
 /** What a writable column accepts: the generated insert type with model casts applied. */
 export type WritableAttributes<TTable extends TableName, TOptions> = {
-  [TColumn in keyof InsertOf<TTable>]: TColumn extends keyof CastsOf<TOptions> ? KeepNull<InsertOf<TTable>[TColumn], CastValue<CastsOf<TOptions>[TColumn]>> : InsertOf<TTable>[TColumn]
+  [TColumn in keyof InsertOf<TTable>]: TColumn extends keyof CastsOf<TOptions>
+    ? KeepNull<InsertOf<TTable>[TColumn], CastValue<CastsOf<TOptions>[TColumn]>>
+    : InsertOf<TTable>[TColumn]
 }
 
-type FillableOf<TOptions> = TOptions extends { readonly fillable: readonly (infer TColumn)[] } ? TColumn : never
+type FillableOf<TOptions> = TOptions extends { readonly fillable: readonly (infer TColumn)[] }
+  ? TColumn
+  : never
 
 /**
  * The friendly compile error shown when `create()` is used on a model without `fillable`.
@@ -92,10 +101,16 @@ export interface DeclareFillableFirst {
  */
 export type CreateInput<TTable extends TableName, TOptions> = [FillableOf<TOptions>] extends [never]
   ? DeclareFillableFirst
-  : Pick<WritableAttributes<TTable, TOptions>, FillableOf<TOptions> & keyof WritableAttributes<TTable, TOptions>>
+  : Pick<
+      WritableAttributes<TTable, TOptions>,
+      FillableOf<TOptions> & keyof WritableAttributes<TTable, TOptions>
+    >
 
 /** What `forceCreate()` accepts: every writable column except Strutvane's own. */
-export type ForceCreateInput<TTable extends TableName, TOptions> = Omit<WritableAttributes<TTable, TOptions>, SystemColumn>
+export type ForceCreateInput<TTable extends TableName, TOptions> = Omit<
+  WritableAttributes<TTable, TOptions>,
+  SystemColumn
+>
 
 /** The marker every model instance carries (type-level only). */
 export interface ModelMarker<TTable extends TableName = TableName, TOptions = object> {
@@ -118,13 +133,22 @@ export interface AnyModelClass {
 /** The instance type of a model class. */
 export type InstanceOf<TClass> = TClass extends new () => infer TInstance ? TInstance : never
 /** The table of a model class. */
-export type TableOf<TClass> = TClass extends { readonly table: infer TTable extends TableName } ? TTable : never
+export type TableOf<TClass> = TClass extends { readonly table: infer TTable extends TableName }
+  ? TTable
+  : never
 /** The options of a model class. */
-export type OptionsOf<TClass> = TClass extends { readonly options: infer TOptions } ? TOptions : never
+export type OptionsOf<TClass> = TClass extends { readonly options: infer TOptions }
+  ? TOptions
+  : never
 /** The table of a model instance. */
-export type TableOfInstance<TInstance> = TInstance extends { readonly [MODEL_TYPES]: { readonly table: infer TTable extends TableName } } ? TTable : never
+export type TableOfInstance<TInstance> = TInstance extends {
+  readonly [MODEL_TYPES]: { readonly table: infer TTable extends TableName }
+}
+  ? TTable
+  : never
 /** The primary key type of a model class (`number` for `t.id()`, `string` for `t.uuid('id')`). */
-export type KeyOf<TClass> = RowOf<TableOf<TClass>> extends { readonly id: infer TKey } ? TKey : never
+export type KeyOf<TClass> =
+  RowOf<TableOf<TClass>> extends { readonly id: infer TKey } ? TKey : never
 
 /**
  * The value a `where` on `column` accepts: the column's own type (with `null` when nullable).
@@ -132,7 +156,10 @@ export type KeyOf<TClass> = RowOf<TableOf<TClass>> extends { readonly id: infer 
  * @example
  * type StatusValue = ColumnValue<'posts', 'status'> // 'draft' | 'published'
  */
-export type ColumnValue<TTable extends TableName, TColumn extends ColumnOf<TTable>> = RowOf<TTable>[TColumn]
+export type ColumnValue<
+  TTable extends TableName,
+  TColumn extends ColumnOf<TTable>,
+> = RowOf<TTable>[TColumn]
 
 // ---------------------------------------------------------------------------------------------
 // Relations
@@ -145,8 +172,11 @@ export interface RelationTypes<TRelated extends AnyModelClass, TMany extends boo
 }
 
 /** Anything a relation method returns. */
-export interface RelationLike<TRelated extends AnyModelClass = AnyModelClass, TMany extends boolean = boolean> {
-  readonly [RELATION_TYPES]: RelationTypes<TRelated, TMany>
+export interface RelationLike<
+  TRelated extends AnyModelClass = AnyModelClass,
+  TMany extends boolean = boolean,
+> {
+  readonly '~strutvane.relationTypes': RelationTypes<TRelated, TMany>
 }
 
 /**
@@ -156,7 +186,11 @@ export interface RelationLike<TRelated extends AnyModelClass = AnyModelClass, TM
  * type PostRelations = RelationNames<Post> // 'author' | 'tags'
  */
 export type RelationNames<TInstance> = {
-  [TKey in CandidateKeys<TInstance>]-?: TKey extends string ? (TInstance[TKey] extends () => RelationLike ? TKey : never) : never
+  [TKey in CandidateKeys<TInstance>]-?: TKey extends string
+    ? TInstance[TKey] extends () => RelationLike
+      ? TKey
+      : never
+    : never
 }[CandidateKeys<TInstance>]
 
 /**
@@ -189,19 +223,24 @@ type CandidateKeys<TInstance> = Exclude<keyof TInstance, ModelMethodName | typeo
 
 /** The related model class of relation `TName`. */
 export type RelatedClassOf<TInstance, TName> = TName extends keyof TInstance
-  ? TInstance[TName] extends () => { readonly [RELATION_TYPES]: { readonly related: infer TRelated } }
+  ? TInstance[TName] extends () => {
+      readonly '~strutvane.relationTypes': { readonly related: infer TRelated }
+    }
     ? TRelated
     : never
   : never
 
 type IsMany<TInstance, TName> = TName extends keyof TInstance
-  ? TInstance[TName] extends () => { readonly [RELATION_TYPES]: { readonly many: infer TMany } }
+  ? TInstance[TName] extends () => {
+      readonly '~strutvane.relationTypes': { readonly many: infer TMany }
+    }
     ? TMany
     : never
   : never
 
 /** A loaded relation's value: an array for to-many, the model or `null` for to-one. */
-type RelationValue<TInstance, TName, TLoaded> = IsMany<TInstance, TName> extends true ? TLoaded[] : TLoaded | null
+type RelationValue<TInstance, TName, TLoaded> =
+  IsMany<TInstance, TName> extends true ? TLoaded[] : TLoaded | null
 
 /** Countdown used to stop relation paths at three levels (User → posts → author → …). */
 type Depth = [never, 0, 1, 2]
@@ -215,18 +254,27 @@ type Depth = [never, 0, 1, 2]
 export type RelationPath<TInstance, TDepth extends number = 3> = [TDepth] extends [never]
   ? never
   : {
-      [TName in RelationNames<TInstance>]: TName | `${TName}.${RelationPath<InstanceOf<RelatedClassOf<TInstance, TName>>, Depth[TDepth]>}`
+      [TName in RelationNames<TInstance>]:
+        | TName
+        | `${TName}.${RelationPath<InstanceOf<RelatedClassOf<TInstance, TName>>, Depth[TDepth]>}`
     }[RelationNames<TInstance>]
 
 type HeadOf<TPath extends string> = TPath extends `${infer THead}.${string}` ? THead : TPath
-type TailOf<TPath extends string, THead extends string> = TPath extends `${THead}.${infer TTail}` ? TTail : never
-type LoadedNested<TInstance, TTail extends string> = [TTail] extends [never] ? TInstance : WithRelations<TInstance, TTail>
+type TailOf<TPath extends string, THead extends string> = TPath extends `${THead}.${infer TTail}`
+  ? TTail
+  : never
+type LoadedNested<TInstance, TTail extends string> = [TTail] extends [never]
+  ? TInstance
+  : WithRelations<TInstance, TTail>
 
 /**
  * Add properties to a result type and keep `toJSON()` in sync with them. The new `toJSON` is
  * listed first because TypeScript resolves calls on intersections to the first matching overload.
  */
-export type Extend<TResult, TExtra> = { toJSON(): JsonOf<Omit<TResult, keyof TExtra | 'toJSON'> & TExtra> } & Omit<TResult, keyof TExtra | 'toJSON'> & TExtra
+export type Extend<TResult, TExtra> = {
+  toJSON(): JsonOf<Omit<TResult, keyof TExtra | 'toJSON'> & TExtra>
+} & Omit<TResult, keyof TExtra | 'toJSON'> &
+  TExtra
 
 /**
  * A model with relations loaded: `post.author` becomes `User | null` (the method is replaced by
@@ -238,7 +286,11 @@ export type Extend<TResult, TExtra> = { toJSON(): JsonOf<Omit<TResult, keyof TEx
 export type WithRelations<TInstance, TPath extends string> = Extend<
   TInstance,
   {
-    [TName in HeadOf<TPath> & RelationNames<TInstance>]: RelationValue<TInstance, TName, LoadedNested<InstanceOf<RelatedClassOf<TInstance, TName>>, TailOf<TPath, TName>>>
+    [TName in HeadOf<TPath> & RelationNames<TInstance>]: RelationValue<
+      TInstance,
+      TName,
+      LoadedNested<InstanceOf<RelatedClassOf<TInstance, TName>>, TailOf<TPath, TName>>
+    >
   }
 >
 
@@ -248,33 +300,45 @@ export type WithRelations<TInstance, TPath extends string> = Extend<
  * @example
  * type UserWithCount = WithCounts<User, 'posts'> // user.posts_count: number
  */
-export type WithCounts<TInstance, TName extends string> = Extend<TInstance, { [TCount in TName as `${TCount}_count`]: number }>
+export type WithCounts<TInstance, TName extends string> = Extend<
+  TInstance,
+  { [TCount in TName as `${TCount}_count`]: number }
+>
 
 // ---------------------------------------------------------------------------------------------
 // JSON
 // ---------------------------------------------------------------------------------------------
 
-type HiddenOf<TInstance> = TInstance extends { readonly [MODEL_TYPES]: { readonly options: infer TOptions } }
+type HiddenOf<TInstance> = TInstance extends {
+  readonly [MODEL_TYPES]: { readonly options: infer TOptions }
+}
   ? TOptions extends { readonly hidden: readonly (infer THidden)[] }
     ? THidden
     : never
   : never
 
-type IsJsonKey<TInstance, TKey extends keyof TInstance> = TKey extends HiddenOf<TInstance>
-  ? false
-  : TKey extends ColumnOf<TableOfInstance<TInstance>>
-    ? true
-    : TKey extends `${string}_count`
-      ? TInstance[TKey] extends number
-        ? true
-        : false
-      : TKey extends string
-        ? TInstance[TKey] extends AnyModel | readonly AnyModel[] | null
+type IsJsonKey<TInstance, TKey extends keyof TInstance> =
+  TKey extends HiddenOf<TInstance>
+    ? false
+    : TKey extends ColumnOf<TableOfInstance<TInstance>>
+      ? true
+      : TKey extends `${string}_count`
+        ? TInstance[TKey] extends number
           ? true
           : false
-        : false
+        : TKey extends string
+          ? TInstance[TKey] extends AnyModel | readonly AnyModel[] | null
+            ? true
+            : false
+          : false
 
-type JsonValueOf<TValue> = TValue extends Date ? string : TValue extends readonly AnyModel[] ? JsonOf<TValue[number]>[] : TValue extends AnyModel ? JsonOf<TValue> : TValue
+type JsonValueOf<TValue> = TValue extends Date
+  ? string
+  : TValue extends readonly AnyModel[]
+    ? JsonOf<TValue[number]>[]
+    : TValue extends AnyModel
+      ? JsonOf<TValue>
+      : TValue
 
 /**
  * A model as JSON: columns minus `hidden`, dates as ISO strings, loaded relations nested, counts
@@ -284,7 +348,9 @@ type JsonValueOf<TValue> = TValue extends Date ? string : TValue extends readonl
  * type UserJson = JsonOf<User> // no `password` when it is hidden
  */
 export type JsonOf<TInstance> = {
-  [TKey in keyof TInstance as IsJsonKey<TInstance, TKey> extends true ? TKey : never]: JsonValueOf<TInstance[TKey]>
+  [TKey in keyof TInstance as IsJsonKey<TInstance, TKey> extends true ? TKey : never]: JsonValueOf<
+    TInstance[TKey]
+  >
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -299,11 +365,28 @@ export type JsonOf<TInstance> = {
  * const published = (query: ScopeQuery<'posts'>) => query.where('status', 'published')
  */
 export interface ScopeQuery<TTable extends TableName> {
-  where<TColumn extends ColumnOf<TTable>>(column: TColumn, value: ColumnValue<TTable, TColumn>): ScopeQuery<TTable>
-  where<TColumn extends ColumnOf<TTable>>(column: TColumn, operator: CompareOperator, value: ColumnValue<TTable, TColumn>): ScopeQuery<TTable>
-  orWhere<TColumn extends ColumnOf<TTable>>(column: TColumn, value: ColumnValue<TTable, TColumn>): ScopeQuery<TTable>
-  orWhere<TColumn extends ColumnOf<TTable>>(column: TColumn, operator: CompareOperator, value: ColumnValue<TTable, TColumn>): ScopeQuery<TTable>
-  whereIn<TColumn extends ColumnOf<TTable>>(column: TColumn, values: readonly NonNullable<ColumnValue<TTable, TColumn>>[]): ScopeQuery<TTable>
+  where<TColumn extends ColumnOf<TTable>>(
+    column: TColumn,
+    value: ColumnValue<TTable, TColumn>,
+  ): ScopeQuery<TTable>
+  where<TColumn extends ColumnOf<TTable>>(
+    column: TColumn,
+    operator: CompareOperator,
+    value: ColumnValue<TTable, TColumn>,
+  ): ScopeQuery<TTable>
+  orWhere<TColumn extends ColumnOf<TTable>>(
+    column: TColumn,
+    value: ColumnValue<TTable, TColumn>,
+  ): ScopeQuery<TTable>
+  orWhere<TColumn extends ColumnOf<TTable>>(
+    column: TColumn,
+    operator: CompareOperator,
+    value: ColumnValue<TTable, TColumn>,
+  ): ScopeQuery<TTable>
+  whereIn<TColumn extends ColumnOf<TTable>>(
+    column: TColumn,
+    values: readonly NonNullable<ColumnValue<TTable, TColumn>>[],
+  ): ScopeQuery<TTable>
   whereNull(column: ColumnOf<TTable>): ScopeQuery<TTable>
   whereNotNull(column: ColumnOf<TTable>): ScopeQuery<TTable>
   whereRaw(fragment: SqlFragment): ScopeQuery<TTable>
@@ -317,13 +400,20 @@ export interface ScopeQuery<TTable extends TableName> {
  * @example
  * static scopes = { ofStatus: (query, status: 'draft' | 'published') => query.where('status', status) } satisfies Scopes<'posts'>
  */
-export type Scopes<TTable extends TableName> = Readonly<Record<string, (query: ScopeQuery<TTable>, ...args: never[]) => unknown>>
+export type Scopes<TTable extends TableName> = Readonly<
+  Record<string, (query: ScopeQuery<TTable>, ...args: never[]) => unknown>
+>
 
 type ScopesOf<TClass> = TClass extends { readonly scopes: infer TScopes } ? TScopes : NoOptions
 
 /** The scope methods a model's query builder gains: `Post.query().published()`. */
 export type ScopeMethods<TClass extends AnyModelClass, TResult> = {
-  [TName in keyof ScopesOf<TClass>]: ScopesOf<TClass>[TName] extends (query: never, ...args: infer TArgs) => unknown ? (...args: TArgs) => QueryBuilder<TClass, TResult> : never
+  [TName in keyof ScopesOf<TClass>]: ScopesOf<TClass>[TName] extends (
+    query: never,
+    ...args: infer TArgs
+  ) => unknown
+    ? (...args: TArgs) => QueryBuilder<TClass, TResult>
+    : never
 }
 
 /**
@@ -333,7 +423,11 @@ export type ScopeMethods<TClass extends AnyModelClass, TResult> = {
  * @example
  * const query: QueryBuilder<typeof Post, Post> = Post.query()
  */
-export type QueryBuilder<TClass extends AnyModelClass, TResult> = Builder<TClass, TResult> & ScopeMethods<TClass, TResult>
+export type QueryBuilder<TClass extends AnyModelClass, TResult> = Builder<TClass, TResult> &
+  ScopeMethods<TClass, TResult>
 
 /** The builder for the model a relation points at. */
-export type RelatedQuery<TInstance, TName> = QueryBuilder<RelatedClassOf<TInstance, TName> & AnyModelClass, InstanceOf<RelatedClassOf<TInstance, TName>>>
+export type RelatedQuery<TInstance, TName> = QueryBuilder<
+  RelatedClassOf<TInstance, TName> & AnyModelClass,
+  InstanceOf<RelatedClassOf<TInstance, TName>>
+>

@@ -46,6 +46,8 @@ export interface Grammar {
   nullSafeNotEqual(left: SqlFragment, right: SqlFragment): SqlFragment
   /** Literal substring position (1-based, 0 when absent): never LIKE, so `%` and `_` are plain text. */
   position(haystack: SqlFragment, needle: SqlFragment): SqlFragment
+  /** The Unicode lower-case function search folds with (`lower`, or SQLite's registered `sv_lower`). */
+  readonly lowerFunction: string
   /** A text parameter. PostgreSQL can't infer a parameter's type inside string functions. */
   textParameter(value: unknown): SqlFragment
   /** Can `INSERT … RETURNING *` hand back the inserted row? */
@@ -71,7 +73,10 @@ export interface RenderedSql {
   readonly params: readonly unknown[]
 }
 
-function renderWith(grammar: Pick<Grammar, 'quote' | 'placeholder'>, fragment: SqlFragment): RenderedSql {
+function renderWith(
+  grammar: Pick<Grammar, 'quote' | 'placeholder'>,
+  fragment: SqlFragment,
+): RenderedSql {
   let output = ''
   const params: unknown[] = []
   for (const part of fragment.parts) {
@@ -86,7 +91,9 @@ function renderWith(grammar: Pick<Grammar, 'quote' | 'placeholder'>, fragment: S
 }
 
 function errorProperty(error: unknown, key: 'code' | 'errno'): unknown {
-  return typeof error === 'object' && error !== null && key in error ? Reflect.get(error, key) : undefined
+  return typeof error === 'object' && error !== null && key in error
+    ? Reflect.get(error, key)
+    : undefined
 }
 
 function errorMessage(error: unknown): string {
@@ -106,13 +113,15 @@ export const mysqlGrammar: Grammar = {
   // MySQL has no IS DISTINCT FROM; `<=>` is its NULL-safe equality, so negate it.
   nullSafeNotEqual: (left, right) => concat(text('NOT ('), left, text(' <=> '), right, text(')')),
   position: (haystack, needle) => concat(text('LOCATE('), needle, text(', '), haystack, text(')')),
+  lowerFunction: 'LOWER',
   textParameter: (bound) => value(bound),
   // MySQL (unlike MariaDB) has no RETURNING clause, up to and including 8.4 / 9.x.
   supportsReturning: false,
   supportsUpdateReturning: false,
   // The largest unsigned BIGINT: MySQL's documented way to say "no limit" before an OFFSET.
   limitForOffsetOnly: '18446744073709551615',
-  isUniqueViolation: (error) => errorProperty(error, 'code') === 'ER_DUP_ENTRY' || errorProperty(error, 'errno') === 1062,
+  isUniqueViolation: (error) =>
+    errorProperty(error, 'code') === 'ER_DUP_ENTRY' || errorProperty(error, 'errno') === 1062,
   render(fragment) {
     return renderWith(this, fragment)
   },
@@ -130,6 +139,7 @@ export const postgresGrammar: Grammar = {
   placeholder: (position) => `$${position}`,
   nullSafeNotEqual: (left, right) => concat(left, text(' IS DISTINCT FROM '), right),
   position: (haystack, needle) => concat(text('strpos('), haystack, text(', '), needle, text(')')),
+  lowerFunction: 'lower',
   textParameter: (bound) => concat(text('CAST('), value(bound), text(' AS text)')),
   supportsReturning: true,
   supportsUpdateReturning: true,
@@ -154,6 +164,8 @@ export const sqliteGrammar: Grammar = {
   // SQLite's IS / IS NOT are NULL-safe comparisons for any operands.
   nullSafeNotEqual: (left, right) => concat(left, text(' IS NOT '), right),
   position: (haystack, needle) => concat(text('instr('), haystack, text(', '), needle, text(')')),
+  // The driver registers sv_lower (Unicode); SQLite's own lower() folds only A-Z.
+  lowerFunction: 'sv_lower',
   textParameter: (bound) => value(bound),
   supportsReturning: true,
   supportsUpdateReturning: true,
@@ -203,7 +215,9 @@ export interface ServerCapabilities {
 export function grammarFor(dialect: Dialect, capabilities: ServerCapabilities = {}): Grammar {
   switch (dialect) {
     case 'mariadb':
-      return capabilities.insertReturning === false ? { ...mariadbGrammar, supportsReturning: false } : mariadbGrammar
+      return capabilities.insertReturning === false
+        ? { ...mariadbGrammar, supportsReturning: false }
+        : mariadbGrammar
     case 'mysql':
       return mysqlGrammar
     case 'postgres':

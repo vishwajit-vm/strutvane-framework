@@ -1,0 +1,201 @@
+/**
+ * Test-only DDL: CREATE TABLE statements from the schema snapshot, for each engine.
+ *
+ * In the product, spike 10's migrator writes and runs this SQL; the spike keeps its own small
+ * copy so it stays standalone. Types follow spike 10's choices (DATETIME(3) on MySQL, JSONB on
+ * PostgreSQL, TEXT for decimals and timestamps on SQLite, TINYINT(1) booleans on MySQL).
+ */
+import type { Connection } from '../../../../src/database/index.ts'
+import type {
+  ColumnDef,
+  SchemaSnapshot,
+  TableState,
+} from '../../../../src/database/schema/snapshot.ts'
+import { SqlFragment } from '../../../../src/database/sql/fragment.ts'
+import { type Dialect, isMysqlFamily } from '../../../../src/database/sql/grammar.ts'
+
+/**
+ * Foreign keys. Between tenant tables they are composite, (tenant_id, x) → parent (tenant_id, id),
+ * which is what the recorder emits for `foreignId().constrained()` on a tenant table (security
+ * review F-05): a row can never point at another tenant's parent, so cascades can't cross tenants.
+ */
+const FOREIGN_KEYS: Readonly<
+  Record<
+    string,
+    readonly {
+      readonly columns: readonly string[]
+      readonly parent: string
+      readonly parentColumns: readonly string[]
+    }[]
+  >
+> = {
+  posts: [{ columns: ['author_id'], parent: 'users', parentColumns: ['id'] }],
+  post_tag: [
+    { columns: ['post_id'], parent: 'posts', parentColumns: ['id'] },
+    { columns: ['tag_id'], parent: 'tags', parentColumns: ['id'] },
+  ],
+  project_label: [
+    {
+      columns: ['tenant_id', 'project_id'],
+      parent: 'projects',
+      parentColumns: ['tenant_id', 'id'],
+    },
+    { columns: ['tenant_id', 'label_id'], parent: 'labels', parentColumns: ['tenant_id', 'id'] },
+  ],
+  tasks: [
+    {
+      columns: ['tenant_id', 'project_id'],
+      parent: 'projects',
+      parentColumns: ['tenant_id', 'id'],
+    },
+  ],
+}
+
+/**
+ * Identifier-like columns compare byte for byte on MySQL (security review F-08): the server
+ * default utf8mb4_0900_ai_ci would make 'ADMIN@x' equal 'admin@x' and 'résumé' equal 'resume'.
+ */
+const BINARY_KINDS: ReadonlySet<string> = new Set(['slug', 'uuid', 'enum'])
+const BINARY_NAMES: ReadonlySet<string> = new Set(['email', 'token'])
+
+/** Tables in dependency order (parents first), so foreign keys can be created and rows deleted. */
+export const TABLE_ORDER = [
+  'users',
+  'tags',
+  'posts',
+  'post_tag',
+  'projects',
+  'labels',
+  'project_label',
+  'tasks',
+  'team_projects',
+] as const
+
+/**
+ * Drop and recreate every table of the snapshot.
+ *
+ * @example
+ * await createTables(connection, snapshot)
+ */
+export async function createTables(
+  connection: Connection,
+  snapshot: SchemaSnapshot,
+): Promise<void> {
+  const dialect = connection.grammar.dialect
+  for (const table of [...TABLE_ORDER].reverse())
+    await execute(connection, `DROP TABLE IF EXISTS ${quote(table, dialect)}`)
+  for (const table of TABLE_ORDER) {
+    const state = snapshot.tables[table]
+    if (state !== undefined) await execute(connection, createTableSql(state, dialect))
+  }
+}
+
+/**
+ * Delete every row (children first), keeping the tables.
+ *
+ * @example
+ * await clearTables(connection)
+ */
+export async function clearTables(connection: Connection): Promise<void> {
+  for (const table of [...TABLE_ORDER].reverse())
+    await execute(connection, `DELETE FROM ${quote(table, connection.grammar.dialect)}`)
+}
+
+/**
+ * Run trusted test SQL (DDL written by this file, never input).
+ *
+ * @example
+ * await execute(connection, 'SELECT 1')
+ */
+export async function execute(connection: Connection, text: string): Promise<void> {
+  await connection.run(SqlFragment.trusted([{ kind: 'text', text }]))
+}
+
+function createTableSql(state: TableState, dialect: Dialect): string {
+  const lines = state.columns.map((column) => columnSql(state.name, column, dialect))
+  for (const index of state.indexes) {
+    if (index.unique)
+      lines.push(
+        `CONSTRAINT ${quote(index.name, dialect)} UNIQUE (${index.columns.map((column) => quote(column, dialect)).join(', ')})`,
+      )
+  }
+  for (const key of FOREIGN_KEYS[state.name] ?? []) {
+    const columns = key.columns.map((column) => quote(column, dialect)).join(', ')
+    const parentColumns = key.parentColumns.map((column) => quote(column, dialect)).join(', ')
+    lines.push(
+      `FOREIGN KEY (${columns}) REFERENCES ${quote(key.parent, dialect)} (${parentColumns}) ON DELETE CASCADE`,
+    )
+  }
+  return `CREATE TABLE ${quote(state.name, dialect)} (\n  ${lines.join(',\n  ')}\n)`
+}
+
+function columnSql(table: string, column: ColumnDef, dialect: Dialect): string {
+  const name = quote(column.name, dialect)
+  if (column.kind === 'id') {
+    if (dialect === 'sqlite') return `${name} INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL`
+    if (isMysqlFamily(dialect)) return `${name} BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY`
+    return `${name} BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY`
+  }
+  const primary = column.name === 'id' ? ' PRIMARY KEY' : ''
+  const nullability = column.nullable ? ' NULL' : ' NOT NULL'
+  const binary =
+    isMysqlFamily(dialect) && (BINARY_KINDS.has(column.kind) || BINARY_NAMES.has(column.name))
+      ? ` COLLATE ${dialect === 'mariadb' ? 'utf8mb4_nopad_bin' : 'utf8mb4_0900_bin'}`
+      : ''
+  return `${name} ${columnType(table, column, dialect)}${binary}${nullability}${defaultFor(column, dialect)}${primary}`
+}
+
+function defaultFor(column: ColumnDef, dialect: Dialect): string {
+  if (column.kind === 'enum') return " DEFAULT 'draft'"
+  if (column.kind === 'boolean') return dialect === 'postgres' ? ' DEFAULT FALSE' : ' DEFAULT 0'
+  if (column.kind === 'integer') return ' DEFAULT 0'
+  if (column.kind === 'decimal') return ' DEFAULT 0'
+  return ''
+}
+
+function columnType(table: string, column: ColumnDef, dialect: Dialect): string {
+  switch (column.kind) {
+    case 'string':
+    case 'slug':
+      return `VARCHAR(${column.length ?? 255})`
+    case 'text':
+      return 'TEXT'
+    case 'enum':
+      return isMysqlFamily(dialect)
+        ? `ENUM(${(column.values ?? []).map((item) => `'${item}'`).join(', ')})`
+        : 'VARCHAR(20)'
+    case 'foreignId':
+      return isMysqlFamily(dialect)
+        ? 'BIGINT UNSIGNED'
+        : dialect === 'sqlite'
+          ? 'INTEGER'
+          : 'BIGINT'
+    case 'integer':
+      return isMysqlFamily(dialect) ? 'INT' : 'INTEGER'
+    case 'boolean':
+      return dialect === 'postgres' ? 'BOOLEAN' : isMysqlFamily(dialect) ? 'TINYINT(1)' : 'INTEGER'
+    case 'date':
+      return 'DATE'
+    case 'timestamp':
+      return dialect === 'postgres'
+        ? 'TIMESTAMP(3) WITH TIME ZONE'
+        : isMysqlFamily(dialect)
+          ? 'DATETIME(3)'
+          : 'TEXT'
+    case 'json':
+      // MariaDB's JSON is an alias of LONGTEXT with a JSON_VALID check constraint.
+      return dialect === 'postgres' ? 'JSONB' : isMysqlFamily(dialect) ? 'JSON' : 'TEXT'
+    case 'decimal':
+      return dialect === 'sqlite' ? 'NUMERIC' : `DECIMAL(12, ${column.scale ?? 2})`
+    case 'uuid':
+      return dialect === 'postgres' ? 'UUID' : 'CHAR(36)'
+    default:
+      throw new Error(
+        `The test DDL does not know column kind "${column.kind}" (${table}.${column.name}).`,
+      )
+  }
+}
+
+function quote(name: string, dialect: Dialect): string {
+  return isMysqlFamily(dialect) ? `\`${name}\`` : `"${name}"`
+}

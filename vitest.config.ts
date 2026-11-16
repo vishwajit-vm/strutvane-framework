@@ -9,6 +9,9 @@ export default mergeConfig(
   defineConfig({
     test: {
       exclude: [...configDefaults.exclude, 'test/console/fixtures/**'],
+      // Throwaway MySQL 8.4, MariaDB 11.4 and PostgreSQL 18 servers for the real-engine suites
+      // (uniquely named containers, removed at the end; skipped with the reason when Docker is off).
+      globalSetup: ['test/helpers/db-servers.ts'],
       testTimeout: 60_000,
       hookTimeout: 60_000,
       // Lets test cleanup force a garbage collection: libSQL releases a SQLite file on Windows only

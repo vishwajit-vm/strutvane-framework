@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/noThisInStatic: Eloquent-style statics use `this` so Post.query() builds a query for Post, not for the base class.
 /**
  * The model: Strutvane's Eloquent `Model`, as an active-record class in `app/models`.
  *
@@ -20,10 +21,17 @@
  * At runtime there is one real class, {@link ModelBase}; `Model()` makes a tiny subclass that
  * knows its table and options.
  */
-import { defaultConnection } from '../db/manager.ts'
+
 import type { Connection } from '../db/connection.ts'
 import type { Row } from '../db/driver.ts'
-import { type ColumnOf, SYSTEM_COLUMNS, type TableInfo, type TableName, tableInfo } from '../schema/registry.ts'
+import { defaultConnection } from '../db/manager.ts'
+import {
+  type ColumnOf,
+  SYSTEM_COLUMNS,
+  type TableInfo,
+  type TableName,
+  tableInfo,
+} from '../schema/registry.ts'
 import type { ColumnDef } from '../schema/snapshot.ts'
 import type { WhereNode } from '../sql/ast.ts'
 import { compileDelete, compileInsert, compileUpdate } from '../sql/compile.ts'
@@ -31,14 +39,43 @@ import { assertIdentifier, sql } from '../sql/fragment.ts'
 import { Builder, loadRelations, parseRelationPaths } from './builder.ts'
 import { applyCast, type Cast, fromDatabase, toDatabase } from './casts.ts'
 import { ormConfig } from './config.ts'
-import { LazyLoadingError, MassAssignmentError, ModelNotFoundError, OrmUsageError, TenantMismatchError } from './errors.ts'
+import {
+  LazyLoadingError,
+  MassAssignmentError,
+  ModelNotFoundError,
+  OrmUsageError,
+  TenantMismatchError,
+} from './errors.ts'
 import { uuidv7 } from './keys.ts'
-import { type BelongsTo, type BelongsToMany, BelongsToManyRelation, BelongsToRelation, type HasMany, HasManyRelation } from './relations.ts'
-import { attribute, isModelRuntime, isRelation, MODEL_BRAND, type ModelRuntime, type ModelSettings, type RelationContract, type StoredCallback } from './runtime.ts'
+import {
+  type BelongsTo,
+  type BelongsToMany,
+  BelongsToManyRelation,
+  BelongsToRelation,
+  type HasMany,
+  HasManyRelation,
+} from './relations.ts'
+import {
+  attribute,
+  isModelRuntime,
+  isRelation,
+  type ModelRuntime,
+  type ModelSettings,
+  type RelationContract,
+  type StoredCallback,
+} from './runtime.ts'
 import { nextFreeSlug, slugify } from './slug.ts'
 import { closest } from './suggest.ts'
 import { currentTenant } from './tenancy.ts'
-import { assertInsertScoped, assertWriteScoped, markScoped, requireTenant, tenantColumn, tenantCondition, tenantMode } from './tenant-scope.ts'
+import {
+  assertInsertScoped,
+  assertWriteScoped,
+  markScoped,
+  requireTenant,
+  tenantColumn,
+  tenantCondition,
+  tenantMode,
+} from './tenant-scope.ts'
 import type {
   AnyModelClass,
   Attributes,
@@ -69,7 +106,11 @@ interface RuntimeOptions {
 
 /** Columns Strutvane fills itself: keys, timestamps, soft deletes and the configured tenant column. */
 function isSystemColumn(column: string): boolean {
-  return column === 'id' || column === tenantColumn() || Object.values<string>(SYSTEM_COLUMNS).includes(column)
+  return (
+    column === 'id' ||
+    column === tenantColumn() ||
+    Object.values<string>(SYSTEM_COLUMNS).includes(column)
+  )
 }
 const SLUG_ATTEMPTS = 5
 const settingsCache = new WeakMap<object, ModelSettings>()
@@ -84,7 +125,7 @@ const relationCache = new WeakMap<object, Map<string, RelationContract>>()
  */
 export class ModelBase {
   /** Brand checked by {@link isModelRuntime}. */
-  static readonly [MODEL_BRAND] = true as const
+  static readonly '~strutvane.model': true = true
   /** The table, set by `Model()`. */
   static readonly table: string = ''
   /** The options given to `Model()`. */
@@ -119,7 +160,13 @@ export class ModelBase {
   static settings(): ModelSettings {
     const cached = settingsCache.get(this)
     if (cached !== undefined) return cached
-    const settings = buildSettings(this.name, this.info(), this.options, readStatic(this, 'scopes'), readStatic(this, 'globalScopes'))
+    const settings = buildSettings(
+      this.name,
+      this.info(),
+      this.options,
+      readStatic(this, 'scopes'),
+      readStatic(this, 'globalScopes'),
+    )
     settingsCache.set(this, settings)
     return settings
   }
@@ -177,11 +224,17 @@ export class ModelBase {
     const method = findOwnMethod(this.prototype, name)
     if (method === undefined) throw unknownRelation(this.name, name, ownMethodNames(this.prototype))
     if (method.constructor.name !== 'Function') {
-      throw new OrmUsageError('RELATION_NOT_SYNC', `${this.name}.${name}() is async or a generator. Relation methods must be plain methods that return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`)
+      throw new OrmUsageError(
+        'RELATION_NOT_SYNC',
+        `${this.name}.${name}() is async or a generator. Relation methods must be plain methods that return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`,
+      )
     }
     const relation: unknown = Reflect.apply(method, new this(), [])
     if (!isRelation(relation)) {
-      throw new OrmUsageError('NOT_A_RELATION', `${this.name}.${name}() is not a relation: it must return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`)
+      throw new OrmUsageError(
+        'NOT_A_RELATION',
+        `${this.name}.${name}() is not a relation: it must return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`,
+      )
     }
     cache.set(name, relation)
     return relation
@@ -307,9 +360,10 @@ export class ModelBase {
    * post.runtime().table // 'posts'
    */
   runtime(): ModelRuntime {
-    const constructor: unknown = this.constructor
-    if (!isModelRuntime(constructor)) throw new OrmUsageError('NOT_A_MODEL', 'This object is not a Strutvane model instance.')
-    return constructor
+    const ctor: unknown = this.constructor
+    if (!isModelRuntime(ctor))
+      throw new OrmUsageError('NOT_A_MODEL', 'This object is not a Strutvane model instance.')
+    return ctor
   }
 
   /**
@@ -330,7 +384,13 @@ export class ModelBase {
    */
   setAttribute(column: string, value: unknown): this {
     const info = this.runtime().info()
-    if (!info.columns.has(column)) throw new MassAssignmentError(info.name, column, 'unknown', closest(column, hintableColumns(info, this.runtime().settings().hidden)))
+    if (!info.columns.has(column))
+      throw new MassAssignmentError(
+        info.name,
+        column,
+        'unknown',
+        closest(column, hintableColumns(info, this.runtime().settings().hidden)),
+      )
     defineColumn(this, column, value)
     return this
   }
@@ -347,9 +407,16 @@ export class ModelBase {
     const info = runtime.info()
     const fillable = runtime.settings().fillable
     for (const [key, value] of Object.entries(input)) {
-      if (!info.columns.has(key)) throw new MassAssignmentError(info.name, key, 'unknown', closest(key, hintableColumns(info, runtime.settings().hidden)))
+      if (!info.columns.has(key))
+        throw new MassAssignmentError(
+          info.name,
+          key,
+          'unknown',
+          closest(key, hintableColumns(info, runtime.settings().hidden)),
+        )
       if (isSystemColumn(key)) throw new MassAssignmentError(info.name, key, 'system')
-      if (fillable === undefined || !fillable.has(key)) throw new MassAssignmentError(info.name, key, 'not-fillable')
+      if (fillable === undefined || !fillable.has(key))
+        throw new MassAssignmentError(info.name, key, 'not-fillable')
       defineColumn(this, key, value)
     }
     return this
@@ -364,9 +431,16 @@ export class ModelBase {
   forceFill(input: object): this {
     const info = this.runtime().info()
     for (const [key, value] of Object.entries(input)) {
-      if (!info.columns.has(key)) throw new MassAssignmentError(info.name, key, 'unknown', closest(key, hintableColumns(info, this.runtime().settings().hidden)))
+      if (!info.columns.has(key))
+        throw new MassAssignmentError(
+          info.name,
+          key,
+          'unknown',
+          closest(key, hintableColumns(info, this.runtime().settings().hidden)),
+        )
       // tenant_id and timestamps are Strutvane's; a uuid id may be chosen by trusted code.
-      if (isSystemColumn(key) && !(key === 'id' && info.primaryKey.kind === 'uuid')) throw new MassAssignmentError(info.name, key, 'system')
+      if (isSystemColumn(key) && !(key === 'id' && info.primaryKey.kind === 'uuid'))
+        throw new MassAssignmentError(info.name, key, 'system')
       defineColumn(this, key, value)
     }
     return this
@@ -383,7 +457,8 @@ export class ModelBase {
     for (const column of this.runtime().info().columns.keys()) {
       if (!Object.hasOwn(this, column)) continue
       const current = attribute(this, column)
-      if (!this.#persisted || comparable(current) !== this.#original[column]) dirty[column] = current
+      if (!this.#persisted || comparable(current) !== this.#original[column])
+        dirty[column] = current
     }
     return dirty
   }
@@ -447,7 +522,10 @@ export class ModelBase {
     const connection = this.runtime().connection()
     const where = this.#keyConditions(info)
     assertWriteScoped(info.name, where)
-    const { rowsAffected } = await connection.run(markScoped(compileDelete(info.name, where, connection.grammar)), this.#runOptions(info))
+    const { rowsAffected } = await connection.run(
+      markScoped(compileDelete(info.name, where, connection.grammar)),
+      this.#runOptions(info),
+    )
     if (rowsAffected === 0) throw new ModelNotFoundError(info.name, attribute(this, 'id'))
     this.#persisted = false
   }
@@ -460,7 +538,11 @@ export class ModelBase {
    */
   async restore(): Promise<this> {
     const info = this.#assertPersisted('restore')
-    if (!info.softDeletes) throw new OrmUsageError('NO_SOFT_DELETES', `"${info.name}" has no deleted_at column, so there is nothing to restore. Add t.softDeletes() in a migration to enable it.`)
+    if (!info.softDeletes)
+      throw new OrmUsageError(
+        'NO_SOFT_DELETES',
+        `"${info.name}" has no deleted_at column, so there is nothing to restore. Add t.softDeletes() in a migration to enable it.`,
+      )
     defineColumn(this, SYSTEM_COLUMNS.deletedAt, null)
     return this.save()
   }
@@ -490,7 +572,8 @@ export class ModelBase {
    * await post.load('author')
    */
   async load(...paths: readonly string[]): Promise<this> {
-    if (this.#fromList && ormConfig().preventLazyLoading) throw new LazyLoadingError(this.runtime().table, paths.join(', '))
+    if (this.#fromList && ormConfig().preventLazyLoading)
+      throw new LazyLoadingError(this.runtime().table, paths.join(', '))
     await loadRelations([this], parseRelationPaths(paths))
     return this
   }
@@ -521,7 +604,12 @@ export class ModelBase {
    */
   belongsTo(related: unknown, foreignKey?: string, ownerKey = 'id'): unknown {
     const relatedRuntime = asModel(related, 'belongsTo')
-    return new BelongsToRelation(this, relatedRuntime, foreignKey ?? `${singular(relatedRuntime.table)}_id`, ownerKey)
+    return new BelongsToRelation(
+      this,
+      relatedRuntime,
+      foreignKey ?? `${singular(relatedRuntime.table)}_id`,
+      ownerKey,
+    )
   }
 
   /**
@@ -533,7 +621,12 @@ export class ModelBase {
    */
   hasMany(related: unknown, foreignKey?: string, localKey = 'id'): unknown {
     const relatedRuntime = asModel(related, 'hasMany')
-    return new HasManyRelation(this, relatedRuntime, foreignKey ?? `${singular(this.runtime().table)}_id`, localKey)
+    return new HasManyRelation(
+      this,
+      relatedRuntime,
+      foreignKey ?? `${singular(this.runtime().table)}_id`,
+      localKey,
+    )
   }
 
   /**
@@ -543,12 +636,23 @@ export class ModelBase {
    * @example
    * tags() { return this.belongsToMany(Tag, 'post_tag') }
    */
-  belongsToMany(related: unknown, pivotTable?: string, foreignPivotKey?: string, relatedPivotKey?: string): unknown {
+  belongsToMany(
+    related: unknown,
+    pivotTable?: string,
+    foreignPivotKey?: string,
+    relatedPivotKey?: string,
+  ): unknown {
     const relatedRuntime = asModel(related, 'belongsToMany')
     const own = singular(this.runtime().table)
     const other = singular(relatedRuntime.table)
     const pivot = pivotTable ?? [own, other].sort().join('_')
-    return new BelongsToManyRelation(this, relatedRuntime, pivot, foreignPivotKey ?? `${own}_id`, relatedPivotKey ?? `${other}_id`)
+    return new BelongsToManyRelation(
+      this,
+      relatedRuntime,
+      pivot,
+      foreignPivotKey ?? `${own}_id`,
+      relatedPivotKey ?? `${other}_id`,
+    )
   }
 
   // -------------------------------------------------------------------------------------------
@@ -564,29 +668,45 @@ export class ModelBase {
       if (!(column.name in row)) continue
       const stored = fromDatabase(column, row[column.name], dialect)
       const cast = casts.get(column.name)
-      defineColumn(this, column.name, cast === undefined || stored === null ? stored : cast.get(stored))
+      defineColumn(
+        this,
+        column.name,
+        cast === undefined || stored === null ? stored : cast.get(stored),
+      )
     }
     this.#snapshot(info)
   }
 
   #snapshot(info: TableInfo): void {
     this.#original = {}
-    for (const column of info.columns.keys()) this.#original[column] = comparable(attribute(this, column))
+    for (const column of info.columns.keys())
+      this.#original[column] = comparable(attribute(this, column))
   }
 
   async #insert(): Promise<void> {
     const runtime = this.runtime()
     const info = runtime.info()
     this.#applyTenant(info)
-    if (info.primaryKey.kind === 'uuid' && attribute(this, 'id') == null) defineColumn(this, 'id', uuidv7())
+    if (info.primaryKey.kind === 'uuid' && attribute(this, 'id') == null)
+      defineColumn(this, 'id', uuidv7())
     if (info.timestamps) {
       const now = new Date()
-      if (attribute(this, SYSTEM_COLUMNS.createdAt) == null) defineColumn(this, SYSTEM_COLUMNS.createdAt, now)
+      if (attribute(this, SYSTEM_COLUMNS.createdAt) == null)
+        defineColumn(this, SYSTEM_COLUMNS.createdAt, now)
       defineColumn(this, SYSTEM_COLUMNS.updatedAt, now)
     }
-    const record = this.#storedValues(info, [...info.columns.keys()].filter((column) => attribute(this, column) !== undefined))
-    const missingSlugs = info.slugs.filter((slug) => record[slug.name] === undefined || record[slug.name] === null || record[slug.name] === '')
-    const row = missingSlugs.length === 0 ? await this.#insertRow(info, record) : await this.#insertWithSlugs(info, record, missingSlugs)
+    const record = this.#storedValues(
+      info,
+      [...info.columns.keys()].filter((column) => attribute(this, column) !== undefined),
+    )
+    const missingSlugs = info.slugs.filter(
+      (slug) =>
+        record[slug.name] === undefined || record[slug.name] === null || record[slug.name] === '',
+    )
+    const row =
+      missingSlugs.length === 0
+        ? await this.#insertRow(info, record)
+        : await this.#insertWithSlugs(info, record, missingSlugs)
     this.#assignRow(row)
     this.#persisted = true
   }
@@ -594,10 +714,16 @@ export class ModelBase {
   async #insertRow(info: TableInfo, record: Record<string, unknown>): Promise<Row> {
     const connection = this.runtime().connection()
     assertInsertScoped(info.name, record)
-    const result = await connection.run(markScoped(compileInsert(info.name, record, connection.grammar)), this.#runOptions(info))
+    const result = await connection.run(
+      markScoped(compileInsert(info.name, record, connection.grammar)),
+      this.#runOptions(info),
+    )
     if (connection.grammar.supportsReturning) {
       const [row] = result.rows
-      if (row === undefined) throw new Error(`Inserting into "${info.name}" returned no row; the database did not honour RETURNING.`)
+      if (row === undefined)
+        throw new Error(
+          `Inserting into "${info.name}" returned no row; the database did not honour RETURNING.`,
+        )
       return row
     }
     // MySQL has no RETURNING: learn the key (ours for UUIDs, the driver's insert id otherwise),
@@ -621,7 +747,11 @@ export class ModelBase {
    * savepoint, so a failed attempt never poisons an outer transaction (Postgres aborts the whole
    * transaction on any error otherwise).
    */
-  async #insertWithSlugs(info: TableInfo, record: Record<string, unknown>, slugs: readonly ColumnDef[]): Promise<Row> {
+  async #insertWithSlugs(
+    info: TableInfo,
+    record: Record<string, unknown>,
+    slugs: readonly ColumnDef[],
+  ): Promise<Row> {
     const connection = this.runtime().connection()
     // Slugs a failed attempt tried. A retry means the unique index saw a row the lookup could not
     // (another transaction's uncommitted insert, or one committed after a REPEATABLE READ snapshot,
@@ -629,15 +759,22 @@ export class ModelBase {
     const tried = new Map<string, string[]>()
     for (let attempt = 1; ; attempt += 1) {
       for (const slug of slugs) {
-        const source = slug.slugFrom === undefined ? '' : String(attribute(this, slug.slugFrom) ?? '')
+        const source =
+          slug.slugFrom === undefined ? '' : String(attribute(this, slug.slugFrom) ?? '')
         const base = slugify(source, slug.length ?? 255)
-        const taken = [...(await this.#takenSlugs(info, slug, base)), ...(tried.get(slug.name) ?? [])]
+        const taken = [
+          ...(await this.#takenSlugs(info, slug, base)),
+          ...(tried.get(slug.name) ?? []),
+        ]
         const candidate = nextFreeSlug(base, taken)
         record[slug.name] = candidate
         tried.set(slug.name, [...(tried.get(slug.name) ?? []), candidate])
       }
       try {
-        return await connection.transaction(() => this.#insertRow(info, record), this.#runOptions(info))
+        return await connection.transaction(
+          () => this.#insertRow(info, record),
+          this.#runOptions(info),
+        )
       } catch (error) {
         if (!connection.grammar.isUniqueViolation(error) || attempt >= SLUG_ATTEMPTS) throw error
       }
@@ -651,16 +788,26 @@ export class ModelBase {
     // The lookup is always limited to the active tenant (and to the slug's unique-index scope),
     // so a collision can never reveal that another tenant uses the same title (review F-14).
     const tenant = tenantMode(info.name) === 'scoped' ? tenantColumn() : undefined
-    const scopeColumns = new Set([...(info.slugScopes.get(slug.name) ?? []), ...(tenant === undefined ? [] : [tenant])])
+    const scopeColumns = new Set([
+      ...(info.slugScopes.get(slug.name) ?? []),
+      ...(tenant === undefined ? [] : [tenant]),
+    ])
     const scope = [...scopeColumns].map((name) => {
       const value = attribute(this, name)
-      return value === null || value === undefined ? sql`${sql.id(name)} IS NULL` : sql`${sql.id(name)} = ${value}`
+      return value === null || value === undefined
+        ? sql`${sql.id(name)} IS NULL`
+        : sql`${sql.id(name)} = ${value}`
     })
     // substr instead of LIKE: a "%" or "_" in a title must not act as a wildcard.
-    const conditions = [sql`(${column} = ${base} OR substr(${column}, 1, ${prefix.length}) = ${prefix})`, ...scope]
+    const conditions = [
+      sql`(${column} = ${base} OR substr(${column}, 1, ${prefix.length}) = ${prefix})`,
+      ...scope,
+    ]
     const query = sql`SELECT ${column} AS slug FROM ${sql.id(info.name)} WHERE ${sql.join(conditions, ' AND ')}`
     // Hand-written, so marked as checked explicitly: the tenant condition was added just above.
-    const { rows } = await this.runtime().connection().run(markScoped(query), this.#runOptions(info))
+    const { rows } = await this.runtime()
+      .connection()
+      .run(markScoped(query), this.#runOptions(info))
     return rows.map((row) => String(row['slug']))
   }
 
@@ -669,9 +816,14 @@ export class ModelBase {
     const info = runtime.info()
     const dirty = this.getDirty()
     if (Object.keys(dirty).length === 0) return
-    if ('id' in dirty) throw new OrmUsageError('PRIMARY_KEY_CHANGED', `The primary key of a saved "${info.name}" row can't change. Create a new row instead.`)
+    if ('id' in dirty)
+      throw new OrmUsageError(
+        'PRIMARY_KEY_CHANGED',
+        `The primary key of a saved "${info.name}" row can't change. Create a new row instead.`,
+      )
     const tenant = tenantColumn()
-    if (tenant !== undefined && tenant in dirty) throw new TenantMismatchError(info.name, `${tenant} of a saved row was changed`)
+    if (tenant !== undefined && tenant in dirty)
+      throw new TenantMismatchError(info.name, `${tenant} of a saved row was changed`)
     if (info.timestamps && !(SYSTEM_COLUMNS.updatedAt in dirty)) {
       defineColumn(this, SYSTEM_COLUMNS.updatedAt, new Date())
       dirty[SYSTEM_COLUMNS.updatedAt] = attribute(this, SYSTEM_COLUMNS.updatedAt)
@@ -680,9 +832,14 @@ export class ModelBase {
     const connection = runtime.connection()
     const where = this.#keyConditions(info)
     assertWriteScoped(info.name, where)
-    const result = await connection.run(markScoped(compileUpdate(info.name, changes, where, connection.grammar, true)), this.#runOptions(info))
+    const result = await connection.run(
+      markScoped(compileUpdate(info.name, changes, where, connection.grammar, true)),
+      this.#runOptions(info),
+    )
     // Without RETURNING (MySQL) the row is read back with the same key and tenant conditions.
-    const row = connection.grammar.supportsUpdateReturning ? result.rows[0] : await this.#reselect(info)
+    const row = connection.grammar.supportsUpdateReturning
+      ? result.rows[0]
+      : await this.#reselect(info)
     // Zero rows: deleted meanwhile, or (with tenancy) never ours. Both are "not found".
     if (row === undefined) throw new ModelNotFoundError(info.name, attribute(this, 'id'))
     this.#assignRow(row)
@@ -698,7 +855,10 @@ export class ModelBase {
       if (column === undefined) continue
       const value = attribute(this, name)
       const cast = casts.get(name)
-      const modelValue = cast === undefined || value === null || value === undefined ? value : applyCast(info.name, name, cast, value)
+      const modelValue =
+        cast === undefined || value === null || value === undefined
+          ? value
+          : applyCast(info.name, name, cast, value)
       record[name] = toDatabase(info.name, column, modelValue, dialect)
     }
     return record
@@ -706,7 +866,15 @@ export class ModelBase {
 
   /** `id = ?`, plus `<tenant column> = ?` on tenant tables: a write can only touch our own row. */
   #keyConditions(info: TableInfo): WhereNode[] {
-    const conditions: WhereNode[] = [{ kind: 'compare', conjunction: 'and', column: { alias: info.name, column: 'id' }, operator: '=', value: attribute(this, 'id') }]
+    const conditions: WhereNode[] = [
+      {
+        kind: 'compare',
+        conjunction: 'and',
+        column: { alias: info.name, column: 'id' },
+        operator: '=',
+        value: attribute(this, 'id'),
+      },
+    ]
     const tenant = tenantCondition(info.name, info.name)
     if (tenant !== undefined) conditions.push(tenant)
     return conditions
@@ -719,7 +887,11 @@ export class ModelBase {
     const column = tenantColumn()
     if (column === undefined) return
     const given = attribute(this, column)
-    if (given !== undefined && given !== null && given !== tenant) throw new TenantMismatchError(info.name, `${column} ${String(given)} is not the active tenant`)
+    if (given !== undefined && given !== null && given !== tenant)
+      throw new TenantMismatchError(
+        info.name,
+        `${column} ${String(given)} is not the active tenant`,
+      )
     defineColumn(this, column, tenant)
   }
 
@@ -730,7 +902,11 @@ export class ModelBase {
 
   #assertPersisted(action: string): TableInfo {
     const info = this.runtime().info()
-    if (!this.#persisted) throw new OrmUsageError('NOT_SAVED', `Can't ${action}() a "${info.name}" row that was never saved. Call save() first.`)
+    if (!this.#persisted)
+      throw new OrmUsageError(
+        'NOT_SAVED',
+        `Can't ${action}() a "${info.name}" row that was never saved. Call save() first.`,
+      )
     return info
   }
 }
@@ -745,9 +921,13 @@ export class ModelBase {
  * @example
  * const json = post.toJSON() // typed: no hidden columns, dates as strings
  */
-export interface ModelInstanceMethods<TTable extends TableName, TOptions> extends ModelMarker<TTable, TOptions> {
+export interface ModelInstanceMethods<TTable extends TableName, TOptions>
+  extends ModelMarker<TTable, TOptions> {
   isPersisted(): boolean
-  setAttribute<TColumn extends ColumnOf<TTable>>(column: TColumn, value: Attributes<TTable, TOptions>[TColumn]): this
+  setAttribute<TColumn extends ColumnOf<TTable>>(
+    column: TColumn,
+    value: Attributes<TTable, TOptions>[TColumn],
+  ): this
   fill(input: Partial<CreateInput<TTable, TOptions>>): this
   forceFill(input: Partial<ForceCreateInput<TTable, TOptions>>): this
   getDirty(): Partial<Attributes<TTable, TOptions>>
@@ -761,9 +941,22 @@ export interface ModelInstanceMethods<TTable extends TableName, TOptions> extend
   load<TPath extends RelationPath<this>>(...paths: TPath[]): Promise<WithRelations<this, TPath>>
   toJSON(): JsonOf<this>
   runtime(): ModelRuntime
-  belongsTo<TRelated extends AnyModelClass>(related: TRelated, foreignKey?: ColumnOf<TTable>, ownerKey?: ColumnOf<TableOf<TRelated>>): BelongsTo<TRelated>
-  hasMany<TRelated extends AnyModelClass>(related: TRelated, foreignKey?: ColumnOf<TableOf<TRelated>>, localKey?: ColumnOf<TTable>): HasMany<TRelated>
-  belongsToMany<TRelated extends AnyModelClass, TPivot extends TableName>(related: TRelated, pivotTable?: TPivot, foreignPivotKey?: ColumnOf<TPivot>, relatedPivotKey?: ColumnOf<TPivot>): BelongsToMany<TRelated>
+  belongsTo<TRelated extends AnyModelClass>(
+    related: TRelated,
+    foreignKey?: ColumnOf<TTable>,
+    ownerKey?: ColumnOf<TableOf<TRelated>>,
+  ): BelongsTo<TRelated>
+  hasMany<TRelated extends AnyModelClass>(
+    related: TRelated,
+    foreignKey?: ColumnOf<TableOf<TRelated>>,
+    localKey?: ColumnOf<TTable>,
+  ): HasMany<TRelated>
+  belongsToMany<TRelated extends AnyModelClass, TPivot extends TableName>(
+    related: TRelated,
+    pivotTable?: TPivot,
+    foreignPivotKey?: ColumnOf<TPivot>,
+    relatedPivotKey?: ColumnOf<TPivot>,
+  ): BelongsToMany<TRelated>
 }
 
 /**
@@ -772,7 +965,8 @@ export interface ModelInstanceMethods<TTable extends TableName, TOptions> extend
  * @example
  * const post: ModelInstance<'posts', NoOptions> = Post.make()
  */
-export type ModelInstance<TTable extends TableName, TOptions> = Attributes<TTable, TOptions> & ModelInstanceMethods<TTable, TOptions>
+export type ModelInstance<TTable extends TableName, TOptions> = Attributes<TTable, TOptions> &
+  ModelInstanceMethods<TTable, TOptions>
 
 /**
  * The class `Model('posts', …)` returns: extend it, call its static methods.
@@ -788,12 +982,31 @@ export interface ModelClass<TTable extends TableName, TOptions> {
   query<TSelf extends AnyModelClass>(this: TSelf): QueryBuilder<TSelf, InstanceOf<TSelf>>
   make<TSelf extends AnyModelClass>(this: TSelf): InstanceOf<TSelf>
   all<TSelf extends AnyModelClass>(this: TSelf): Promise<InstanceOf<TSelf>[]>
-  find<TSelf extends AnyModelClass>(this: TSelf, key: KeyOf<TSelf>): Promise<InstanceOf<TSelf> | undefined>
-  findOrFail<TSelf extends AnyModelClass>(this: TSelf, key: KeyOf<TSelf>): Promise<InstanceOf<TSelf>>
-  create<TSelf extends AnyModelClass>(this: TSelf, input: CreateInput<TableOf<TSelf>, OptionsOf<TSelf>>): Promise<InstanceOf<TSelf>>
-  forceCreate<TSelf extends AnyModelClass>(this: TSelf, input: ForceCreateInput<TableOf<TSelf>, OptionsOf<TSelf>>): Promise<InstanceOf<TSelf>>
-  with<TSelf extends AnyModelClass, TPath extends RelationPath<InstanceOf<TSelf>>>(this: TSelf, ...paths: TPath[]): QueryBuilder<TSelf, WithRelations<InstanceOf<TSelf>, TPath>>
-  where<TSelf extends AnyModelClass, TColumn extends ColumnOf<TableOf<TSelf>>>(this: TSelf, column: TColumn, value: ColumnValue<TableOf<TSelf>, TColumn>): QueryBuilder<TSelf, InstanceOf<TSelf>>
+  find<TSelf extends AnyModelClass>(
+    this: TSelf,
+    key: KeyOf<TSelf>,
+  ): Promise<InstanceOf<TSelf> | undefined>
+  findOrFail<TSelf extends AnyModelClass>(
+    this: TSelf,
+    key: KeyOf<TSelf>,
+  ): Promise<InstanceOf<TSelf>>
+  create<TSelf extends AnyModelClass>(
+    this: TSelf,
+    input: CreateInput<TableOf<TSelf>, OptionsOf<TSelf>>,
+  ): Promise<InstanceOf<TSelf>>
+  forceCreate<TSelf extends AnyModelClass>(
+    this: TSelf,
+    input: ForceCreateInput<TableOf<TSelf>, OptionsOf<TSelf>>,
+  ): Promise<InstanceOf<TSelf>>
+  with<TSelf extends AnyModelClass, TPath extends RelationPath<InstanceOf<TSelf>>>(
+    this: TSelf,
+    ...paths: TPath[]
+  ): QueryBuilder<TSelf, WithRelations<InstanceOf<TSelf>, TPath>>
+  where<TSelf extends AnyModelClass, TColumn extends ColumnOf<TableOf<TSelf>>>(
+    this: TSelf,
+    column: TColumn,
+    value: ColumnValue<TableOf<TSelf>, TColumn>,
+  ): QueryBuilder<TSelf, InstanceOf<TSelf>>
   withTrashed<TSelf extends AnyModelClass>(this: TSelf): QueryBuilder<TSelf, InstanceOf<TSelf>>
   onlyTrashed<TSelf extends AnyModelClass>(this: TSelf): QueryBuilder<TSelf, InstanceOf<TSelf>>
 }
@@ -807,7 +1020,10 @@ export interface ModelClass<TTable extends TableName, TOptions> {
  *   posts() { return this.hasMany(Post, 'author_id') }
  * }
  */
-export function Model<const TTable extends TableName, const TOptions extends ModelOptions<TTable> = NoOptions>(table: TTable, options?: TOptions): ModelClass<TTable, TOptions> {
+export function Model<
+  const TTable extends TableName,
+  const TOptions extends ModelOptions<TTable> = NoOptions,
+>(table: TTable, options?: TOptions): ModelClass<TTable, TOptions> {
   assertIdentifier(table)
   const runtimeOptions: RuntimeOptions = options ?? {}
   class TableModel extends ModelBase {
@@ -822,7 +1038,9 @@ export function Model<const TTable extends TableName, const TOptions extends Mod
  * member of {@link ModelClass} at runtime with looser parameter types, and the types above are
  * the precise contract. Kept in one named function so it is easy to audit.
  */
-function typedModelClass<TTable extends TableName, TOptions>(runtimeClass: typeof ModelBase): ModelClass<TTable, TOptions> {
+function typedModelClass<TTable extends TableName, TOptions>(
+  runtimeClass: typeof ModelBase,
+): ModelClass<TTable, TOptions> {
   return runtimeClass as unknown as ModelClass<TTable, TOptions>
 }
 
@@ -833,8 +1051,13 @@ function typedModelClass<TTable extends TableName, TOptions>(runtimeClass: typeo
  * const posts = await Post.all()
  * await loadMany(posts, 'author')
  */
-export async function loadMany<TModel extends ModelMarker>(models: readonly TModel[], ...paths: readonly RelationPath<TModel>[]): Promise<void> {
-  const runtimeModels = models.filter((model): model is TModel & ModelBase => model instanceof ModelBase)
+export async function loadMany<TModel extends ModelMarker>(
+  models: readonly TModel[],
+  ...paths: readonly RelationPath<TModel>[]
+): Promise<void> {
+  const runtimeModels = models.filter(
+    (model): model is TModel & ModelBase => model instanceof ModelBase,
+  )
   await loadRelations(runtimeModels, parseRelationPaths(paths))
 }
 
@@ -847,7 +1070,11 @@ export async function loadMany<TModel extends ModelMarker>(models: readonly TMod
  * (security review F-10). Listing one in `fillable` needs a second, explicit acknowledgement.
  */
 function isSensitiveColumn(column: string): boolean {
-  return /^is_/.test(column) || /_(at|by)$/.test(column) || ['role', 'roles', 'plan', 'permissions', 'owner_id', 'user_id'].includes(column)
+  return (
+    /^is_/.test(column) ||
+    /_(at|by)$/.test(column) ||
+    ['role', 'roles', 'plan', 'permissions', 'owner_id', 'user_id'].includes(column)
+  )
 }
 
 /** Names a query builder must never have as methods, or it would be mistaken for a promise. */
@@ -860,7 +1087,12 @@ function hintableColumns(info: TableInfo, hidden: ReadonlySet<string>): string[]
 
 /** Store a column as an own, enumerable data property (never through a setter). */
 function defineColumn(model: object, column: string, value: unknown): void {
-  Object.defineProperty(model, column, { value, enumerable: true, writable: true, configurable: true })
+  Object.defineProperty(model, column, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  })
 }
 
 /** A value in a form where `!==` means "changed" (dates and JSON compare by content). */
@@ -886,7 +1118,10 @@ function singular(table: string): string {
 
 function asModel(related: unknown, relation: string): ModelRuntime {
   if (!isModelRuntime(related)) {
-    throw new OrmUsageError('NOT_A_MODEL', `${relation}() needs a model class, such as this.${relation}(User). If you passed a class from another file, check for a circular import that left it undefined.`)
+    throw new OrmUsageError(
+      'NOT_A_MODEL',
+      `${relation}() needs a model class, such as this.${relation}(User). If you passed a class from another file, check for a circular import that left it undefined.`,
+    )
   }
   return related
 }
@@ -898,7 +1133,9 @@ function findOwnMethod(prototype: object, name: string): StoredCallback | undefi
     const descriptor = Object.getOwnPropertyDescriptor(current, name)
     if (descriptor !== undefined) {
       const value: unknown = descriptor.value
-      return typeof value === 'function' && name !== 'constructor' ? (value as StoredCallback) : undefined
+      return typeof value === 'function' && name !== 'constructor'
+        ? (value as StoredCallback)
+        : undefined
     }
     current = Object.getPrototypeOf(current)
   }
@@ -909,25 +1146,41 @@ function ownMethodNames(prototype: object): string[] {
   const names: string[] = []
   let current: object | null = prototype
   while (current !== null && current !== ModelBase.prototype) {
-    for (const name of Object.getOwnPropertyNames(current)) if (name !== 'constructor') names.push(name)
+    for (const name of Object.getOwnPropertyNames(current))
+      if (name !== 'constructor') names.push(name)
     current = Object.getPrototypeOf(current)
   }
   return names
 }
 
-function unknownRelation(model: string, name: string, candidates: readonly string[]): OrmUsageError {
+function unknownRelation(
+  model: string,
+  name: string,
+  candidates: readonly string[],
+): OrmUsageError {
   const suggestion = closest(name, candidates)
   const hint = suggestion === undefined ? '' : ` Did you mean "${suggestion}"?`
-  return new OrmUsageError('UNKNOWN_RELATION', `${model} has no relation "${name}".${hint} Relations are methods on the model that return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`)
+  return new OrmUsageError(
+    'UNKNOWN_RELATION',
+    `${model} has no relation "${name}".${hint} Relations are methods on the model that return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`,
+  )
 }
 
-function readStatic(modelClass: object, name: 'scopes' | 'globalScopes'): ReadonlyMap<string, StoredCallback> {
+function readStatic(
+  modelClass: object,
+  name: 'scopes' | 'globalScopes',
+): ReadonlyMap<string, StoredCallback> {
   const value: unknown = Reflect.get(modelClass, name)
   const scopes = new Map<string, StoredCallback>()
   if (value === undefined) return scopes
-  if (typeof value !== 'object' || value === null) throw new OrmUsageError('INVALID_SCOPES', `static ${name} must be an object of functions.`)
+  if (typeof value !== 'object' || value === null)
+    throw new OrmUsageError('INVALID_SCOPES', `static ${name} must be an object of functions.`)
   for (const [key, scope] of Object.entries(value)) {
-    if (typeof scope !== 'function') throw new OrmUsageError('INVALID_SCOPES', `static ${name}.${key} must be a function (query, …args) => …`)
+    if (typeof scope !== 'function')
+      throw new OrmUsageError(
+        'INVALID_SCOPES',
+        `static ${name}.${key} must be a function (query, …args) => …`,
+      )
     scopes.set(key, (...args: never[]) => Reflect.apply(scope, undefined, args))
   }
   return scopes
@@ -943,12 +1196,21 @@ function buildSettings(
 ): ModelSettings {
   for (const column of info.columns.keys()) {
     if (column in ModelBase.prototype) {
-      throw new OrmUsageError('COLUMN_CLASHES_WITH_METHOD', `"${info.name}.${column}" has the same name as the model method ${column}(). Rename the column in a new migration.`)
+      throw new OrmUsageError(
+        'COLUMN_CLASHES_WITH_METHOD',
+        `"${info.name}.${column}" has the same name as the model method ${column}(). Rename the column in a new migration.`,
+      )
     }
   }
   const acknowledged = new Set(options.allowSensitive ?? [])
   for (const column of options.fillable ?? []) {
-    if (!info.columns.has(column)) throw new MassAssignmentError(info.name, column, 'unknown', closest(column, hintableColumns(info, new Set(options.hidden ?? []))))
+    if (!info.columns.has(column))
+      throw new MassAssignmentError(
+        info.name,
+        column,
+        'unknown',
+        closest(column, hintableColumns(info, new Set(options.hidden ?? []))),
+      )
     if (isSystemColumn(column)) throw new MassAssignmentError(info.name, column, 'system')
     if (isSensitiveColumn(column) && !acknowledged.has(column)) {
       throw new OrmUsageError(
@@ -959,20 +1221,35 @@ function buildSettings(
     }
   }
   for (const column of options.hidden ?? []) {
-    if (!info.columns.has(column)) throw new OrmUsageError('UNKNOWN_HIDDEN_COLUMN', `${modelName} hides "${column}", but "${info.name}" has no such column.`)
+    if (!info.columns.has(column))
+      throw new OrmUsageError(
+        'UNKNOWN_HIDDEN_COLUMN',
+        `${modelName} hides "${column}", but "${info.name}" has no such column.`,
+      )
   }
   const casts = new Map<string, Cast<unknown>>()
   for (const [column, cast] of Object.entries(options.casts ?? {})) {
     if (cast === undefined) continue
-    if (!info.columns.has(column)) throw new OrmUsageError('UNKNOWN_CAST_COLUMN', `${modelName} casts "${column}", but "${info.name}" has no such column.`)
+    if (!info.columns.has(column))
+      throw new OrmUsageError(
+        'UNKNOWN_CAST_COLUMN',
+        `${modelName} casts "${column}", but "${info.name}" has no such column.`,
+      )
     casts.set(column, cast)
   }
   for (const name of scopes.keys()) {
-    if (name in Builder.prototype) throw new OrmUsageError('SCOPE_CLASHES_WITH_METHOD', `${modelName} has a scope named "${name}", which clashes with the query method ${name}(). Rename the scope.`)
+    if (name in Builder.prototype)
+      throw new OrmUsageError(
+        'SCOPE_CLASHES_WITH_METHOD',
+        `${modelName} has a scope named "${name}", which clashes with the query method ${name}(). Rename the scope.`,
+      )
     // Promise members: a builder with a `then` method is "thenable", so `await query` would call the
     // scope instead of running the query (and catch/finally make it look like a promise to tools).
     if (PROMISE_MEMBERS.has(name)) {
-      throw new OrmUsageError('SCOPE_CLASHES_WITH_METHOD', `${modelName} has a scope named "${name}", which clashes with promises: \`await query\` would call it instead of running the query. Rename the scope.`)
+      throw new OrmUsageError(
+        'SCOPE_CLASHES_WITH_METHOD',
+        `${modelName} has a scope named "${name}", which clashes with promises: \`await query\` would call it instead of running the query. Rename the scope.`,
+      )
     }
   }
   return {

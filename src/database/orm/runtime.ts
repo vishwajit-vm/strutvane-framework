@@ -13,9 +13,9 @@ import type { Cast } from './casts.ts'
 import type { ModelBase } from './model.ts'
 
 /** Brands the static side of every model class (checked with `MODEL_BRAND in value`). */
-export const MODEL_BRAND: unique symbol = Symbol('strutvane.model')
+export const MODEL_BRAND: '~strutvane.model' = '~strutvane.model'
 /** Brands every relation object. */
-export const RELATION_BRAND: unique symbol = Symbol('strutvane.relation')
+export const RELATION_BRAND: '~strutvane.relation' = '~strutvane.relation'
 
 /**
  * A scope or constraint callback, stored without its precise type. The builder calls these
@@ -46,7 +46,7 @@ export interface ModelSettings {
  * const runtime: ModelRuntime = Post // every model class is one
  */
 export interface ModelRuntime {
-  readonly [MODEL_BRAND]: true
+  readonly '~strutvane.model': true
   readonly table: string
   readonly name: string
   readonly prototype: object
@@ -77,11 +77,20 @@ export function isModelRuntime(value: unknown): value is ModelRuntime {
  * await relation.eagerLoad(posts, 'author', undefined)
  */
 export interface RelationContract {
-  readonly [RELATION_BRAND]: true
+  readonly '~strutvane.relation': true
   /** Load this relation for all `parents` with one query; return the loaded models (for nesting). */
-  eagerLoad(parents: readonly ModelBase[], name: string, constrain: StoredCallback | undefined): Promise<ModelBase[]>
+  eagerLoad(
+    parents: readonly ModelBase[],
+    name: string,
+    constrain: StoredCallback | undefined,
+  ): Promise<ModelBase[]>
   /** A correlated subquery against `parentAlias`, for `withCount` and `whereHas`. */
-  subquery(parentAlias: string, alias: string, constrain: StoredCallback | undefined, kind: 'count' | 'exists'): SelectAst
+  subquery(
+    parentAlias: string,
+    alias: string,
+    constrain: StoredCallback | undefined,
+    kind: 'count' | 'exists',
+  ): SelectAst
 }
 
 /**

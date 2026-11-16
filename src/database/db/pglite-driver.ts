@@ -27,7 +27,10 @@ export function pgliteDriver(client: PGlite): Driver {
   return {
     dialect: 'postgres',
     async acquire(): Promise<DriverSession> {
-      if (closed) throw new Error('This PGlite database is closed. Create a new connection instead of reusing a closed one.')
+      if (closed)
+        throw new Error(
+          'This PGlite database is closed. Create a new connection instead of reusing a closed one.',
+        )
       const unlock = await mutex.lock()
       return { run, release: () => unlock() }
     },

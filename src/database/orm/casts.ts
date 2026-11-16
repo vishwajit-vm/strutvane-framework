@@ -72,11 +72,20 @@ function trustJson<TValue>(stored: unknown): TValue {
  * @example
  * applyCast('users', 'email', emailCast, ' A@B.C ') // 'a@b.c'
  */
-export function applyCast(table: string, column: string, cast: Cast<unknown>, value: unknown): unknown {
+export function applyCast(
+  table: string,
+  column: string,
+  cast: Cast<unknown>,
+  value: unknown,
+): unknown {
   try {
     return cast.set(value)
   } catch (error) {
-    throw new CastError(table, column, `the value could not be converted (${error instanceof Error ? error.message : String(error)})`)
+    throw new CastError(
+      table,
+      column,
+      `the value could not be converted (${error instanceof Error ? error.message : String(error)})`,
+    )
   }
 }
 
@@ -121,14 +130,21 @@ export function fromDatabase(column: ColumnDef, raw: unknown, dialect: Dialect):
  * @example
  * toDatabase('posts', { name: 'status', kind: 'enum', nullable: false, values: ['draft'] }, 'draft', 'mysql') // 'draft'
  */
-export function toDatabase(table: string, column: ColumnDef, value: unknown, dialect: Dialect): unknown {
+export function toDatabase(
+  table: string,
+  column: ColumnDef,
+  value: unknown,
+  dialect: Dialect,
+): unknown {
   if (value === null || value === undefined) {
-    if (!column.nullable && column.kind !== 'id') throw new CastError(table, column.name, 'it is required (the column is NOT NULL)')
+    if (!column.nullable && column.kind !== 'id')
+      throw new CastError(table, column.name, 'it is required (the column is NOT NULL)')
     return null
   }
   switch (column.kind) {
     case 'boolean':
-      if (typeof value !== 'boolean') throw new CastError(table, column.name, `expected true or false, got ${describe(value)}`)
+      if (typeof value !== 'boolean')
+        throw new CastError(table, column.name, `expected true or false, got ${describe(value)}`)
       return value
     case 'timestamp':
       return timestampToDatabase(table, column, value, dialect)
@@ -137,15 +153,33 @@ export function toDatabase(table: string, column: ColumnDef, value: unknown, dia
     case 'json':
       return JSON.stringify(value)
     case 'decimal': {
-      if (typeof value !== 'number' && typeof value !== 'string') throw new CastError(table, column.name, `expected a number or numeric string, got ${describe(value)}`)
+      if (typeof value !== 'number' && typeof value !== 'string')
+        throw new CastError(
+          table,
+          column.name,
+          `expected a number or numeric string, got ${describe(value)}`,
+        )
       // A number is checked as JavaScript prints it (its shortest exact form), never via toFixed:
       // toFixed *rounds*, so 10.555 became 10.55 and 0.1 + 0.2 became 0.30 without an error.
       const text = typeof value === 'number' ? String(value) : value
-      return canonicalDecimal(text, column.scale ?? 2, () => new CastError(table, column.name, `"${text}" is not a decimal with at most ${column.scale ?? 2} decimal places`))
+      return canonicalDecimal(
+        text,
+        column.scale ?? 2,
+        () =>
+          new CastError(
+            table,
+            column.name,
+            `"${text}" is not a decimal with at most ${column.scale ?? 2} decimal places`,
+          ),
+      )
     }
     case 'enum':
       if (typeof value !== 'string' || !(column.values ?? []).includes(value)) {
-        throw new CastError(table, column.name, `${describe(value)} is not one of ${(column.values ?? []).join(', ')}`)
+        throw new CastError(
+          table,
+          column.name,
+          `${describe(value)} is not one of ${(column.values ?? []).join(', ')}`,
+        )
       }
       return value
     case 'string':
@@ -160,7 +194,8 @@ export function toDatabase(table: string, column: ColumnDef, value: unknown, dia
     case 'foreignId':
       return integerToDatabase(table, column, value)
     case 'double':
-      if (typeof value !== 'number' || !Number.isFinite(value)) throw new CastError(table, column.name, `expected a finite number, got ${describe(value)}`)
+      if (typeof value !== 'number' || !Number.isFinite(value))
+        throw new CastError(table, column.name, `expected a finite number, got ${describe(value)}`)
       return value
   }
 }
@@ -181,18 +216,26 @@ function integerToDatabase(table: string, column: ColumnDef, value: unknown): nu
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function uuidToDatabase(table: string, column: ColumnDef, value: unknown): string {
-  if (typeof value !== 'string' || !UUID.test(value)) throw new CastError(table, column.name, `expected a UUID, got ${describe(value)}`)
+  if (typeof value !== 'string' || !UUID.test(value))
+    throw new CastError(table, column.name, `expected a UUID, got ${describe(value)}`)
   // One spelling only, so case-sensitive and case-insensitive engines agree.
   return value.toLowerCase()
 }
 
 function stringToDatabase(table: string, column: ColumnDef, value: unknown): string {
-  if (typeof value !== 'string') throw new CastError(table, column.name, `expected text, got ${describe(value)}`)
+  if (typeof value !== 'string')
+    throw new CastError(table, column.name, `expected text, got ${describe(value)}`)
   // U+0000 ends strings in C: PostgreSQL rejects it, others store it. Refuse it everywhere (ADR-0008).
-  if (value.includes('\u0000')) throw new CastError(table, column.name, 'text may not contain the NUL character')
+  if (value.includes('\u0000'))
+    throw new CastError(table, column.name, 'text may not contain the NUL character')
   // Half of a surrogate pair isn't text: encoded to UTF-8 it became U+FFFD on some engines and an
   // error on others, so what was stored differed from what was sent.
-  if (!value.isWellFormed()) throw new CastError(table, column.name, 'the text contains malformed Unicode (a lone surrogate)')
+  if (!value.isWellFormed())
+    throw new CastError(
+      table,
+      column.name,
+      'the text contains malformed Unicode (a lone surrogate)',
+    )
   // SQLite ignores VARCHAR(n); enforcing it here makes SQLite reject what Postgres would reject.
   if (column.length !== undefined && [...value].length > column.length) {
     throw new CastError(table, column.name, `it is longer than ${column.length} characters`)
@@ -205,14 +248,25 @@ function stringToDatabase(table: string, column: ColumnDef, value: unknown): str
  * date meaning UTC midnight. `new Date()` alone would also take `'2026-11-14T10:00:00'` (read in the
  * *server's* time zone, so the stored instant depended on where the app ran), `'Nov 14 2026'` or `'1'`.
  */
-const TIMESTAMP_TEXT = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2}))?$/
+const TIMESTAMP_TEXT =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2}))?$/
 /** Years every engine stores (MySQL DATETIME: 1000–9999); outside them the engines disagree. */
 const YEARS = { min: 1000, max: 9999 } as const
 
-function timestampToDatabase(table: string, column: ColumnDef, value: unknown, dialect: Dialect): string {
-  const date = value instanceof Date ? value : typeof value === 'string' ? parseTimestamp(value) : undefined
+function timestampToDatabase(
+  table: string,
+  column: ColumnDef,
+  value: unknown,
+  dialect: Dialect,
+): string {
+  const date =
+    value instanceof Date ? value : typeof value === 'string' ? parseTimestamp(value) : undefined
   if (date === undefined || Number.isNaN(date.getTime()) || !inYearRange(date)) {
-    throw new CastError(table, column.name, `expected a Date or an ISO-8601 string with a time zone (2026-11-14T09:30:00Z), years ${YEARS.min}–${YEARS.max}, got ${describe(value)}`)
+    throw new CastError(
+      table,
+      column.name,
+      `expected a Date or an ISO-8601 string with a time zone (2026-11-14T09:30:00Z), years ${YEARS.min}–${YEARS.max}, got ${describe(value)}`,
+    )
   }
   const iso = date.toISOString()
   // MySQL DATETIME(3) has no time zone and rejects the "Z": store UTC as "YYYY-MM-DD HH:MM:SS.mmm"
@@ -222,8 +276,16 @@ function timestampToDatabase(table: string, column: ColumnDef, value: unknown, d
 }
 
 function dateToDatabase(table: string, column: ColumnDef, value: unknown): string {
-  const text = value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString().slice(0, 10) : value
-  if (typeof text !== 'string' || !isCalendarDate(text)) throw new CastError(table, column.name, `expected a real date like 2026-11-14 (years ${YEARS.min}–${YEARS.max}), got ${describe(value)}`)
+  const text =
+    value instanceof Date && !Number.isNaN(value.getTime())
+      ? value.toISOString().slice(0, 10)
+      : value
+  if (typeof text !== 'string' || !isCalendarDate(text))
+    throw new CastError(
+      table,
+      column.name,
+      `expected a real date like 2026-11-14 (years ${YEARS.min}–${YEARS.max}), got ${describe(value)}`,
+    )
   return text
 }
 
@@ -232,7 +294,8 @@ function parseTimestamp(text: string): Date | undefined {
   const match = TIMESTAMP_TEXT.exec(text)
   if (match === null || !isCalendarDate(text.slice(0, 10))) return undefined
   // 24:00 and 23:60 are not times of day (Date would roll them into the next day or hour).
-  if (Number(match[4] ?? 0) > 23 || Number(match[5] ?? 0) > 59 || Number(match[6] ?? 0) > 59) return undefined
+  if (Number(match[4] ?? 0) > 23 || Number(match[5] ?? 0) > 59 || Number(match[6] ?? 0) > 59)
+    return undefined
   const date = new Date(text.length === 10 ? `${text}T00:00:00.000Z` : text)
   return Number.isNaN(date.getTime()) ? undefined : date
 }
@@ -241,7 +304,9 @@ function parseTimestamp(text: string): Date | undefined {
 function isCalendarDate(text: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false
   const date = new Date(`${text}T00:00:00.000Z`)
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text && inYearRange(date)
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text && inYearRange(date)
+  )
 }
 
 function inYearRange(date: Date): boolean {
@@ -267,13 +332,17 @@ function canonicalDecimal(raw: unknown, scale: number, invalid?: () => Error): s
   }
   const sign = match[1] === '-' && /[1-9]/.test(`${match[2]}${fraction}`) ? '-' : ''
   const integer = (match[2] ?? '0').replace(/^0+(?=\d)/, '')
-  return scale === 0 ? `${sign}${integer}` : `${sign}${integer}.${fraction.slice(0, scale).padEnd(scale, '0')}`
+  return scale === 0
+    ? `${sign}${integer}`
+    : `${sign}${integer}.${fraction.slice(0, scale).padEnd(scale, '0')}`
 }
 
 function toSafeInteger(raw: unknown, column: ColumnDef): number {
   const number = typeof raw === 'number' ? raw : Number(raw)
   if (!Number.isSafeInteger(number)) {
-    throw new TypeError(`${column.name} holds ${String(raw)}, which is beyond JavaScript's safe integer range. Use a bigint cast for this column.`)
+    throw new TypeError(
+      `${column.name} holds ${String(raw)}, which is beyond JavaScript's safe integer range. Use a bigint cast for this column.`,
+    )
   }
   return number
 }

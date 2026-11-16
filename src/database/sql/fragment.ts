@@ -71,7 +71,10 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/
  */
 export function assertIdentifier(name: string): void {
   if (!IDENTIFIER.test(name)) {
-    throw new OrmUsageError('INVALID_IDENTIFIER', `"${name}" is not a valid table or column name. Use letters, digits and underscores, starting with a letter (max 63).`)
+    throw new OrmUsageError(
+      'INVALID_IDENTIFIER',
+      `"${name}" is not a valid table or column name. Use letters, digits and underscores, starting with a letter (max 63).`,
+    )
   }
 }
 
@@ -82,11 +85,15 @@ export function assertIdentifier(name: string): void {
  * @example
  * await db.select(sql`SELECT * FROM ${sql.id('posts')} WHERE title = ${userInput}`)
  */
-export function sql(strings: TemplateStringsArray, ...values: readonly unknown[]): SqlFragment {
+function sqlTag(strings: TemplateStringsArray, ...values: readonly unknown[]): SqlFragment {
   // Template objects are frozen arrays with a frozen `.raw`; a hand-built array is not. This
   // stops `sql([userInput])` style calls from smuggling text in.
   if (!Object.isFrozen(strings) || !Array.isArray(strings.raw)) {
-    throw new OrmUsageError('RAW_SQL_NOT_TEMPLATE', 'sql must be used as a tagged template (sql`...`), never called with a string. Put values in ${…} so they are bound.')
+    throw new OrmUsageError(
+      'RAW_SQL_NOT_TEMPLATE',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the message shows the sql tag syntax
+      'sql must be used as a tagged template (sql`...`), never called with a string. Put values in ${…} so they are bound.',
+    )
   }
   const parts: SqlPart[] = []
   strings.forEach((text, index) => {
@@ -107,7 +114,7 @@ function pushValue(parts: SqlPart[], value: unknown): void {
  * @example
  * sql`SELECT ${sql.id('title')} FROM ${sql.id('posts')}`
  */
-sql.id = function id(name: string): SqlFragment {
+function id(name: string): SqlFragment {
   assertIdentifier(name)
   return SqlFragment.trusted([{ kind: 'identifier', name }])
 }
@@ -118,7 +125,7 @@ sql.id = function id(name: string): SqlFragment {
  * @example
  * sql.join([sql`a = ${1}`, sql`b = ${2}`], ' AND ')
  */
-sql.join = function join(fragments: readonly SqlFragment[], separator: string): SqlFragment {
+function join(fragments: readonly SqlFragment[], separator: string): SqlFragment {
   const parts: SqlPart[] = []
   fragments.forEach((fragment, index) => {
     if (index > 0) parts.push({ kind: 'text', text: separator })
@@ -134,8 +141,10 @@ sql.join = function join(fragments: readonly SqlFragment[], separator: string): 
  * @example
  * text('SELECT '), value(42), identifier('posts')
  */
-export const text = (value: string): SqlFragment => SqlFragment.trusted([{ kind: 'text', text: value }])
-export const value = (bound: unknown): SqlFragment => SqlFragment.trusted([{ kind: 'value', value: bound }])
+export const text = (value: string): SqlFragment =>
+  SqlFragment.trusted([{ kind: 'text', text: value }])
+export const value = (bound: unknown): SqlFragment =>
+  SqlFragment.trusted([{ kind: 'value', value: bound }])
 export const identifier = (name: string): SqlFragment => {
   assertIdentifier(name)
   return SqlFragment.trusted([{ kind: 'identifier', name }])
@@ -148,5 +157,28 @@ export const identifier = (name: string): SqlFragment => {
  * concat(text('SELECT * FROM '), identifier('posts'))
  */
 export function concat(...fragments: readonly SqlFragment[]): SqlFragment {
-  return sql.join(fragments, '')
+  return join(fragments, '')
 }
+
+/**
+ * The `sql` tag's shape: a template tag plus {@link SqlTag.id} and {@link SqlTag.join}.
+ *
+ * @example
+ * const where: SqlFragment = sql`${sql.id('status')} = ${'draft'}`
+ */
+export interface SqlTag {
+  (strings: TemplateStringsArray, ...values: readonly unknown[]): SqlFragment
+  /** A quoted, validated identifier. */
+  id(name: string): SqlFragment
+  /** Fragments joined with a trusted separator. */
+  join(fragments: readonly SqlFragment[], separator: string): SqlFragment
+}
+
+/**
+ * Write raw SQL safely. Every `${value}` becomes a bound parameter; a `${fragment}` is spliced
+ * in as SQL (that is how fragments compose); `${sql.id('name')}` is a quoted identifier.
+ *
+ * @example
+ * await connection.run(sql`SELECT * FROM ${sql.id('posts')} WHERE title = ${userInput}`)
+ */
+export const sql: SqlTag = Object.assign(sqlTag, { id, join })

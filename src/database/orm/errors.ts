@@ -35,7 +35,10 @@ export class ModelNotFoundError extends OrmError {
 
   constructor(table: string, key?: unknown) {
     const which = key === undefined ? 'matching your query' : `with key ${JSON.stringify(key)}`
-    super('MODEL_NOT_FOUND', `No row in "${table}" ${which}. It may not exist, may be soft-deleted, or may belong to another tenant.`)
+    super(
+      'MODEL_NOT_FOUND',
+      `No row in "${table}" ${which}. It may not exist, may be soft-deleted, or may belong to another tenant.`,
+    )
   }
 }
 
@@ -52,13 +55,23 @@ export class MassAssignmentError extends OrmError {
   /** The offending field. */
   readonly field: string
 
-  constructor(table: string, field: string, reason: 'not-fillable' | 'unknown' | 'system', suggestion?: string) {
+  constructor(
+    table: string,
+    field: string,
+    reason: 'not-fillable' | 'unknown' | 'system',
+    suggestion?: string,
+  ) {
     super('MASS_ASSIGNMENT', massAssignmentMessage(table, field, reason, suggestion))
     this.field = field
   }
 }
 
-function massAssignmentMessage(table: string, field: string, reason: 'not-fillable' | 'unknown' | 'system', suggestion?: string): string {
+function massAssignmentMessage(
+  table: string,
+  field: string,
+  reason: 'not-fillable' | 'unknown' | 'system',
+  suggestion?: string,
+): string {
   if (reason === 'unknown') {
     const hint = suggestion === undefined ? '' : ` Did you mean "${suggestion}"?`
     return `"${table}" has no column "${field}".${hint} Columns come from your migrations: add one with a new migration, then run \`sv migrate\`.`
@@ -102,7 +115,10 @@ export class TenantMismatchError extends OrmError {
   override readonly name = 'TenantMismatchError'
 
   constructor(table: string, detail: string) {
-    super('TENANT_MISMATCH', `Refusing to touch "${table}": ${detail}. One unit of work may only ever see one tenant.`)
+    super(
+      'TENANT_MISMATCH',
+      `Refusing to touch "${table}": ${detail}. One unit of work may only ever see one tenant.`,
+    )
   }
 }
 

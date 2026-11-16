@@ -6,6 +6,7 @@
  * related query into `EXISTS (…)` for `whereHas`, or into `(SELECT COUNT(*) …)` for `withCount`.
  * Every node holds column *references* (alias + column), never SQL text.
  */
+import type { BoundFilter } from '../../query/bind.ts'
 import type { SqlFragment } from './fragment.ts'
 
 /**
@@ -32,14 +33,52 @@ export type Conjunction = 'and' | 'or'
  * const node: WhereNode = { kind: 'compare', conjunction: 'and', column: ref, operator: '=', value: 'published' }
  */
 export type WhereNode =
-  | { readonly kind: 'compare'; readonly conjunction: Conjunction; readonly column: ColumnRef; readonly operator: CompareOperator; readonly value: unknown }
-  | { readonly kind: 'null'; readonly conjunction: Conjunction; readonly column: ColumnRef; readonly negated: boolean }
-  | { readonly kind: 'in'; readonly conjunction: Conjunction; readonly column: ColumnRef; readonly values: readonly unknown[]; readonly negated: boolean }
-  | { readonly kind: 'group'; readonly conjunction: Conjunction; readonly nodes: readonly WhereNode[] }
+  | {
+      readonly kind: 'compare'
+      readonly conjunction: Conjunction
+      readonly column: ColumnRef
+      readonly operator: CompareOperator
+      readonly value: unknown
+    }
+  | {
+      readonly kind: 'null'
+      readonly conjunction: Conjunction
+      readonly column: ColumnRef
+      readonly negated: boolean
+    }
+  | {
+      readonly kind: 'in'
+      readonly conjunction: Conjunction
+      readonly column: ColumnRef
+      readonly values: readonly unknown[]
+      readonly negated: boolean
+    }
+  | {
+      readonly kind: 'group'
+      readonly conjunction: Conjunction
+      readonly nodes: readonly WhereNode[]
+    }
   | { readonly kind: 'raw'; readonly conjunction: Conjunction; readonly fragment: SqlFragment }
-  | { readonly kind: 'columns'; readonly conjunction: Conjunction; readonly left: ColumnRef; readonly right: ColumnRef }
-  | { readonly kind: 'exists'; readonly conjunction: Conjunction; readonly query: SelectAst; readonly negated: boolean }
+  | {
+      readonly kind: 'columns'
+      readonly conjunction: Conjunction
+      readonly left: ColumnRef
+      readonly right: ColumnRef
+    }
+  | {
+      readonly kind: 'exists'
+      readonly conjunction: Conjunction
+      readonly query: SelectAst
+      readonly negated: boolean
+    }
   | { readonly kind: 'boolean'; readonly conjunction: Conjunction; readonly value: boolean }
+  /** A bound policy filter (ADR-0008), compiled for the query's engine at render time. */
+  | {
+      readonly kind: 'filter'
+      readonly conjunction: Conjunction
+      readonly alias: string
+      readonly filter: BoundFilter
+    }
 
 /**
  * One item in the `SELECT` list.

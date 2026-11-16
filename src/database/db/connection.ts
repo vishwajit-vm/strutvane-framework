@@ -67,13 +67,18 @@ interface TransactionState {
 export class Connection {
   readonly #driver: Driver
   readonly #transactions = new AsyncLocalStorage<TransactionState>()
+  /** A driver session pinned by {@link Connection.session} for the current async call chain. */
+  readonly #pinned = new AsyncLocalStorage<DriverSession>()
   readonly #listeners = new Set<(event: QueryEvent) => void>()
   /** The dialect's grammar, used by the compiler. */
   readonly grammar: Grammar
 
   constructor(driver: Driver) {
     this.#driver = driver
-    this.grammar = grammarFor(driver.dialect, driver.insertReturning === undefined ? {} : { insertReturning: driver.insertReturning })
+    this.grammar = grammarFor(
+      driver.dialect,
+      driver.insertReturning === undefined ? {} : { insertReturning: driver.insertReturning },
+    )
   }
 
   /**
@@ -120,6 +125,8 @@ export class Connection {
       // RLS reads the tenant from a transaction-local setting, so the statement needs a transaction.
       return this.transaction(() => this.run(fragment, options), options)
     }
+    const pinned = this.#pinned.getStore()
+    if (pinned !== undefined) return this.#execute(pinned, rendered)
     const session = await this.#driver.acquire()
     let broken = false
     try {
@@ -144,8 +151,15 @@ export class Connection {
   async transaction<T>(fn: () => Promise<T>, options: RunOptions = {}): Promise<T> {
     const current = this.#transactions.getStore()
     if (current !== undefined) return this.#savepoint(current, fn, options)
-    const session = await this.#driver.acquire()
-    const state: TransactionState = { session, depth: 1, shared: { tenantId: undefined, ended: false }, childOpen: false }
+    // Inside session(): the transaction runs on the pinned connection, which session() releases.
+    const pinned = this.#pinned.getStore()
+    const session = pinned ?? (await this.#driver.acquire())
+    const state: TransactionState = {
+      session,
+      depth: 1,
+      shared: { tenantId: undefined, ended: false },
+      childOpen: false,
+    }
     let broken = false
     try {
       await this.#execute(session, plain('BEGIN'))
@@ -159,6 +173,34 @@ export class Connection {
     } catch (error) {
       state.shared.ended = true
       broken = await this.#rollback(session)
+      throw error
+    } finally {
+      if (pinned === undefined) session.release(broken)
+    }
+  }
+
+  /**
+   * Run `fn` with one connection pinned to its async call chain, without opening a transaction:
+   * every statement and transaction inside uses that same connection, and it is released when
+   * `fn` settles. Session-scoped state needs this, such as MySQL's `GET_LOCK` / `RELEASE_LOCK` and
+   * PostgreSQL's session advisory locks, which the migrator holds around a whole run. Nested calls
+   * (or a call inside a transaction) reuse what is already pinned.
+   *
+   * @example
+   * await db.session(async () => {
+   *   await db.run(sql`SELECT GET_LOCK(${'migrate'}, ${10})`)
+   *   try { await work() } finally { await db.run(sql`SELECT RELEASE_LOCK(${'migrate'})`) }
+   * })
+   */
+  async session<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.#transactions.getStore() !== undefined || this.#pinned.getStore() !== undefined)
+      return fn()
+    const session = await this.#driver.acquire()
+    let broken = false
+    try {
+      return await this.#pinned.run(session, fn)
+    } catch (error) {
+      broken = isConnectionFailure(error)
       throw error
     } finally {
       session.release(broken)
@@ -175,7 +217,11 @@ export class Connection {
     return this.#driver.close()
   }
 
-  async #savepoint<T>(parent: TransactionState, fn: () => Promise<T>, options: RunOptions): Promise<T> {
+  async #savepoint<T>(
+    parent: TransactionState,
+    fn: () => Promise<T>,
+    options: RunOptions,
+  ): Promise<T> {
     if (parent.childOpen) {
       throw new Error(
         'Two nested transactions are running at the same time on one connection (for example inside Promise.all). ' +
@@ -183,7 +229,12 @@ export class Connection {
       )
     }
     const name = `sv_${parent.depth}`
-    const child: TransactionState = { session: parent.session, depth: parent.depth + 1, shared: parent.shared, childOpen: false }
+    const child: TransactionState = {
+      session: parent.session,
+      depth: parent.depth + 1,
+      shared: parent.shared,
+      childOpen: false,
+    }
     // ROLLBACK TO SAVEPOINT also undoes a set_config made inside the savepoint; remember what was
     // set before, so the next tenant statement sets it again instead of running without a tenant.
     const tenantBefore = parent.shared.tenantId
@@ -215,7 +266,9 @@ export class Connection {
    */
   async #executeIn(state: TransactionState, rendered: RenderedSql): Promise<QueryResult> {
     if (state.shared.ended) {
-      throw new Error('This transaction has already finished (committed or rolled back), so this statement was not run. Await all work inside transaction(…) before it returns.')
+      throw new Error(
+        'This transaction has already finished (committed or rolled back), so this statement was not run. Await all work inside transaction(…) before it returns.',
+      )
     }
     return this.#execute(state.session, rendered)
   }
@@ -225,10 +278,16 @@ export class Connection {
     if (tenantId === undefined || this.grammar.dialect !== 'postgres') return
     if (state.shared.tenantId === tenantId) return
     if (state.shared.tenantId !== undefined) {
-      throw new TenantMismatchError('this transaction', `it already belongs to tenant ${state.shared.tenantId}, not ${tenantId}`)
+      throw new TenantMismatchError(
+        'this transaction',
+        `it already belongs to tenant ${state.shared.tenantId}, not ${tenantId}`,
+      )
     }
     // `true` = transaction-local (ADR-0007 rule 3). A session-level SET would leak through pooling.
-    await this.#executeIn(state, { sql: "SELECT set_config('app.tenant_id', $1, true)", params: [tenantId] })
+    await this.#executeIn(state, {
+      sql: "SELECT set_config('app.tenant_id', $1, true)",
+      params: [tenantId],
+    })
     state.shared.tenantId = tenantId
   }
 
@@ -246,7 +305,11 @@ export class Connection {
   async #execute(session: DriverSession, rendered: RenderedSql): Promise<QueryResult> {
     const started = performance.now()
     const result = await session.run(rendered.sql, rendered.params)
-    const event: QueryEvent = { sql: rendered.sql, params: rendered.params, durationMs: performance.now() - started }
+    const event: QueryEvent = {
+      sql: rendered.sql,
+      params: rendered.params,
+      durationMs: performance.now() - started,
+    }
     for (const listener of this.#listeners) listener(event)
     return result
   }

@@ -43,6 +43,10 @@
       "types": "./dist/database.d.mts",
       "default": "./dist/database.mjs"
     },
+    "./schema": {
+      "types": "./dist/schema.d.mts",
+      "default": "./dist/schema.mjs"
+    },
     "./commands": {
       "types": "./dist/commands.d.mts",
       "default": "./dist/commands.mjs"
@@ -123,6 +127,7 @@
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.5.16",
     "@libsql/client": ">=0.18.0",
+    "mysql2": ">=3.24.6",
     "pg": ">=8.23.0"
   },
   "peerDependenciesMeta": {
@@ -130,6 +135,9 @@
       "optional": true
     },
     "@libsql/client": {
+      "optional": true
+    },
+    "mysql2": {
       "optional": true
     },
     "pg": {
