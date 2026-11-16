@@ -21,7 +21,12 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { modelNameForTable, pascalCase, singularize } from '../../core/inflection.ts'
 import { defineGenerator, type GeneratedFile, type Generator } from '../../devkit/index.ts'
-import { inferMigrationIntent, migrationFileName, migrationStub, modelStub } from './migration-stubs.ts'
+import {
+  inferMigrationIntent,
+  migrationFileName,
+  migrationStub,
+  modelStub,
+} from './migration-stubs.ts'
 
 /** The seeder `node strut db:seed` runs. */
 export const DATABASE_SEEDER_FILE = 'database/seeders/database.seeder.ts'
@@ -119,12 +124,16 @@ export function registerSeederV2(
   const importLine = `import ${seeder} from '${importPath}'`
   const start = text.indexOf(SEEDERS_START)
   const end = text.indexOf(SEEDERS_END)
-  const block = start >= 0 && end > start ? text.slice(start + SEEDERS_START.length, end) : undefined
+  const block =
+    start >= 0 && end > start ? text.slice(start + SEEDERS_START.length, end) : undefined
   const call = block === undefined ? null : /await call\(\[([^\]]*)\]\)/.exec(block)
   if (block === undefined || call === null || call[1] === undefined)
     return {
       status: 'unrecognised',
-      manual: [importLine, `await call([… , ${seeder}])  (inside ${SEEDERS_START} … ${SEEDERS_END})`],
+      manual: [
+        importLine,
+        `await call([… , ${seeder}])  (inside ${SEEDERS_START} … ${SEEDERS_END})`,
+      ],
     }
   const names = call[1]
     .split(',')
@@ -132,7 +141,10 @@ export function registerSeederV2(
     .filter((name) => name !== '')
   const hasImport = new RegExp(`^import ${seeder} from `, 'm').test(text)
   if (names.includes(seeder) && hasImport) return { status: 'unchanged', content }
-  const nextBlock = block.replace(call[0], `await call([${[...new Set([...names, seeder])].join(', ')}])`)
+  const nextBlock = block.replace(
+    call[0],
+    `await call([${[...new Set([...names, seeder])].join(', ')}])`,
+  )
   let next = `${text.slice(0, start + SEEDERS_START.length)}${nextBlock}${text.slice(end)}`
   if (!hasImport) {
     const imports = [...next.matchAll(/^import .+$/gm)]
