@@ -427,7 +427,19 @@ export default defineResource(Invoice, { routes: { delete: false } })
 describe('contributed commands', () => {
   test('are well-formed for the CLI (name, description, run, typed flags)', () => {
     expect(commands.map((c) => c.name).sort()).toEqual(
-      ['build', 'db:seed', 'dev', 'migrate', 'migrate:status', 'start'].sort(),
+      [
+        'build',
+        'db:seed',
+        'dev',
+        'migrate',
+        'migrate:fresh',
+        'migrate:refresh',
+        'migrate:reset',
+        'migrate:rollback',
+        'migrate:status',
+        'start',
+        'sync',
+      ].sort(),
     )
     for (const c of commands) {
       expect(c.description.length).toBeGreaterThan(0)

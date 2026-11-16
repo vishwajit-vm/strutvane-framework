@@ -115,7 +115,7 @@ function refuseThenable(result: unknown, what: string): void {
     typeof result.then === 'function'
   ) {
     throw new SchemaError(
-      'ASYNC_MIGRATION',
+      'async_migration',
       `${what} returned a promise. Migrations are recorded synchronously, so everything after the first await would be missing from the types, metadata and SQL.`,
       'Remove async/await from the migration. Data changes that need I/O belong in a seeder or a data migration, not in the schema.',
     )
@@ -180,7 +180,7 @@ class SchemaRecorder implements SchemaBuilder {
   #assertOpen(): void {
     if (this.#sealed) {
       throw new SchemaError(
-        'ASYNC_MIGRATION',
+        'async_migration',
         'The schema builder was used after the migration returned (a stored reference, a timer or an await).',
         'Call schema methods only synchronously inside up() and down().',
       )
@@ -262,7 +262,7 @@ class SchemaRecorder implements SchemaBuilder {
     if (tenant === undefined) return actions
     if (tracked.global) {
       throw new SchemaError(
-        'INVALID_TENANCY',
+        'invalid_tenancy',
         `The table "${table}" is marked { global: true } but has the tenant column "${tenant}".`,
         'A table is either shared by every tenant (global) or belongs to one tenant (t.tenant()), not both.',
       )
@@ -318,7 +318,7 @@ function track(tracked: TrackedTable, action: TableAction): void {
       if (action.column.tenant === true) {
         if (tracked.tenant !== undefined && tracked.tenant !== action.column.name) {
           throw new SchemaError(
-            'INVALID_TENANCY',
+            'invalid_tenancy',
             `A table can have only one tenant column, but "${action.column.name}" was added next to "${tracked.tenant}".`,
             'Keep a single t.tenant() per table.',
           )
@@ -379,7 +379,7 @@ function cleanOptions(
   if (options === undefined) return undefined
   if (typeof options !== 'object' || options === null) {
     throw new SchemaError(
-      'INVALID_MIGRATION',
+      'invalid_migration',
       `The options for schema.create('${table}') must be an object.`,
       'Pass { global: true } or { internal: true }, or leave the argument out.',
     )
@@ -387,7 +387,7 @@ function cleanOptions(
   for (const key of Object.keys(options)) {
     if (key !== 'global' && key !== 'internal') {
       throw new SchemaError(
-        'INVALID_MIGRATION',
+        'invalid_migration',
         `schema.create('${table}') got an unknown option "${key}".`,
         'The options are { global: true } and { internal: true }.',
       )
@@ -423,7 +423,7 @@ export function assertMigration(value: unknown, file: string): Migration {
     return value as Migration
   }
   throw new SchemaError(
-    'INVALID_MIGRATION',
+    'invalid_migration',
     `${file} doesn't default-export a migration.`,
     'Make the file end with `export default migration({ up(schema) { … }, down(schema) { … } })`.',
   )

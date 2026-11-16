@@ -30,6 +30,14 @@ import {
   seederGenerator,
   testGenerator,
 } from '../make/generators.ts'
+import {
+  DATABASE_SEEDER_FILE,
+  isMigrationFirstProject,
+  migrationFirstFiles,
+  migrationFirstGenerator,
+  SEEDERS_END,
+  SEEDERS_START,
+} from '../make/migration-first.ts'
 import { type Names, names } from '../make/names.ts'
 import {
   DATABASE_SEEDER_PATH,
@@ -559,33 +567,78 @@ export const makeTestCommand: AnyCommand = defineCommand({
 
 export const makeMigrationCommand: AnyCommand = defineCommand({
   name: 'make:migration',
-  description: 'Create a hand-written migration stub (data changes, special DDL)',
-  details: 'Model changes do not need this: `sv migrate` diffs models against the database.',
+  description: 'Create a migration (and, for create_*_table, its model)',
+  details:
+    'Migration-first apps: create_posts_table creates a table and app/models/post.ts; add_x_to_posts_table alters one; any other name gets a blank migration. --seeder adds the seeder and its factory and registers the seeder in database/seeders/database.seeder.ts; --factory adds only the factory. v1 apps (strutvane.config.ts, no Laravel-named migrations) get a hand-written stub.',
   args: {
-    name: { required: true, description: 'snake_case description, e.g. backfill_invoice_totals' },
+    name: {
+      required: true,
+      description: 'snake_case, e.g. create_posts_table or add_subtitle_to_posts_table',
+    },
   },
   flags: {
-    sql: { type: 'boolean', description: 'A raw .sql file instead of TypeScript' },
+    seeder: {
+      type: 'boolean',
+      description: 'Also create the seeder and its factory, and register the seeder',
+    },
+    factory: { type: 'boolean', description: 'Also create the factory' },
+    sql: { type: 'boolean', description: 'v1 apps: a raw .sql file instead of TypeScript' },
     table: {
       type: 'string',
       valueName: '<table>',
-      description: 'Pre-fill an ALTER TABLE statement for this table',
+      description: 'v1 apps: pre-fill an ALTER TABLE statement for this table',
     },
   },
-  examples: ['sv make:migration backfill_invoice_totals --table invoices'],
+  examples: [
+    'node strut make:migration create_posts_table --seeder',
+    'node strut make:migration add_subtitle_to_posts_table',
+  ],
   async run(ctx) {
     const name = names(ctx.args.name, 'Migration name').snake
+    const root = ctx.requireProject().root
+    if (ctx.flags.sql === true || !isMigrationFirstProject(root)) {
+      const data = await applyGenerator(
+        ctx,
+        migrationGenerator,
+        {
+          name,
+          timestamp: migrationTimestamp(ctx.services.clock.now()),
+          sql: ctx.flags.sql === true,
+          table: ctx.flags.table,
+        },
+        'sv migrate',
+      )
+      return { data }
+    }
+    const plan = migrationFirstFiles(root, name, new Date(ctx.services.clock.now()), {
+      seeder: ctx.flags.seeder === true,
+      factory: ctx.flags.factory === true,
+      read: (path) => {
+        const file = join(root, path)
+        return existsSync(file) ? readFileSync(file, 'utf8') : undefined
+      },
+    })
+    if ((ctx.flags.seeder === true || ctx.flags.factory === true) && plan.table === undefined) {
+      throw usageError('INVALID_ARGUMENT', {
+        detail: `Can't tell which table "${name}" is about, so no seeder or factory was written. Name it create_<table>_table or add_<column>_to_<table>_table.`,
+      })
+    }
+    const own = plan.files.filter((file) => file.overwrite !== true)
+    const extra = plan.files.filter((file) => file.overwrite === true)
     const data = await applyGenerator(
       ctx,
-      migrationGenerator,
-      {
-        name,
-        timestamp: migrationTimestamp(ctx.services.clock.now()),
-        sql: ctx.flags.sql === true,
-        table: ctx.flags.table,
-      },
-      'sv migrate',
+      migrationFirstGenerator,
+      { files: own.map((file) => ({ path: file.path, content: file.content })) },
+      'node strut migrate',
+      extra,
     )
+    for (const path of plan.kept) ctx.out.info(`Kept ${path} (it already exists).`)
+    if (plan.manual.length > 0) {
+      ctx.out.warn(
+        `${DATABASE_SEEDER_FILE} has no ${SEEDERS_START} … ${SEEDERS_END} markers, so the seeder was not registered. Add:`,
+      )
+      for (const line of plan.manual) ctx.out.warn(`  ${line}`)
+    }
     return { data }
   },
 })

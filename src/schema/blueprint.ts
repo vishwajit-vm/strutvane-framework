@@ -12,9 +12,9 @@
  * @module
  */
 
+import { pluralize } from '../core/inflection.ts'
 import type { ColumnDef, ColumnKind, DefaultValue, ReferentialAction } from './columns.ts'
 import { assertIdentifier, SchemaError } from './errors.ts'
-import { pluralize } from './naming.ts'
 import type { TableAction } from './operations.ts'
 
 /**
@@ -214,21 +214,21 @@ class ColumnDraft
       column.references = { ...this.#constrainedTo, onDelete: this.#onDelete }
     } else if (this.#onDelete !== 'no action') {
       throw new SchemaError(
-        'INVALID_FOREIGN_KEY',
+        'invalid_foreign_key',
         `Column "${this.#table}.${column.name}" sets an on-delete rule but doesn't reference a table.`,
         `Call .constrained() before .cascadeOnDelete() / .nullOnDelete(), for example t.foreignId('${column.name}').constrained().cascadeOnDelete().`,
       )
     }
     if (column.tenant === true && (column.nullable || 'default' in column)) {
       throw new SchemaError(
-        'INVALID_TENANCY',
+        'invalid_tenancy',
         `The tenant column "${this.#table}.${column.name}" can't be nullable or have a default: every row belongs to exactly one tenant.`,
         `Use t.tenant('${column.name}') on its own; Strutvane fills it in from the current tenant.`,
       )
     }
     if (column.primary === true && column.nullable) {
       throw new SchemaError(
-        'INVALID_COLUMN',
+        'invalid_column',
         `The primary key "${this.#table}.${column.name}" can't be nullable.`,
         `Remove .nullable() from t.uuid('${column.name}').primary().`,
       )
@@ -241,7 +241,7 @@ class ColumnDraft
 function guessParentTable(column: string): string {
   if (!column.endsWith('_id')) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `Can't guess which table "${column}" points to.`,
       `Name the table explicitly, for example .constrained('users'), or name the column "<thing>_id".`,
     )
@@ -269,14 +269,14 @@ function validateDefault(table: string, column: ColumnDef): void {
   if (value === null) {
     if (column.nullable) return
     throw new SchemaError(
-      'INVALID_DEFAULT',
+      'invalid_default',
       `Column ${where} defaults to null but isn't nullable.`,
       'Add .nullable() before .default(null), or pick a non-null default.',
     )
   }
   if (column.kind === 'enum' && !(column.values ?? []).includes(String(value))) {
     throw new SchemaError(
-      'INVALID_DEFAULT',
+      'invalid_default',
       `Column ${where} defaults to ${JSON.stringify(value)}, which isn't one of its allowed values.`,
       `Use one of: ${(column.values ?? []).map((allowed) => JSON.stringify(allowed)).join(', ')}.`,
     )
@@ -284,7 +284,7 @@ function validateDefault(table: string, column: ColumnDef): void {
   const expected = EXPECTED_DEFAULT_TYPE[column.kind]
   if (!expected.includes(typeof value)) {
     throw new SchemaError(
-      'INVALID_DEFAULT',
+      'invalid_default',
       `Column ${where} is a ${column.kind} column, but its default ${JSON.stringify(value)} is a ${typeof value}.`,
       `Use a ${expected.join(' or ')} default for ${column.kind} columns.`,
     )
@@ -398,7 +398,7 @@ export class Blueprint {
     assertPositiveInteger(this.#table, name, 'precision', precision)
     if (!Number.isInteger(scale) || scale < 0 || scale > precision) {
       throw new SchemaError(
-        'INVALID_COLUMN',
+        'invalid_column',
         `Column "${this.#table}.${name}" has scale ${scale}, which doesn't fit precision ${precision}.`,
         "Use a scale between 0 and the precision, for example t.decimal('price', 12, 2).",
       )
@@ -426,7 +426,7 @@ export class Blueprint {
   ): ColumnBuilder<TValues[number]> {
     if (new Set(values).size !== values.length) {
       throw new SchemaError(
-        'INVALID_COLUMN',
+        'invalid_column',
         `Enum "${this.#table}.${name}" lists the same value twice.`,
         'Remove the duplicate value.',
       )
@@ -541,7 +541,7 @@ export class Blueprint {
 function assertPositiveInteger(table: string, column: string, what: string, value: number): void {
   if (Number.isInteger(value) && value > 0) return
   throw new SchemaError(
-    'INVALID_COLUMN',
+    'invalid_column',
     `Column "${table}.${column}" has ${what} ${value}, which isn't a positive whole number.`,
     `Pass a ${what} such as 255.`,
   )

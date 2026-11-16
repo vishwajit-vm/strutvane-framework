@@ -76,7 +76,7 @@ export function parseSchemaSnapshot(json: unknown): SchemaSnapshot {
     () => readSnapshot(json),
     (where, problem) =>
       new SchemaError(
-        'INVALID_SNAPSHOT',
+        'invalid_snapshot',
         `.strutvane/schema.json is not valid: ${where} ${problem}.`,
         'Regenerate it with `node strut migrate` instead of editing it by hand.',
       ),
@@ -95,7 +95,7 @@ export function parseOperations(json: unknown, migration: string): SchemaOperati
     () => list(json, 'operations').map((op, index) => readOperation(op, `operations[${index}]`)),
     (where, problem) => {
       const error = new SchemaError(
-        'INVALID_MIGRATION',
+        'invalid_migration',
         `The recorded operations are not valid: ${where} ${problem}.`,
         'Only operations made by the schema builder are accepted. Check the migration for code that changes them.',
       )

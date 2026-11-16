@@ -57,7 +57,7 @@ const UNIT_MS: Readonly<Record<string, number>> = { ms: 1, s: 1000, min: 60_000 
  * `30s`, `2min`). Unset means {@link DEFAULT_MIGRATION_LOCK_TIMEOUT_MS}; anything else is an
  * {@link EnvValidationError} naming the key (the CLI reports it as a config error, exit 3).
  */
-function migrationLockTimeoutMs(env: EnvSource): number {
+export function migrationLockTimeoutMs(env: EnvSource): number {
   const raw = env['DB_MIGRATION_LOCK_TIMEOUT']
   if (raw === undefined) return DEFAULT_MIGRATION_LOCK_TIMEOUT_MS
   const match = DURATION.exec(raw.trim())

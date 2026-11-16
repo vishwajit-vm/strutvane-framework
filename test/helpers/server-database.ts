@@ -5,8 +5,12 @@
  * @module
  */
 import { randomBytes } from 'node:crypto'
-import { inject } from 'vitest'
+import { inject, vi } from 'vitest'
 import type { ServerInfo } from './db-servers.ts'
+
+// Suites on real servers and PGlite share the machine with the whole gate: give their hooks and
+// tests room under load (the defaults are 60 s), so a slow container start isn't a failure.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 300_000 })
 
 /** A database created for one test file. */
 export interface ServerDatabase {
@@ -64,7 +68,7 @@ export async function serverDatabase(
   }
   const mysql = await import('mysql2/promise')
   const admin = async (sql: string): Promise<void> => {
-    const connection = await mysql.createConnection(info.url)
+    const connection = await mysql.createConnection({ uri: info.url, connectTimeout: 60_000 })
     try {
       await connection.query(sql)
     } finally {
@@ -74,7 +78,8 @@ export async function serverDatabase(
   await admin(`CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4`)
   let dropped = false
   return {
-    url: `${info.url}/${name}`,
+    // mysql2's default 10 s connect timeout is too short while the gate loads every core.
+    url: `${info.url}/${name}?connectTimeout=60000`,
     async drop() {
       if (dropped) return
       dropped = true

@@ -11,33 +11,33 @@
  * Stable codes for schema problems. Tests match on these, never on message text.
  *
  * @example
- * const code: SchemaErrorCode = 'UNKNOWN_TABLE'
+ * const code: SchemaErrorCode = 'unknown_table'
  */
 export type SchemaErrorCode =
-  | 'INVALID_IDENTIFIER'
-  | 'TABLE_EXISTS'
-  | 'UNKNOWN_TABLE'
-  | 'COLUMN_EXISTS'
-  | 'UNKNOWN_COLUMN'
-  | 'INDEX_EXISTS'
-  | 'UNKNOWN_INDEX'
-  | 'INVALID_COLUMN'
-  | 'INVALID_DEFAULT'
-  | 'INVALID_FOREIGN_KEY'
-  | 'INVALID_SLUG_SOURCE'
-  | 'NOT_ALLOWED_IN_CREATE'
-  | 'INVALID_MIGRATION'
-  | 'DUPLICATE_MIGRATION'
-  | 'ASYNC_MIGRATION'
-  | 'INDEX_NOT_PORTABLE'
-  | 'INVALID_TENANCY'
-  | 'INVALID_SNAPSHOT'
+  | 'invalid_identifier'
+  | 'table_exists'
+  | 'unknown_table'
+  | 'column_exists'
+  | 'unknown_column'
+  | 'index_exists'
+  | 'unknown_index'
+  | 'invalid_column'
+  | 'invalid_default'
+  | 'invalid_foreign_key'
+  | 'invalid_slug_source'
+  | 'not_allowed_in_create'
+  | 'invalid_migration'
+  | 'duplicate_migration'
+  | 'async_migration'
+  | 'index_not_portable'
+  | 'invalid_tenancy'
+  | 'invalid_snapshot'
 
 /**
  * A schema problem, with what went wrong and how to fix it.
  *
  * @example
- * throw new SchemaError('UNKNOWN_TABLE', 'There is no table "post".', 'Did you mean "posts"?')
+ * throw new SchemaError('unknown_table', 'There is no table "post".', 'Did you mean "posts"?')
  */
 export class SchemaError extends Error {
   /** A stable code that tools can match on. */
@@ -89,7 +89,7 @@ const MAX_IDENTIFIER_LENGTH = 63
 export function assertIdentifier(name: string, what: 'table' | 'column' | 'index'): void {
   if (IDENTIFIER.test(name) && name.length <= MAX_IDENTIFIER_LENGTH) return
   throw new SchemaError(
-    'INVALID_IDENTIFIER',
+    'invalid_identifier',
     `The ${what} name ${JSON.stringify(name)} can't be used.`,
     `Use lower-case snake_case (letters, digits and _), start with a letter or _, and keep it under ${MAX_IDENTIFIER_LENGTH + 1} characters, for example "blog_posts".`,
   )

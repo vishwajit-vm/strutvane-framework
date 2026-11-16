@@ -37,6 +37,7 @@
  */
 import type { Repository, Scope } from '../data/repository.ts'
 import { createRepository } from '../data/repository.ts'
+import type { SeedContext } from '../database/seeding/seeder.ts'
 import type { Database } from '../database/types.ts'
 import type { AnyModel } from '../model/define-model.ts'
 import type { ModelRegistry } from '../model/registry.ts'
@@ -74,26 +75,62 @@ export interface SeederContext {
 /** A seeder. */
 export interface Seeder {
   readonly name: string
+  /**
+   * Tables whose seeders must run first (migration-first apps, CONSISTENCY #88). Used to keep the
+   * `call([...])` list in `database.seeder.ts` in dependency order.
+   */
+  readonly after?: readonly string[]
+  /** `true` when no name was given: the runner names it after its file (`post.seeder.ts` → `PostSeeder`). */
+  readonly anonymous?: boolean
   run(context: SeederContext): Promise<void> | void
 }
 
 /**
- * Define a seeder: `defineSeeder('InvoiceSeeder', async (ctx) => …)`, or
- * `defineSeeder({ name?, run })` (the name defaults to `DatabaseSeeder`).
+ * Define a seeder.
+ *
+ * - **Migration-first apps (the ORM, CONSISTENCY #88):** `defineSeeder({ after?, run })`; `run`
+ *   receives `{ db, env, tenantId, faker, call }` and uses models and factories. Without a name,
+ *   the seeder is named after its file (`post.seeder.ts` → `PostSeeder`; `database.seeder.ts` →
+ *   `DatabaseSeeder`).
+ * - **v1 apps (`defineModel`):** `defineSeeder('InvoiceSeeder', async (ctx) => …)` with the
+ *   repository context. *Deprecated with the v1 model layer.*
+ *
+ * @example
+ * export default defineSeeder({ after: ['users'], async run() { await PostFactory.count(20).create() } })
  */
-export function defineSeeder(name: string, run: Seeder['run']): Seeder
 export function defineSeeder(seeder: {
   readonly name?: string
-  readonly run: Seeder['run']
+  readonly after?: readonly string[]
+  run(context: SeedContext): Promise<void> | void
 }): Seeder
+export function defineSeeder(name: string, run: Seeder['run']): Seeder
 export function defineSeeder(
-  first: string | { readonly name?: string; readonly run: Seeder['run'] },
+  first:
+    | string
+    | {
+        readonly name?: string
+        readonly after?: readonly string[]
+        run(context: SeedContext): Promise<void> | void
+      },
   run?: Seeder['run'],
 ): Seeder {
+  if (typeof first === 'object' && first !== null && first.after !== undefined) {
+    if (
+      !Array.isArray(first.after) ||
+      first.after.some((t) => !/^[a-z_][a-z0-9_]*$/.test(String(t)))
+    )
+      throw new TypeError('defineSeeder({ after }) takes table names, e.g. after: ["users"]')
+  }
   const seeder =
     typeof first === 'string'
       ? { name: first, run }
-      : { name: first.name ?? 'DatabaseSeeder', run: first.run }
+      : {
+          name: first.name ?? 'DatabaseSeeder',
+          ...(first.name === undefined ? { anonymous: true } : {}),
+          ...(first.after !== undefined ? { after: Object.freeze([...first.after]) } : {}),
+          // The runner passes the context that matches the app (ORM or v1).
+          run: first.run as unknown as Seeder['run'],
+        }
   if (!/^[A-Z][A-Za-z0-9]*$/.test(seeder.name))
     throw new TypeError(`Seeder name "${seeder.name}" must be PascalCase (e.g. "InvoiceSeeder")`)
   if (typeof seeder.run !== 'function')

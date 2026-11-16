@@ -225,14 +225,14 @@ export class ModelBase {
     if (method === undefined) throw unknownRelation(this.name, name, ownMethodNames(this.prototype))
     if (method.constructor.name !== 'Function') {
       throw new OrmUsageError(
-        'RELATION_NOT_SYNC',
+        'relation_not_sync',
         `${this.name}.${name}() is async or a generator. Relation methods must be plain methods that return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`,
       )
     }
     const relation: unknown = Reflect.apply(method, new this(), [])
     if (!isRelation(relation)) {
       throw new OrmUsageError(
-        'NOT_A_RELATION',
+        'not_a_relation',
         `${this.name}.${name}() is not a relation: it must return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`,
       )
     }
@@ -362,7 +362,7 @@ export class ModelBase {
   runtime(): ModelRuntime {
     const ctor: unknown = this.constructor
     if (!isModelRuntime(ctor))
-      throw new OrmUsageError('NOT_A_MODEL', 'This object is not a Strutvane model instance.')
+      throw new OrmUsageError('not_a_model', 'This object is not a Strutvane model instance.')
     return ctor
   }
 
@@ -540,7 +540,7 @@ export class ModelBase {
     const info = this.#assertPersisted('restore')
     if (!info.softDeletes)
       throw new OrmUsageError(
-        'NO_SOFT_DELETES',
+        'no_soft_deletes',
         `"${info.name}" has no deleted_at column, so there is nothing to restore. Add t.softDeletes() in a migration to enable it.`,
       )
     defineColumn(this, SYSTEM_COLUMNS.deletedAt, null)
@@ -818,7 +818,7 @@ export class ModelBase {
     if (Object.keys(dirty).length === 0) return
     if ('id' in dirty)
       throw new OrmUsageError(
-        'PRIMARY_KEY_CHANGED',
+        'primary_key_changed',
         `The primary key of a saved "${info.name}" row can't change. Create a new row instead.`,
       )
     const tenant = tenantColumn()
@@ -904,7 +904,7 @@ export class ModelBase {
     const info = this.runtime().info()
     if (!this.#persisted)
       throw new OrmUsageError(
-        'NOT_SAVED',
+        'not_saved',
         `Can't ${action}() a "${info.name}" row that was never saved. Call save() first.`,
       )
     return info
@@ -1119,7 +1119,7 @@ function singular(table: string): string {
 function asModel(related: unknown, relation: string): ModelRuntime {
   if (!isModelRuntime(related)) {
     throw new OrmUsageError(
-      'NOT_A_MODEL',
+      'not_a_model',
       `${relation}() needs a model class, such as this.${relation}(User). If you passed a class from another file, check for a circular import that left it undefined.`,
     )
   }
@@ -1161,7 +1161,7 @@ function unknownRelation(
   const suggestion = closest(name, candidates)
   const hint = suggestion === undefined ? '' : ` Did you mean "${suggestion}"?`
   return new OrmUsageError(
-    'UNKNOWN_RELATION',
+    'unknown_relation',
     `${model} has no relation "${name}".${hint} Relations are methods on the model that return this.belongsTo(…), this.hasMany(…) or this.belongsToMany(…).`,
   )
 }
@@ -1174,11 +1174,11 @@ function readStatic(
   const scopes = new Map<string, StoredCallback>()
   if (value === undefined) return scopes
   if (typeof value !== 'object' || value === null)
-    throw new OrmUsageError('INVALID_SCOPES', `static ${name} must be an object of functions.`)
+    throw new OrmUsageError('invalid_scopes', `static ${name} must be an object of functions.`)
   for (const [key, scope] of Object.entries(value)) {
     if (typeof scope !== 'function')
       throw new OrmUsageError(
-        'INVALID_SCOPES',
+        'invalid_scopes',
         `static ${name}.${key} must be a function (query, …args) => …`,
       )
     scopes.set(key, (...args: never[]) => Reflect.apply(scope, undefined, args))
@@ -1197,7 +1197,7 @@ function buildSettings(
   for (const column of info.columns.keys()) {
     if (column in ModelBase.prototype) {
       throw new OrmUsageError(
-        'COLUMN_CLASHES_WITH_METHOD',
+        'column_clashes_with_method',
         `"${info.name}.${column}" has the same name as the model method ${column}(). Rename the column in a new migration.`,
       )
     }
@@ -1214,7 +1214,7 @@ function buildSettings(
     if (isSystemColumn(column)) throw new MassAssignmentError(info.name, column, 'system')
     if (isSensitiveColumn(column) && !acknowledged.has(column)) {
       throw new OrmUsageError(
-        'SENSITIVE_FILLABLE',
+        'sensitive_fillable',
         `${modelName} lists "${column}" as fillable, and it looks privilege- or workflow-related (is_*, *_at, *_by, role, plan…). ` +
           `If users really may set it from a request, also list it in allowSensitive: ['${column}']; otherwise set it in your own code.`,
       )
@@ -1223,7 +1223,7 @@ function buildSettings(
   for (const column of options.hidden ?? []) {
     if (!info.columns.has(column))
       throw new OrmUsageError(
-        'UNKNOWN_HIDDEN_COLUMN',
+        'unknown_hidden_column',
         `${modelName} hides "${column}", but "${info.name}" has no such column.`,
       )
   }
@@ -1232,7 +1232,7 @@ function buildSettings(
     if (cast === undefined) continue
     if (!info.columns.has(column))
       throw new OrmUsageError(
-        'UNKNOWN_CAST_COLUMN',
+        'unknown_cast_column',
         `${modelName} casts "${column}", but "${info.name}" has no such column.`,
       )
     casts.set(column, cast)
@@ -1240,14 +1240,14 @@ function buildSettings(
   for (const name of scopes.keys()) {
     if (name in Builder.prototype)
       throw new OrmUsageError(
-        'SCOPE_CLASHES_WITH_METHOD',
+        'scope_clashes_with_method',
         `${modelName} has a scope named "${name}", which clashes with the query method ${name}(). Rename the scope.`,
       )
     // Promise members: a builder with a `then` method is "thenable", so `await query` would call the
     // scope instead of running the query (and catch/finally make it look like a promise to tools).
     if (PROMISE_MEMBERS.has(name)) {
       throw new OrmUsageError(
-        'SCOPE_CLASHES_WITH_METHOD',
+        'scope_clashes_with_method',
         `${modelName} has a scope named "${name}", which clashes with promises: \`await query\` would call it instead of running the query. Rename the scope.`,
       )
     }

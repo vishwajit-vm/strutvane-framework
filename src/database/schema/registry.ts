@@ -129,7 +129,7 @@ export function tableInfo(table: string): TableInfo {
         ? 'No schema is registered yet: call registerSchema(snapshot) at boot.'
         : 'Did you create it in a migration and run `sv migrate`?'
     throw new OrmUsageError(
-      'UNKNOWN_TABLE',
+      'unknown_table',
       `The table "${table}" is not in the schema snapshot. ${hint}`,
     )
   }
@@ -169,7 +169,7 @@ export function tableState(table: string): TableState {
   const state = snapshot?.tables[table]
   if (state === undefined) {
     throw new OrmUsageError(
-      'UNKNOWN_TABLE',
+      'unknown_table',
       `The table "${table}" is not in the schema snapshot. Did you create it in a migration and run \`sv migrate\`?`,
     )
   }
@@ -191,7 +191,7 @@ function deriveInfo(state: TableState): TableInfo {
   const primaryKey = columns.get('id')
   if (primaryKey === undefined) {
     throw new OrmUsageError(
-      'NO_PRIMARY_KEY',
+      'no_primary_key',
       `"${state.name}" has no "id" column. Models need t.id() (or t.uuid('id')) in the migration; pivot tables don't need a model.`,
     )
   }

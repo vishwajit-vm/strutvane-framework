@@ -283,7 +283,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   whereRaw(fragment: SqlFragment): this {
     if (!SqlFragment.is(fragment)) {
       throw new OrmUsageError(
-        'RAW_SQL_NOT_FRAGMENT',
+        'raw_sql_not_fragment',
         // biome-ignore lint/suspicious/noTemplateCurlyInString: the message shows the sql tag syntax
         'whereRaw() needs a sql`…` fragment, not a string. Strings would let user input become SQL; put values in ${…} inside the sql tag.',
       )
@@ -332,7 +332,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   // Request-driven queries (what a ResourceController calls with ?search=, ?filter=, ?sort=)
   //
   // These take column names as plain strings because they come from the request. Every name is
-  // checked against the schema snapshot (unknown → OrmUsageError 'UNKNOWN_COLUMN', a 400), and
+  // checked against the schema snapshot (unknown → OrmUsageError 'unknown_column', a 400), and
   // the controller must also check them against the resource's allow-lists (searchable,
   // sortable, filterable in resources.json): existing is not the same as allowed.
   // -------------------------------------------------------------------------------------------
@@ -392,7 +392,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     if (trimmed === '' || columns.length === 0) return this
     if (trimmed.length > MAX_SEARCH_LENGTH)
       throw new OrmUsageError(
-        'SEARCH_TOO_LONG',
+        'search_too_long',
         `Search text is limited to ${MAX_SEARCH_LENGTH} characters.`,
       )
     assertWellFormed(this.#model.table, 'search', trimmed)
@@ -431,7 +431,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       case 'in':
         if (!Array.isArray(operand))
           throw new OrmUsageError(
-            'INVALID_FILTER',
+            'invalid_filter',
             `The "in" filter on "${column}" needs a list of values.`,
           )
         assertInSize(column, operand.length)
@@ -457,7 +457,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
         return this
       default:
         throw new OrmUsageError(
-          'INVALID_FILTER',
+          'invalid_filter',
           `"${String(operator)}" is not a filter operator. Use one of: ${Object.keys(FILTER_SYMBOL).join(', ')}, in, contains, startsWith, null.`,
         )
     }
@@ -494,7 +494,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   orderBy(column: ColumnOf<TableOf<TClass>>, direction: 'asc' | 'desc' = 'asc'): this {
     if (direction !== 'asc' && direction !== 'desc') {
       throw new OrmUsageError(
-        'INVALID_DIRECTION',
+        'invalid_direction',
         `Sort direction must be "asc" or "desc", not ${JSON.stringify(direction)}.`,
       )
     }
@@ -559,7 +559,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       for (const [name, constrain] of Object.entries(first)) {
         if (typeof constrain !== 'function')
           throw new OrmUsageError(
-            'INVALID_CONSTRAINT',
+            'invalid_constraint',
             `The constraint for "${name}" must be a function (query) => …`,
           )
         this.#addEagerPath(name, (query: never) => Reflect.apply(constrain, undefined, [query]))
@@ -568,7 +568,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       for (const path of args) {
         if (typeof path !== 'string')
           throw new OrmUsageError(
-            'INVALID_RELATION_PATH',
+            'invalid_relation_path',
             'with() takes relation names such as "author" or "posts.tags".',
           )
         this.#addEagerPath(path, undefined)
@@ -629,7 +629,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   withoutGlobalScope(name: string): this {
     if (!this.#model.settings().globalScopes.has(name)) {
       throw new OrmUsageError(
-        'UNKNOWN_SCOPE',
+        'unknown_scope',
         `${this.#model.name} has no global scope "${name}". Global scopes are listed in its static globalScopes.`,
       )
     }
@@ -759,7 +759,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   ): Promise<Page<TResult>> {
     assertPageSize(perPage)
     if (!Number.isSafeInteger(page) || page < 1)
-      throw new OrmUsageError('INVALID_PAGE', `Page numbers start at 1; got ${String(page)}.`)
+      throw new OrmUsageError('invalid_page', `Page numbers start at 1; got ${String(page)}.`)
     const total = await this.count()
     const data = await this.clone()
       .limit(perPage)
@@ -922,7 +922,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     }
     if (typeof first !== 'string')
       throw new OrmUsageError(
-        'INVALID_WHERE',
+        'invalid_where',
         'where() takes a column name, or a function that groups conditions.',
       )
     const ref = this.#column(first)
@@ -997,7 +997,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     const info = this.#model.info()
     if (!info.columns.has('created_at')) {
       throw new OrmUsageError(
-        'NO_TIMESTAMPS',
+        'no_timestamps',
         `"${this.#model.table}" has no created_at column; pass the column to sort by, e.g. latest('id').`,
       )
     }
@@ -1009,7 +1009,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     // Resolve the first level now, so a typo fails at with() with a suggestion.
     const [head] = names
     if (head === undefined || head === '')
-      throw new OrmUsageError('INVALID_RELATION_PATH', `"${path}" is not a relation path.`)
+      throw new OrmUsageError('invalid_relation_path', `"${path}" is not a relation path.`)
     this.#model.relation(head)
     let level = this.#eager
     names.forEach((name, index) => {
@@ -1116,7 +1116,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     for (const order of orders) {
       if (this.#definition(order.column.column).nullable) {
         throw new OrmUsageError(
-          'CURSOR_NULLABLE_COLUMN',
+          'cursor_nullable_column',
           `cursorPaginate() can't sort by "${order.column.column}" because it can be NULL. Sort by a NOT NULL column, or use paginate().`,
         )
       }
@@ -1188,7 +1188,7 @@ export function parseRelationPaths(paths: readonly string[]): EagerTree {
 function parseOperator(raw: unknown): CompareOperator {
   if (typeof raw === 'string' && OPERATORS.has(raw)) return toOperator(raw)
   throw new OrmUsageError(
-    'INVALID_OPERATOR',
+    'invalid_operator',
     `${JSON.stringify(raw)} is not a supported operator. Use one of: ${[...OPERATORS].join(' ')}. For text search use whereRaw with the sql tag.`,
   )
 }
@@ -1223,7 +1223,7 @@ function assertInSize(column: string, size: number): void {
   const max = ormConfig().maxInValues
   if (size > max) {
     throw new OrmUsageError(
-      'TOO_MANY_VALUES',
+      'too_many_values',
       `An "in" list on "${column}" may hold at most ${max} values; got ${size}. Split the work into smaller lists, or raise the limit with configureOrm({ maxInValues }).`,
     )
   }
@@ -1238,7 +1238,7 @@ function assertWellFormed(table: string, column: string, text: string): void {
 function assertCount(what: string, count: number): number {
   if (!Number.isSafeInteger(count) || count < 0)
     throw new OrmUsageError(
-      'INVALID_COUNT',
+      'invalid_count',
       `${what}() needs a whole number of 0 or more; got ${String(count)}.`,
     )
   return count
@@ -1248,7 +1248,7 @@ function assertPageSize(perPage: number): void {
   const max = ormConfig().maxPerPage
   if (!Number.isSafeInteger(perPage) || perPage < 1 || perPage > max) {
     throw new OrmUsageError(
-      'INVALID_PAGE_SIZE',
+      'invalid_page_size',
       `Page size must be between 1 and ${max}; got ${String(perPage)}. Raise the limit with configureOrm({ maxPerPage }).`,
     )
   }
@@ -1258,7 +1258,7 @@ function unknownColumn(table: string, name: string, columns: Iterable<string>): 
   const suggestion = closest(name, columns)
   const hint = suggestion === undefined ? '' : ` Did you mean "${suggestion}"?`
   return new OrmUsageError(
-    'UNKNOWN_COLUMN',
+    'unknown_column',
     `"${table}" has no column "${name}".${hint} Columns come from your migrations.`,
   )
 }

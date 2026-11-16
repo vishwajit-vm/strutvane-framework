@@ -14,6 +14,13 @@
  */
 
 import {
+  camelCase,
+  humanize,
+  modelNameForTable,
+  pascalCase,
+  singularize,
+} from '../../core/inflection.ts'
+import {
   type ColumnDef,
   type ColumnKind,
   isHiddenColumn,
@@ -22,7 +29,6 @@ import {
   type TableState,
   tenantColumnOf,
 } from '../columns.ts'
-import { camelCase, humanize, modelNameForTable, pascalCase, singularize } from '../naming.ts'
 import { isFillable, isRequiredOnCreate, isReturnedByApi } from './semantics.ts'
 
 /**

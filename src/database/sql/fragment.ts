@@ -72,7 +72,7 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/
 export function assertIdentifier(name: string): void {
   if (!IDENTIFIER.test(name)) {
     throw new OrmUsageError(
-      'INVALID_IDENTIFIER',
+      'invalid_identifier',
       `"${name}" is not a valid table or column name. Use letters, digits and underscores, starting with a letter (max 63).`,
     )
   }
@@ -90,7 +90,7 @@ function sqlTag(strings: TemplateStringsArray, ...values: readonly unknown[]): S
   // stops `sql([userInput])` style calls from smuggling text in.
   if (!Object.isFrozen(strings) || !Array.isArray(strings.raw)) {
     throw new OrmUsageError(
-      'RAW_SQL_NOT_TEMPLATE',
+      'raw_sql_not_template',
       // biome-ignore lint/suspicious/noTemplateCurlyInString: the message shows the sql tag syntax
       'sql must be used as a tagged template (sql`...`), never called with a string. Put values in ${…} so they are bound.',
     )

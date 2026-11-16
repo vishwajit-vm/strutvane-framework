@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
+import { modelStub } from '../../src/console/make/migration-stubs.ts'
 import { applyOperations } from '../../src/schema/apply.ts'
 import {
   EMPTY_SCHEMA,
@@ -17,7 +18,6 @@ import { SchemaError } from '../../src/schema/errors.ts'
 import { generateMetadata } from '../../src/schema/generate/metadata.ts'
 import { generateModelTypes } from '../../src/schema/generate/types.ts'
 import { recordOperations, type SchemaBuilder } from '../../src/schema/migration.ts'
-import { modelStub } from '../../src/schema/naming.ts'
 import { replayRecorded } from '../../src/schema/replay.ts'
 import { parseOperations, parseSchemaSnapshot, schemaSnapshot } from '../../src/schema/snapshot.ts'
 import { BLOG_ROOT, replayApp } from './helpers.ts'
@@ -141,7 +141,7 @@ describe('schema.json', () => {
       throw new Error('expected a SchemaError')
     } catch (error) {
       expect(error).toBeInstanceOf(SchemaError)
-      expect((error as SchemaError).code).toBe('INVALID_SNAPSHOT')
+      expect((error as SchemaError).code).toBe('invalid_snapshot')
       expect((error as SchemaError).hint).toContain('node strut migrate')
     }
   })
@@ -343,7 +343,7 @@ describe('operations received from the replay sandbox', () => {
       throw new Error('expected a SchemaError')
     } catch (error) {
       expect(error).toBeInstanceOf(SchemaError)
-      expect((error as SchemaError).code).toBe('INVALID_MIGRATION')
+      expect((error as SchemaError).code).toBe('invalid_migration')
       expect((error as SchemaError).migration).toBe('2026_01_01_000000_evil.ts')
     }
   })

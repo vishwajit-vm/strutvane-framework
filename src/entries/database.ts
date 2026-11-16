@@ -32,6 +32,29 @@ export type { JsonValue } from '../database/schema/registry.ts'
 // biome-ignore lint/suspicious/noEmptyInterface: the declaration-merging target generated types augment
 export interface TableRegistry {}
 export {
+  type DatabaseConnectionName,
+  type DatabaseSettings,
+  type DatabaseSslMode,
+  DEFAULT_SQLITE_FILE,
+  databaseSettings,
+  describeDatabase,
+  type OpenDatabaseOptions,
+  openDatabase,
+} from '../database/config.ts'
+export {
+  type AnyFactory,
+  defineFactory,
+  Factory,
+  type FactoryAttributes,
+  type FactoryContext,
+  type FactoryRun,
+  type FactoryState,
+  type FactoryValue,
+} from '../database/seeding/factory.ts'
+export { createFaker, type Faker } from '../database/seeding/faker.ts'
+export { type RunSeedersOptions, runSeeders, seederNameForFile } from '../database/seeding/run.ts'
+export type { SeedContext, SeederLike } from '../database/seeding/seeder.ts'
+export {
   introspect as introspectDatabase,
   type LiveColumn,
   type LiveForeignKey,

@@ -19,6 +19,7 @@
  * - **Bypasses are explicit, named `unsafe…`, need a reason, and are reported** to
  *   `onUnsafeTenancy` for the audit log.
  */
+
 import { setStatementGuard } from '../db/guard.ts'
 import { allTables, tableState } from '../schema/registry.ts'
 import type { ColumnRef, SelectAst, WhereNode } from '../sql/ast.ts'
@@ -38,7 +39,7 @@ export class TenantScopeMissingError extends OrmError {
 
   constructor(table: string, detail: string) {
     super(
-      'TENANT_SCOPE_MISSING',
+      'tenant_scope_missing',
       `Refusing to run SQL on "${table}": ${detail}. Tenant data may only be read or written for the active tenant. ` +
         'If this really must cross tenants (a maintenance job), use unsafeWithoutTenancy(reason) or unsafeRaw(reason, …): both are audited.',
     )
@@ -59,6 +60,14 @@ export function tenantColumn(): string | undefined {
   return tenancy === false ? undefined : tenancy.column
 }
 
+function tenancyOff(table: string, column: string): OrmUsageError {
+  return new OrmUsageError(
+    'tenancy_not_configured',
+    `"${table}" has a tenant column (${column}, from t.tenant()), but tenancy is off, so its rows would not be scoped. ` +
+      `Turn tenancy on in config/tenancy.ts ({ enabled: true, column: '${column}' }), or call configureOrm({ tenancy: { column: '${column}' } }) at boot.`,
+  )
+}
+
 /**
  * Classify a table. Computed live (not cached) so changing the configuration takes effect at once.
  *
@@ -67,8 +76,14 @@ export function tenantColumn(): string | undefined {
  */
 export function tenantMode(table: string): TenantMode {
   const column = tenantColumn()
-  if (column === undefined) return 'global'
   const state = tableState(table)
+  if (column === undefined) {
+    // Fail closed: a table built for tenancy (`t.tenant()`) must never be read unscoped because
+    // the app's tenancy switch is missing.
+    const declared = state.columns.find((candidate) => candidate.tenant === true)
+    if (declared !== undefined) throw tenancyOff(table, declared.name)
+    return 'global'
+  }
   if (state.columns.some((candidate) => candidate.name === column)) return 'scoped'
   return state.global === true ? 'global' : 'unscopable'
 }
@@ -211,7 +226,7 @@ export function unsafeRaw(reason: string, fragment: SqlFragment): SqlFragment {
 export function assertReason(reason: string): void {
   if (reason.trim().length < 3) {
     throw new OrmUsageError(
-      'UNSAFE_REASON_REQUIRED',
+      'unsafe_reason_required',
       'Tenancy bypasses need a short reason for the audit log, e.g. unsafeWithoutTenancy("nightly usage report").',
     )
   }
@@ -249,7 +264,7 @@ function tenantColumnOrThrow(): string {
   const column = tenantColumn()
   if (column === undefined)
     throw new OrmUsageError(
-      'TENANCY_OFF',
+      'tenancy_off',
       'Tenancy is turned off (configureOrm({ tenancy: false })), so there is no tenant column.',
     )
   return column

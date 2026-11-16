@@ -172,7 +172,7 @@ export class HasManyRelation<TRelated extends AnyModelClass>
     const parentKey = attribute(this.#parent, this.#localKey)
     if (parentKey === undefined || parentKey === null) {
       throw new OrmUsageError(
-        'PARENT_NOT_SAVED',
+        'parent_not_saved',
         `Save the ${this.#parent.runtime().name} first: it has no ${this.#localKey} yet, so the new row has nothing to point at.`,
       )
     }
@@ -258,7 +258,7 @@ export class BelongsToManyRelation<TRelated extends AnyModelClass>
     for (const column of [foreignPivotKey, relatedPivotKey]) {
       if (!pivotColumns.has(column)) {
         throw new OrmUsageError(
-          'UNKNOWN_PIVOT_COLUMN',
+          'unknown_pivot_column',
           `The pivot table "${pivot}" has no column "${column}". Pass the key names: belongsToMany(${related.name}, '${pivot}', 'parent_key', 'related_key').`,
         )
       }
@@ -503,7 +503,7 @@ export class BelongsToManyRelation<TRelated extends AnyModelClass>
     const key = attribute(this.#parent, 'id')
     if (key === undefined || key === null)
       throw new OrmUsageError(
-        'PARENT_NOT_SAVED',
+        'parent_not_saved',
         `Save the ${this.#parent.runtime().name} before linking rows to it.`,
       )
     return key
@@ -540,7 +540,7 @@ function selectFor(kind: 'count' | 'exists', alias: string): SelectItem[] {
 function assertColumn(table: string, column: string): void {
   if (!tableColumns(table).has(column)) {
     throw new OrmUsageError(
-      'UNKNOWN_RELATION_KEY',
+      'unknown_relation_key',
       `"${table}" has no column "${column}" for this relation. Pass the right key name to the relation method.`,
     )
   }

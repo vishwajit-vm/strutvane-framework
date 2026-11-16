@@ -12,7 +12,7 @@ const timestamps = [
   { name: 'updated_at', kind: 'timestamp', nullable: true },
 ] as const
 
-const tenant = { name: 'tenant_id', kind: 'uuid', nullable: false } as const
+const tenant = { name: 'tenant_id', kind: 'uuid', nullable: false, tenant: true } as const
 
 /** The schema the fixture migrations would leave behind. */
 export const snapshot: SchemaSnapshot = {

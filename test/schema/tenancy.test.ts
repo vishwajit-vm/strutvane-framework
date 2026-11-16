@@ -228,7 +228,7 @@ describe('the recorder applies the tenancy rules', () => {
     ],
   ])('refuses %s', (_name, up) => {
     const error = failure(state, up)
-    expect(['INVALID_TENANCY', 'INVALID_FOREIGN_KEY']).toContain(error.code)
+    expect(['invalid_tenancy', 'invalid_foreign_key']).toContain(error.code)
     expect(error.hint).not.toBe('')
   })
 
@@ -237,11 +237,11 @@ describe('the recorder applies the tenancy rules', () => {
       failure(EMPTY_SCHEMA, (schema) =>
         schema.create('x', (t) => void t.id(), { shared: true } as never),
       ).code,
-    ).toBe('INVALID_MIGRATION')
+    ).toBe('invalid_migration')
     expect(
       failure(EMPTY_SCHEMA, (schema) => schema.create('x', (t) => void t.id(), 'global' as never))
         .code,
-    ).toBe('INVALID_MIGRATION')
+    ).toBe('invalid_migration')
     const plain = recordOperations(
       (schema) => schema.create('x', (t) => void t.id(), {}),
       EMPTY_SCHEMA,
@@ -256,7 +256,7 @@ describe('the recorder applies the tenancy rules', () => {
         t.foreignId('project_id').constrained('projects')
       }),
     )
-    expect(wrong.code).toBe('INVALID_FOREIGN_KEY')
+    expect(wrong.code).toBe('invalid_foreign_key')
     expect(wrong.hint).toContain("t.foreignUuid('project_id')")
     expect(
       failure(state, (schema) =>
@@ -270,12 +270,12 @@ describe('the recorder applies the tenancy rules', () => {
       failure(state, (schema) =>
         schema.table('countries', (t) => void t.uuid('code').primary().nullable()),
       ).code,
-    ).toBe('INVALID_COLUMN')
+    ).toBe('invalid_column')
     expect(
       failure(EMPTY_SCHEMA, (schema) =>
         schema.create('x', (t) => void t.uuid('id').primary().nullable()),
       ).code,
-    ).toBe('INVALID_COLUMN')
+    ).toBe('invalid_column')
     expect(
       failure(EMPTY_SCHEMA, (schema) =>
         schema.create('x', (t) => {
@@ -283,7 +283,7 @@ describe('the recorder applies the tenancy rules', () => {
           t.uuid('uuid').primary()
         }),
       ).code,
-    ).toBe('INVALID_COLUMN')
+    ).toBe('invalid_column')
   })
 
   test('renaming a tenant column keeps composite keys pointing at it', () => {

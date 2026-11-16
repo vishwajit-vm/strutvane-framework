@@ -49,7 +49,7 @@ export function applyOperation(state: SchemaState, operation: SchemaOperation): 
 /** Fail closed on anything that isn't a known operation (input from outside the recorder). */
 function unknownStep(step: never): never {
   throw new SchemaError(
-    'INVALID_MIGRATION',
+    'invalid_migration',
     `Unknown schema step ${JSON.stringify((step as { type?: unknown }).type)}.`,
     'Only operations made by the schema builder can be applied.',
   )
@@ -76,7 +76,7 @@ function createTable(
 ): SchemaState {
   if (findTable(state, name) !== undefined) {
     throw new SchemaError(
-      'TABLE_EXISTS',
+      'table_exists',
       `The table "${name}" already exists.`,
       `Use schema.table('${name}', …) to change it, or drop it first.`,
     )
@@ -84,7 +84,7 @@ function createTable(
   for (const action of actions) {
     if (action.type !== 'addColumn' && action.type !== 'addIndex') {
       throw new SchemaError(
-        'NOT_ALLOWED_IN_CREATE',
+        'not_allowed_in_create',
         `schema.create('${name}') can only add columns and indexes, but it asks to ${action.type}.`,
         `Define the table the way you want it, or change it later with schema.table('${name}', …).`,
       )
@@ -134,14 +134,14 @@ function assertTenancy(state: SchemaState, table: TableState): void {
   const tenants = table.columns.filter((column) => column.tenant === true)
   if (tenants.length > 1) {
     throw new SchemaError(
-      'INVALID_TENANCY',
+      'invalid_tenancy',
       `The table "${table.name}" has more than one tenant column (${tenants.map((c) => c.name).join(', ')}).`,
       'Keep a single t.tenant() per table.',
     )
   }
   if (tenants.length === 1 && table.global === true) {
     throw new SchemaError(
-      'INVALID_TENANCY',
+      'invalid_tenancy',
       `The table "${table.name}" is marked { global: true } but has a tenant column.`,
       'A table is either shared by every tenant (global) or belongs to one tenant (t.tenant()), not both.',
     )
@@ -154,7 +154,7 @@ function assertTenancy(state: SchemaState, table: TableState): void {
       // SET NULL would null the tenant column too (it is part of the key), which is NOT NULL.
       // PostgreSQL 15 can name the column; SQLite and MySQL can't, so it isn't portable.
       throw new SchemaError(
-        'INVALID_TENANCY',
+        'invalid_tenancy',
         `"${table.name}.${column.name}" uses nullOnDelete(), but between two tenant tables the key includes the tenant column, which can't be set to null.`,
         'Use cascadeOnDelete() or restrictOnDelete(), or clear the column in app code before deleting the parent.',
       )
@@ -164,7 +164,7 @@ function assertTenancy(state: SchemaState, table: TableState): void {
     const parentTenant = tenantColumnOf(parent)
     if (own?.name !== tenant.column || parentTenant?.name !== tenant.parentColumn) {
       throw new SchemaError(
-        'INVALID_TENANCY',
+        'invalid_tenancy',
         `The foreign key "${table.name}.${column.name}" joins tenant columns that don't exist ("${table.name}.${tenant.column}" → "${parent.name}.${tenant.parentColumn}").`,
         'Composite tenant keys are made by the recorder: keep t.tenant() on both tables.',
       )
@@ -178,7 +178,7 @@ function assertTenancy(state: SchemaState, table: TableState): void {
     )
     if (!backed) {
       throw new SchemaError(
-        'INVALID_TENANCY',
+        'invalid_tenancy',
         `The foreign key "${table.name}.${column.name}" points at "${parent.name}" (${tenant.parentColumn}, ${reference.column}), which has no unique index on those columns.`,
         `Point it at the parent's primary key, or add t.unique(['${reference.column}']) to "${parent.name}" (it becomes unique per tenant).`,
       )
@@ -217,7 +217,7 @@ function applyTableAction(
     case 'dropIndex':
       if (!table.indexes.some((index) => index.name === action.name)) {
         throw new SchemaError(
-          'UNKNOWN_INDEX',
+          'unknown_index',
           `The table "${tableName}" has no index named "${action.name}".`,
           `Existing indexes: ${listOrNone(table.indexes.map((index) => index.name))}.`,
         )
@@ -245,7 +245,7 @@ function assertIndexNotNeeded(state: SchemaState, table: TableState, name: strin
         reference.column === index.columns[1]
       ) {
         throw new SchemaError(
-          'INVALID_TENANCY',
+          'invalid_tenancy',
           `Can't drop the index "${name}": the foreign key "${child.name}.${column.name}" relies on it.`,
           `Drop "${child.name}.${column.name}" first.`,
         )
@@ -262,7 +262,7 @@ function assertColumnCanBeAdded(
 ): void {
   if (findColumn(table, column.name) !== undefined) {
     throw new SchemaError(
-      'COLUMN_EXISTS',
+      'column_exists',
       `The table "${table.name}" already has a column "${column.name}".`,
       'Pick another name, or rename/drop the existing column first.',
     )
@@ -273,7 +273,7 @@ function assertColumnCanBeAdded(
     table.columns.some((existing) => existing.kind === 'id' || existing.primary === true)
   ) {
     throw new SchemaError(
-      'INVALID_COLUMN',
+      'invalid_column',
       `The table "${table.name}" already has a primary key.`,
       'A table can only have one t.id().',
     )
@@ -285,7 +285,7 @@ function assertColumnCanBeAdded(
 function assertColumnCanBeAddedLater(table: TableState, column: ColumnDef): void {
   if (column.kind === 'id' || column.primary === true) {
     throw new SchemaError(
-      'INVALID_COLUMN',
+      'invalid_column',
       `Can't add a primary key to the existing table "${table.name}".`,
       'Add t.id() when the table is created.',
     )
@@ -293,7 +293,7 @@ function assertColumnCanBeAddedLater(table: TableState, column: ColumnDef): void
   // SQLite refuses this outright, and PostgreSQL only accepts it while the table is empty.
   if (!column.nullable && !('default' in column)) {
     throw new SchemaError(
-      'INVALID_COLUMN',
+      'invalid_column',
       `The new column "${table.name}.${column.name}" is required but has no default, so existing rows would have no value.`,
       'Make it .nullable(), or give it a .default(…).',
     )
@@ -306,7 +306,7 @@ function assertForeignKeyTarget(state: SchemaState, table: TableState, column: C
   const parent = findTable(state, reference.table)
   if (parent === undefined) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `"${table.name}.${column.name}" points to the table "${reference.table}", which doesn't exist yet.`,
       `Create "${reference.table}" in an earlier migration, or fix the name in .constrained('…').`,
     )
@@ -314,7 +314,7 @@ function assertForeignKeyTarget(state: SchemaState, table: TableState, column: C
   const target = findColumn(parent, reference.column)
   if (target === undefined) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `"${table.name}.${column.name}" points to "${reference.table}.${reference.column}", which doesn't exist.`,
       "Point it at the parent's id column.",
     )
@@ -323,7 +323,7 @@ function assertForeignKeyTarget(state: SchemaState, table: TableState, column: C
   const uuidTarget = target.kind === 'uuid'
   if (uuidTarget !== (column.kind === 'uuid')) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `"${table.name}.${column.name}" is ${column.kind === 'uuid' ? 'a UUID' : 'an integer'} column, but "${reference.table}.${reference.column}" is ${uuidTarget ? 'a UUID' : 'an integer'}.`,
       uuidTarget
         ? `Use t.foreignUuid('${column.name}').constrained('${reference.table}').`
@@ -332,7 +332,7 @@ function assertForeignKeyTarget(state: SchemaState, table: TableState, column: C
   }
   if (reference.onDelete === 'set null' && !column.nullable) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `"${table.name}.${column.name}" uses nullOnDelete() but isn't nullable, so the database couldn't set it to null.`,
       'Add .nullable(), or use cascadeOnDelete() / restrictOnDelete() instead.',
     )
@@ -346,7 +346,7 @@ function assertIndexCanBeAdded(state: SchemaState, table: TableState, index: Ind
   )
   if (clash !== undefined) {
     throw new SchemaError(
-      'INDEX_EXISTS',
+      'index_exists',
       `An index named "${index.name}" already exists (on "${clash.name}").`,
       'Give the index another name.',
     )
@@ -363,7 +363,7 @@ function renameColumn(
   const column = requireColumn(table, from)
   if (findColumn(table, to) !== undefined) {
     throw new SchemaError(
-      'COLUMN_EXISTS',
+      'column_exists',
       `Can't rename "${table.name}.${from}" to "${to}": that column already exists.`,
       'Drop or rename the other column first.',
     )
@@ -405,7 +405,7 @@ function dropColumn(state: SchemaState, table: TableState, name: string): Schema
   const slug = table.columns.find((column) => column.slugFrom === name)
   if (slug !== undefined) {
     throw new SchemaError(
-      'INVALID_SLUG_SOURCE',
+      'invalid_slug_source',
       `Can't drop "${table.name}.${name}": the slug "${slug.name}" is built from it.`,
       `Change the slug's source first, or drop "${slug.name}" in the same migration before "${name}".`,
     )
@@ -413,7 +413,7 @@ function dropColumn(state: SchemaState, table: TableState, name: string): Schema
   const child = findReferencingColumn(state, table.name, name)
   if (child !== undefined) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `Can't drop "${table.name}.${name}": "${child}" still points to it.`,
       `Drop or change "${child}" first.`,
     )
@@ -421,7 +421,7 @@ function dropColumn(state: SchemaState, table: TableState, name: string): Schema
   const keyed = table.columns.find((column) => column.references?.tenant?.column === name)
   if (keyed !== undefined) {
     throw new SchemaError(
-      'INVALID_TENANCY',
+      'invalid_tenancy',
       `Can't drop the tenant column "${table.name}.${name}": the foreign key "${table.name}.${keyed.name}" includes it.`,
       `Drop "${table.name}.${keyed.name}" first.`,
     )
@@ -438,7 +438,7 @@ function dropTable(state: SchemaState, name: string, ifExists: boolean): SchemaS
   if (findTable(state, name) === undefined) {
     if (ifExists) return state
     throw new SchemaError(
-      'UNKNOWN_TABLE',
+      'unknown_table',
       `Can't drop "${name}": there is no such table.`,
       `Use schema.dropIfExists('${name}') if it may already be gone.`,
     )
@@ -452,7 +452,7 @@ function dropTable(state: SchemaState, name: string, ifExists: boolean): SchemaS
     )[0]
   if (child !== undefined) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `Can't drop "${name}": "${child}" still points to it.`,
       `Drop "${child.split('.')[0] ?? ''}" first; in down(), drop tables in the reverse order you created them.`,
     )
@@ -464,7 +464,7 @@ function renameTable(state: SchemaState, from: string, to: string): SchemaState 
   const table = requireTable(state, from)
   if (findTable(state, to) !== undefined) {
     throw new SchemaError(
-      'TABLE_EXISTS',
+      'table_exists',
       `Can't rename "${from}" to "${to}": that table already exists.`,
       'Pick another name, or drop the other table first.',
     )
@@ -485,7 +485,7 @@ function assertSlugSourcesExist(table: TableState): void {
     const source = findColumn(table, column.slugFrom)
     if (source === undefined) {
       throw new SchemaError(
-        'INVALID_SLUG_SOURCE',
+        'invalid_slug_source',
         `The slug "${table.name}.${column.name}" is built from "${column.slugFrom}", but that column doesn't exist.`,
         `Columns on "${table.name}": ${listOrNone(table.columns.map((existing) => existing.name))}.`,
       )
@@ -497,7 +497,7 @@ function requireTable(state: SchemaState, name: string): TableState {
   const table = findTable(state, name)
   if (table !== undefined) return table
   throw new SchemaError(
-    'UNKNOWN_TABLE',
+    'unknown_table',
     `There is no table "${name}" at this point in the migrations.`,
     `Known tables: ${listOrNone(state.tables.map((existing) => existing.name))}. Check the spelling and the migration order.`,
   )
@@ -507,7 +507,7 @@ function requireColumn(table: TableState, name: string): ColumnDef {
   const column = findColumn(table, name)
   if (column !== undefined) return column
   throw new SchemaError(
-    'UNKNOWN_COLUMN',
+    'unknown_column',
     `The table "${table.name}" has no column "${name}".`,
     `Its columns are: ${listOrNone(table.columns.map((existing) => existing.name))}.`,
   )

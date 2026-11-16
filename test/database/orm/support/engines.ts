@@ -10,6 +10,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, beforeEach } from 'vitest'
 import {
   Connection,
+  configureOrm,
   connectMysqlFamily,
   mysqlDriver,
   pgDriver,
@@ -135,6 +136,8 @@ export function useEngine(engine: Engine): () => Connection {
   beforeAll(async () => {
     if (engine.skipped !== undefined) return
     registerSchema(snapshot)
+    // The fixture app is a tenancy app (config/tenancy.ts: { enabled: true }).
+    configureOrm({ tenancy: { column: 'tenant_id' } })
     const opened = await engine.connect()
     connection = opened.connection
     cleanup = opened.cleanup

@@ -316,7 +316,7 @@ describe('engine-specific ALTER handling', () => {
           thrown = error
         }
         expect(thrown, dialect).toBeInstanceOf(SchemaError)
-        expect((thrown as SchemaError).code).toBe('INDEX_NOT_PORTABLE')
+        expect((thrown as SchemaError).code).toBe('index_not_portable')
         expect((thrown as SchemaError).hint).toMatch(/VARCHAR\(768\)|shorter/)
       }
       // Within the limit, and on other engines, the same indexes are fine.

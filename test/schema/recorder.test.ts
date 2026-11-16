@@ -102,7 +102,7 @@ describe('create', () => {
     [
       'a duplicate table',
       (schema: SchemaBuilder) => schema.create('posts', (t) => t.id()),
-      'TABLE_EXISTS',
+      'table_exists',
     ],
     [
       'a duplicate column',
@@ -111,7 +111,7 @@ describe('create', () => {
           t.string('name')
           t.text('name')
         }),
-      'COLUMN_EXISTS',
+      'column_exists',
     ],
     [
       'two primary keys',
@@ -120,7 +120,7 @@ describe('create', () => {
           t.id()
           t.id('other_id')
         }),
-      'INVALID_COLUMN',
+      'invalid_column',
     ],
     [
       'a rename inside create',
@@ -129,70 +129,70 @@ describe('create', () => {
           t.string('a')
           t.renameColumn('a', 'b')
         }),
-      'NOT_ALLOWED_IN_CREATE',
+      'not_allowed_in_create',
     ],
     [
       'an unsafe table name',
       (schema: SchemaBuilder) => schema.create('Posts; DROP TABLE users', (t) => t.id()),
-      'INVALID_IDENTIFIER',
+      'invalid_identifier',
     ],
     [
       'an unsafe column name',
       (schema: SchemaBuilder) => schema.create('tags', (t) => t.string('Name')),
-      'INVALID_IDENTIFIER',
+      'invalid_identifier',
     ],
     [
       'a 64-character name',
       (schema: SchemaBuilder) => schema.create('t'.repeat(64), (t) => t.id()),
-      'INVALID_IDENTIFIER',
+      'invalid_identifier',
     ],
     [
       'a key to a missing table',
       (schema: SchemaBuilder) => schema.create('tags', (t) => t.foreignId('team_id').constrained()),
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
     ],
     [
       'nullOnDelete on a required column',
       (schema: SchemaBuilder) =>
         schema.create('tags', (t) => t.foreignId('user_id').constrained().nullOnDelete()),
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
     ],
     [
       'an on-delete rule without constrained()',
       (schema: SchemaBuilder) =>
         schema.create('tags', (t) => t.foreignId('user_id').cascadeOnDelete()),
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
     ],
     [
       'a slug built from a missing column',
       (schema: SchemaBuilder) => schema.create('tags', (t) => t.slug('slug').from('name')),
-      'INVALID_SLUG_SOURCE',
+      'invalid_slug_source',
     ],
     [
       'an enum default off the list',
       (schema: SchemaBuilder) =>
         schema.create('tags', (t) => t.enum('kind', ['a', 'b']).default('c' as 'a')),
-      'INVALID_DEFAULT',
+      'invalid_default',
     ],
     [
       'a null default on a required column',
       (schema: SchemaBuilder) => schema.create('tags', (t) => t.string('name').default(null)),
-      'INVALID_DEFAULT',
+      'invalid_default',
     ],
     [
       'a decimal scale bigger than its precision',
       (schema: SchemaBuilder) => schema.create('tags', (t) => t.decimal('price', 4, 6)),
-      'INVALID_COLUMN',
+      'invalid_column',
     ],
     [
       'a zero string length',
       (schema: SchemaBuilder) => schema.create('tags', (t) => t.string('name', 0)),
-      'INVALID_COLUMN',
+      'invalid_column',
     ],
     [
       'an enum with a repeated value',
       (schema: SchemaBuilder) => schema.create('tags', (t) => t.enum('kind', ['a', 'a'])),
-      'INVALID_COLUMN',
+      'invalid_column',
     ],
   ] as const)('refuses %s', (_, up, code) => {
     expectSchemaError(() => run(baseSchema(), up), code)
@@ -202,7 +202,7 @@ describe('create', () => {
     // A boolean default written as text is a compile error in TS; in plain JS this is the safety net.
     const sneaky = (schema: SchemaBuilder): void =>
       schema.create('tags', (t) => t.boolean('active').default('yes' as unknown as boolean))
-    const error = expectSchemaError(() => run(baseSchema(), sneaky), 'INVALID_DEFAULT')
+    const error = expectSchemaError(() => run(baseSchema(), sneaky), 'invalid_default')
     expect(error.message).toContain('boolean')
   })
 })
@@ -251,58 +251,58 @@ describe('alter (schema.table)', () => {
     [
       'a missing table',
       (schema: SchemaBuilder) => schema.table('post', (t) => t.string('x').nullable()),
-      'UNKNOWN_TABLE',
+      'unknown_table',
     ],
     [
       'renaming a missing column',
       (schema: SchemaBuilder) => schema.table('posts', (t) => t.renameColumn('nope', 'x')),
-      'UNKNOWN_COLUMN',
+      'unknown_column',
     ],
     [
       'renaming onto an existing column',
       (schema: SchemaBuilder) => schema.table('posts', (t) => t.renameColumn('title', 'body')),
-      'COLUMN_EXISTS',
+      'column_exists',
     ],
     [
       'dropping a missing column',
       (schema: SchemaBuilder) => schema.table('posts', (t) => t.dropColumn('nope')),
-      'UNKNOWN_COLUMN',
+      'unknown_column',
     ],
     [
       "dropping a slug's source",
       (schema: SchemaBuilder) => schema.table('posts', (t) => t.dropColumn('title')),
-      'INVALID_SLUG_SOURCE',
+      'invalid_slug_source',
     ],
     [
       'dropping a referenced column',
       (schema: SchemaBuilder) => schema.table('users', (t) => t.dropColumn('id')),
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
     ],
     [
       'adding a required column with no default',
       (schema: SchemaBuilder) => schema.table('posts', (t) => t.string('subtitle')),
-      'INVALID_COLUMN',
+      'invalid_column',
     ],
     [
       'adding a primary key later',
       (schema: SchemaBuilder) => schema.table('users', (t) => t.id('other_id')),
-      'INVALID_COLUMN',
+      'invalid_column',
     ],
     [
       'an index on a missing column',
       (schema: SchemaBuilder) => schema.table('posts', (t) => t.index('nope')),
-      'UNKNOWN_COLUMN',
+      'unknown_column',
     ],
     [
       'a duplicate index name',
       (schema: SchemaBuilder) =>
         schema.table('users', (t) => t.unique('name', 'posts_slug_unique')),
-      'INDEX_EXISTS',
+      'index_exists',
     ],
     [
       'dropping a missing index',
       (schema: SchemaBuilder) => schema.table('posts', (t) => t.dropIndex('posts_title_index')),
-      'UNKNOWN_INDEX',
+      'unknown_index',
     ],
   ] as const)('refuses %s', (_, up, code) => {
     expectSchemaError(() => run(baseSchema(), up), code)
@@ -311,7 +311,7 @@ describe('alter (schema.table)', () => {
   test('the error lists what does exist, so the fix is obvious', () => {
     const error = expectSchemaError(
       () => run(baseSchema(), (schema) => schema.table('posts', (t) => t.dropColumn('titel'))),
-      'UNKNOWN_COLUMN',
+      'unknown_column',
     )
     expect(error.hint).toContain('title')
   })
@@ -330,21 +330,21 @@ describe('drop and rename tables', () => {
   })
 
   test.each([
-    ['dropping a missing table', (schema: SchemaBuilder) => schema.drop('tags'), 'UNKNOWN_TABLE'],
+    ['dropping a missing table', (schema: SchemaBuilder) => schema.drop('tags'), 'unknown_table'],
     [
       'dropping a parent while children point at it',
       (schema: SchemaBuilder) => schema.drop('users'),
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
     ],
     [
       'renaming onto an existing table',
       (schema: SchemaBuilder) => schema.rename('users', 'posts'),
-      'TABLE_EXISTS',
+      'table_exists',
     ],
     [
       'renaming to an unsafe name',
       (schema: SchemaBuilder) => schema.rename('users', 'Users'),
-      'INVALID_IDENTIFIER',
+      'invalid_identifier',
     ],
   ] as const)('refuses %s', (_, up, code) => {
     expectSchemaError(() => run(baseSchema(), up), code)
@@ -383,7 +383,7 @@ describe('async migrations are refused, not half-recorded', () => {
       return undefined
     })()
     expect(thrown).toBeInstanceOf(SchemaError)
-    expect((thrown as SchemaError).code).toBe('ASYNC_MIGRATION')
+    expect((thrown as SchemaError).code).toBe('async_migration')
     // The part after the await runs later, on a sealed recorder: it fails instead of recording nothing.
     await expect(pending).rejects.toBeInstanceOf(SchemaError)
     const asyncDefine = async (t: {

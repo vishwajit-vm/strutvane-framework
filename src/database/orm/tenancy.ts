@@ -21,7 +21,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export function runWithTenant<T>(tenantId: string, fn: () => T): T {
   if (!UUID.test(tenantId)) {
     throw new OrmUsageError(
-      'INVALID_TENANT_ID',
+      'invalid_tenant_id',
       `"${tenantId}" is not a valid tenant id. Tenant ids are UUIDs, such as the id of a row in your tenants table.`,
     )
   }

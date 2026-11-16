@@ -3,16 +3,18 @@
  */
 import { describe, expect, test } from 'vitest'
 import {
-  camelCase,
-  humanize,
   inferMigrationIntent,
   migrationFileName,
   migrationStub,
+} from '../../src/console/make/migration-stubs.ts'
+import {
+  camelCase,
+  humanize,
   modelNameForTable,
   pluralize,
   singularize,
   slugify,
-} from '../../src/schema/naming.ts'
+} from '../../src/core/inflection.ts'
 
 describe('inflection', () => {
   test.each([

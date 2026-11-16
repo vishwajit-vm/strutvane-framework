@@ -212,7 +212,7 @@ function rebuildSqliteTable(state: SchemaState, before: TableState, after: Table
   )
   if (child !== undefined) {
     throw new SchemaError(
-      'INVALID_FOREIGN_KEY',
+      'invalid_foreign_key',
       `Dropping this column on SQLite means rebuilding "${before.name}", but "${child.name}" points at it and could lose rows.`,
       'Drop the foreign key column in a migration that runs while nothing references the table, or use PostgreSQL for this change.',
     )
@@ -409,7 +409,7 @@ function assertIndexFits(table: TableState, index: IndexDef, dialect: Dialect): 
     if (column === undefined) continue
     if (column.kind === 'text' || column.kind === 'json') {
       throw new SchemaError(
-        'INDEX_NOT_PORTABLE',
+        'index_not_portable',
         `The index "${index.name}" covers "${table.name}.${name}", a ${column.kind.toUpperCase()} column: ${dialect} can't index it without a prefix length.`,
         `Use t.string('${name}', 768) (or shorter) if the values fit, or drop the index; PostgreSQL and SQLite apps may keep it.`,
       )
@@ -418,7 +418,7 @@ function assertIndexFits(table: TableState, index: IndexDef, dialect: Dialect): 
   }
   if (bytes > MYSQL_MAX_KEY_BYTES) {
     throw new SchemaError(
-      'INDEX_NOT_PORTABLE',
+      'index_not_portable',
       `The index "${index.name}" on "${table.name}" needs up to ${bytes} bytes, more than ${dialect}'s ${MYSQL_MAX_KEY_BYTES}-byte key limit (utf8mb4 is 4 bytes per character).`,
       "Make the indexed strings shorter: a unique or indexed VARCHAR can hold at most 768 characters, e.g. t.string('url', 768).",
     )
@@ -496,7 +496,7 @@ function dependencyOrder(state: SchemaState): TableState[] {
     if (placed.has(table.name)) return
     if (visiting.has(table.name)) {
       throw new SchemaError(
-        'INVALID_FOREIGN_KEY',
+        'invalid_foreign_key',
         `The tables around "${table.name}" point at each other in a circle, so they can't be created one after another.`,
         'Make one of the foreign keys nullable and add it in a later migration with schema.table(…).',
       )

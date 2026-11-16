@@ -64,7 +64,7 @@ export function encodeCursor(fingerprint: string, values: readonly CursorValue[]
 export function decodeCursor(cursor: string, fingerprint: string, size: number): CursorValue[] {
   const invalid = (): OrmUsageError =>
     new OrmUsageError(
-      'INVALID_CURSOR',
+      'invalid_cursor',
       'That page cursor is invalid or was made for a different sort order. Start again from the first page.',
     )
   if (cursor.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw invalid()

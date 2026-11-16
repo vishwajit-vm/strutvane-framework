@@ -91,7 +91,7 @@ export function discoverMigrations(directory: string): MigrationFile[] {
   for (const file of files) {
     if (!MIGRATION_FILE.test(file)) {
       throw new SchemaError(
-        'INVALID_MIGRATION',
+        'invalid_migration',
         `"${file}" is in the migrations folder but isn't named like a migration.`,
         'Name it YYYY_MM_DD_HHMMSS_what_it_does.ts (node strut make:migration does this for you), or move it out of the folder.',
       )
@@ -167,7 +167,7 @@ export function replayMigrations(
   for (const { name, migration } of migrations) {
     if (seen.has(name)) {
       throw new SchemaError(
-        'DUPLICATE_MIGRATION',
+        'duplicate_migration',
         `The migration "${name}" is listed twice.`,
         'Each migration file must have a unique name.',
       )
@@ -221,14 +221,14 @@ export function replayRecorded(
     const name = entry.name
     if (typeof name !== 'string' || !RECORDED_NAME.test(name)) {
       throw new SchemaError(
-        'INVALID_MIGRATION',
+        'invalid_migration',
         'A recorded migration has no valid name.',
         'Name migration files YYYY_MM_DD_HHMMSS_what_it_does.ts.',
       )
     }
     if (seen.has(name)) {
       throw new SchemaError(
-        'DUPLICATE_MIGRATION',
+        'duplicate_migration',
         `The migration "${name}" is listed twice.`,
         'Each migration file must have a unique name.',
       )

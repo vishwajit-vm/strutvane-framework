@@ -105,7 +105,7 @@ export function sandboxResolve(
       return { url: pathToFileURL(target).href }
   }
   throw new SchemaError(
-    'INVALID_MIGRATION',
+    'invalid_migration',
     `A migration tried to import "${specifier}", which migrations may not use.`,
     `Migrations may only import ${SCHEMA_SPECIFIER} and .ts files inside database/migrations. Put data changes that need other modules in a seeder.`,
   )

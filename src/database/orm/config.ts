@@ -23,8 +23,10 @@ export interface OrmConfig {
   readonly maxInValues: number
   /**
    * Multi-tenancy: the one canonical tenant column for the whole app (`tenant_id`, or `team_id`
-   * for "teams"), or `false` for a single-tenant app. With tenancy on, every table either has
-   * that column (scoped), is marked `global` (shared data), or is refused (fail closed).
+   * for "teams"), or `false` for a single-tenant app (the default; `config/tenancy.ts`'s
+   * `enabled` turns it on, CONSISTENCY #90). With tenancy on, every table either has that column
+   * (scoped), is marked `global` (shared data), or is refused (fail closed). With tenancy off, a
+   * table whose migration declared `t.tenant()` is refused too: its rows would be unscoped.
    */
   readonly tenancy: { readonly column: string } | false
   /** Called for every deliberate tenancy bypass (`unsafeWithoutTenancy`, `unsafeRaw`): wire it to the audit log. */
@@ -47,7 +49,7 @@ let config: OrmConfig = {
   preventLazyLoading: process.env['NODE_ENV'] !== 'production',
   maxPerPage: 100,
   maxInValues: 1000,
-  tenancy: { column: 'tenant_id' },
+  tenancy: false,
   onUnsafeTenancy: () => undefined,
 }
 

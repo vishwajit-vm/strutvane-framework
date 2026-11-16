@@ -36,7 +36,7 @@ export class ModelNotFoundError extends OrmError {
   constructor(table: string, key?: unknown) {
     const which = key === undefined ? 'matching your query' : `with key ${JSON.stringify(key)}`
     super(
-      'MODEL_NOT_FOUND',
+      'model_not_found',
       `No row in "${table}" ${which}. It may not exist, may be soft-deleted, or may belong to another tenant.`,
     )
   }
@@ -61,7 +61,7 @@ export class MassAssignmentError extends OrmError {
     reason: 'not-fillable' | 'unknown' | 'system',
     suggestion?: string,
   ) {
-    super('MASS_ASSIGNMENT', massAssignmentMessage(table, field, reason, suggestion))
+    super('mass_assignment', massAssignmentMessage(table, field, reason, suggestion))
     this.field = field
   }
 }
@@ -97,7 +97,7 @@ export class TenantRequiredError extends OrmError {
 
   constructor(table: string) {
     super(
-      'TENANT_REQUIRED',
+      'tenant_required',
       `"${table}" is tenant-scoped, but no tenant is active. Wrap the work in runWithTenant(tenantId, () => …) ` +
         '(the HTTP layer does this for you per request). Deliberate cross-tenant jobs use .unsafeWithoutTenancy(reason), which is audited.',
     )
@@ -116,7 +116,7 @@ export class TenantMismatchError extends OrmError {
 
   constructor(table: string, detail: string) {
     super(
-      'TENANT_MISMATCH',
+      'tenant_mismatch',
       `Refusing to touch "${table}": ${detail}. One unit of work may only ever see one tenant.`,
     )
   }
@@ -127,7 +127,7 @@ export class TenantMismatchError extends OrmError {
  * cursor on a nullable column, a page size out of range…). The message says how to fix it.
  *
  * @example
- * throw new OrmUsageError('UNKNOWN_RELATION', 'Post has no relation "autor".')
+ * throw new OrmUsageError('unknown_relation', 'Post has no relation "autor".')
  */
 export class OrmUsageError extends OrmError {
   override readonly name = 'OrmUsageError'
@@ -145,7 +145,7 @@ export class LazyLoadingError extends OrmError {
 
   constructor(table: string, relation: string) {
     super(
-      'LAZY_LOADING',
+      'lazy_loading',
       `You're loading "${relation}" one "${table}" row at a time (an N+1 query). ` +
         `Load it for the whole list instead: Model.query().with('${relation}'), or await loadMany(models, '${relation}').`,
     )
@@ -162,6 +162,6 @@ export class CastError extends OrmError {
   override readonly name = 'CastError'
 
   constructor(table: string, column: string, detail: string) {
-    super('INVALID_VALUE', `Can't store that value in "${table}.${column}": ${detail}.`)
+    super('invalid_value', `Can't store that value in "${table}.${column}": ${detail}.`)
   }
 }

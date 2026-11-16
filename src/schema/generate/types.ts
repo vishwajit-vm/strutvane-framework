@@ -14,8 +14,9 @@
  *
  * @module
  */
+
+import { modelNameForTable } from '../../core/inflection.ts'
 import type { ColumnDef, SchemaState, TableState } from '../columns.ts'
-import { modelNameForTable } from '../naming.ts'
 import { isRequiredOnCreate, isReturnedByApi, isWritable } from './semantics.ts'
 
 /**

@@ -28,6 +28,15 @@ import {
   projectMigrationStatus,
 } from './runtime/migrations.ts'
 import { importDefault, type LoadedProject, loadProject } from './runtime/project.ts'
+import {
+  dispatchByProject,
+  MIGRATE_V2_FLAGS,
+  migrateV2,
+  SEED_V2_FLAGS,
+  schemaCommands,
+  seedV2,
+  statusV2,
+} from './runtime/schema-commands.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
 import { assertCanListen } from './runtime/serve.ts'
 import { exitCodeForStop, startServer, stopOnSignals } from './runtime/server.ts'
@@ -465,11 +474,12 @@ export function runChild(
   })
 }
 
-/** Every contributed command. */
+/** Every contributed command. Migration-first projects get the v2 database commands. */
 export const commands: readonly ContributedCommand[] = Object.freeze([
-  migrateCommand,
-  statusCommand,
-  seedCommand,
+  dispatchByProject(migrateCommand, migrateV2, MIGRATE_V2_FLAGS),
+  dispatchByProject(statusCommand, statusV2),
+  dispatchByProject(seedCommand, seedV2, SEED_V2_FLAGS),
+  ...schemaCommands,
   startCommand,
   devCommand,
   buildCommand,

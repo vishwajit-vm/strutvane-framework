@@ -138,7 +138,7 @@ function orExplanation(dialect: Dialect, build: () => string): string {
   try {
     return build()
   } catch (error) {
-    if (!(error instanceof SchemaError) || error.code !== 'INDEX_NOT_PORTABLE') throw error
+    if (!(error instanceof SchemaError) || error.code !== 'index_not_portable') throw error
     return `-- Not generated for ${dialect}: ${error.message}\n-- Fix: ${error.hint}\n`
   }
 }

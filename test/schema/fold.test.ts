@@ -42,20 +42,20 @@ const add = (column: ColumnDef): TableAction => ({ type: 'addColumn', column })
 
 describe('operations that bypass the recorder are still checked', () => {
   test('unknown operations and actions fail closed', () => {
-    expect(code([{ type: 'truncate', table: 'x' } as never])).toBe('INVALID_MIGRATION')
+    expect(code([{ type: 'truncate', table: 'x' } as never])).toBe('invalid_migration')
     expect(
       code([
         create('x', [add(id)]),
         { type: 'alterTable', table: 'x', actions: [{ type: 'raw' } as never] },
       ]),
-    ).toBe('INVALID_MIGRATION')
+    ).toBe('invalid_migration')
   })
 
   test('two tenant columns, or a tenant column on a global table', () => {
     expect(code([create('x', [add(tenant), add({ ...tenant, name: 'team_id' })])])).toBe(
-      'INVALID_TENANCY',
+      'invalid_tenancy',
     )
-    expect(code([create('x', [add(id), add(tenant)], true)])).toBe('INVALID_TENANCY')
+    expect(code([create('x', [add(id), add(tenant)], true)])).toBe('invalid_tenancy')
   })
 
   test('a composite key needs both tenant columns and the parent (tenant, id) key', () => {
@@ -76,11 +76,11 @@ describe('operations that bypass the recorder are still checked', () => {
         }),
       ])
     // No unique (tenant_id, id) on the parent: the database would refuse the key.
-    expect(code([parent, key([id, tenant])])).toBe('INVALID_TENANCY')
+    expect(code([parent, key([id, tenant])])).toBe('invalid_tenancy')
     // The child has no tenant column.
-    expect(code([parent, key([id])])).toBe('INVALID_TENANCY')
+    expect(code([parent, key([id])])).toBe('invalid_tenancy')
     // The parent's tenant column is named differently.
-    expect(code([parent, key([id, tenant], 'team_id')])).toBe('INVALID_TENANCY')
+    expect(code([parent, key([id, tenant], 'team_id')])).toBe('invalid_tenancy')
   })
 })
 
