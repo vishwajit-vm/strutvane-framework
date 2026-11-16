@@ -18,6 +18,51 @@
 
 Strutvane Framework is part of **[Strutvane](https://github.com/vishwajit-vm/strutvane)**, a TypeScript framework and package ecosystem for enterprise B2B applications. One model definition drives everything: the database schema and migrations, validation, the REST API, OpenAPI, the UI manifest and the tests. Since the v2 consolidation it also ships the kernel (`@strutvane/framework/core`), the shared contracts (`/contracts`), the installer and generator SDK (`/devkit`) and the CLI (`/console`, bin `strutvane`), which used to be separate packages; see [CONSOLIDATION.md](CONSOLIDATION.md). Auth and UI plug in through contracts, never imports.
 
+## The v2 data layer (migration-first, own ORM)
+
+New apps follow Laravel's flow: **migrations are the source of truth** and models hold behaviour only.
+
+```ts
+// database/migrations/2026_11_16_093000_create_posts_table.ts (node strut make:migration create_posts_table --seeder)
+import { migration } from '@strutvane/framework/schema'
+
+export default migration({
+  up(schema) {
+    schema.create('posts', (t) => {
+      t.id()
+      t.string('title', 200)
+      t.slug('slug').from('title')
+      t.foreignId('author_id').constrained('users').cascadeOnDelete()
+      t.timestamps()
+      t.softDeletes()
+    })
+  },
+  down(schema) {
+    schema.dropIfExists('posts')
+  },
+})
+```
+
+```ts
+// app/models/post.ts: columns come from the generated .strutvane/types/models.d.ts
+import { Model } from '@strutvane/framework/database'
+
+export class Post extends Model('posts', { fillable: ['title'] }) {
+  author() {
+    return this.belongsTo(User, 'author_id')
+  }
+}
+
+const page = await Post.query().with('author').orderBy('created_at', 'desc').paginate(25)
+```
+
+- `node strut migrate` replays the migrations **in a sandboxed child process** (no secrets, no network, a timeout, symlinks refused), applies the pending ones (atomically per migration on PostgreSQL and SQLite; resumable statement by statement on MySQL/MariaDB), regenerates `.strutvane/` (types, `resources.json`, `schema.json`, SQL) and checks for drift. Flags: `--pretend`, `--step`, `--seed`, `--force` (required in production), `--isolated`. Also `migrate:status`, `migrate:rollback`, `migrate:reset`, `migrate:refresh`, `migrate:fresh`, `db:seed` (`--class`, `--tenant`, `--force`) and `sync`.
+- Engines: **MySQL 8.4+ (default)**, MariaDB (detected from the server version), PostgreSQL (node-postgres or PGlite) and SQLite (`node:sqlite`). Settings: `DB_CONNECTION` (`mysql`, `mariadb`, `pgsql`/`postgres`, `sqlite`), `DB_URL`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_SOCKET`, `DB_SSLMODE`, `DB_SSL_CA`.
+- Tenancy: `t.tenant()` columns, composite tenant foreign keys and tenant-prefixed unique indexes in every engine's DDL, the ORM's tenant scope, and PostgreSQL row-level security (ADR-0007) created by the migration. Policies (ADR-0008) apply with `Model.query().wherePolicy(filter, { actor })` on every engine.
+- Seeders and factories: `defineSeeder({ after, run({ db, env, tenantId, faker, call }) })`, `defineFactory(Post, ({ faker, sequence }) => ({ … }))` with `count`, `state`, `for`, `has`, `recycle`.
+
+The v1 model DSL below keeps working for existing apps; its Drizzle-based migration planning is deprecated and goes away in 0.3.
+
 ## What's inside
 
 | Layer | What you get |
@@ -227,12 +272,12 @@ from a model with `policySchema(Invoice)` (typed per field, so `row.stage.eq('wo
 | Item | Status |
 |---|---|
 | Queue, cache, mail | Not implemented. Integration-map tokens are reserved for a later release. |
-| MySQL | `driver: 'mysql'` is accepted in config and throws `NotImplementedError`. |
+| MySQL in the v1 runtime | v1's `connectDatabase({ driver: 'mysql' })` throws `NotImplementedError`; migration-first apps use MySQL through the ORM (`DB_CONNECTION=mysql`). |
 | Azure Entra ID (passwordless) Postgres | `auth: { kind: 'azure-entra' }` is part of the config shape and throws `NotImplementedError` for now. |
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |
 | Locale-aware sorting, case folding beyond ASCII | Text sorts by code point and case-insensitive matching folds ASCII only, identically on every engine. |
 | Custom actions, ETags, rate limiting, request timeouts | Planned. Postgres statements have a default timeout; SQLite and PGlite have none. |
-| Migration `schema` builder and rollback | Hand-written migrations run (`.sql`, or `.ts` with `defineMigration({ up({ db }) {…} })` using `db.execute`), but the `schema` builder of docs/06 §3.2 and `down()`/rollback are not built yet. |
+| Rollback for v1 migrations | v1's hand-written migrations (`.sql`, `defineMigration`) have no rollback; migration-first apps have the Schema builder and `migrate:rollback`. |
 | Custom routes in OpenAPI | Custom routes are served but not documented in `/openapi.json` yet. |
 
 ## Installation (once released)

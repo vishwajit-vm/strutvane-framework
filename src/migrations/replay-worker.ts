@@ -20,29 +20,9 @@ import { isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { SchemaError } from '../schema/errors.ts'
 import { type LoadedMigration, loadMigrations, replayMigrations } from '../schema/replay.ts'
+import { SCHEMA_SPECIFIER, type WorkerMessage } from './replay-protocol.ts'
 
-/** The message the worker sends to the parent. */
-export type WorkerMessage =
-  | {
-      readonly ok: true
-      readonly migrations: readonly {
-        readonly name: string
-        readonly up: unknown
-        readonly down: unknown
-      }[]
-    }
-  | {
-      readonly ok: false
-      readonly error: {
-        readonly message: string
-        readonly code?: string
-        readonly hint?: string
-        readonly migration?: string
-      }
-    }
-
-/** The import specifier migrations use for the Schema builder. */
-export const SCHEMA_SPECIFIER = '@strutvane/framework/schema'
+export { SCHEMA_SPECIFIER, type WorkerMessage } from './replay-protocol.ts'
 
 /** Network capabilities removed from the sandbox's globals. */
 export const NETWORK_GLOBALS: readonly string[] = [

@@ -31,7 +31,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path
 import { fileURLToPath } from 'node:url'
 import { parseSync } from 'oxc-parser'
 import { discoverMigrations, type Replay, replayRecorded } from '../schema/replay.ts'
-import { SCHEMA_SPECIFIER, type WorkerMessage } from './replay-worker.ts'
+import { SCHEMA_SPECIFIER, type WorkerMessage } from './replay-protocol.ts'
 
 /** How long a replay may take before the child is killed (ms). */
 export const DEFAULT_SANDBOX_TIMEOUT_MS = 10_000
