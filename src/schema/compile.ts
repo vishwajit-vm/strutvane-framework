@@ -37,7 +37,13 @@ export type ConstraintKind = 'unique' | 'index' | 'check' | 'fk' | 'tenantIndex'
  */
 export type Naming = (kind: ConstraintKind, table: string, column: string) => string
 
-/** Postgres truncates identifiers at 63 bytes; longer names are shortened with a stable hash. */
+/**
+ * Postgres truncates identifiers at 63 bytes; longer names are shortened with a stable hash.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export function shortenIdentifier(name: string): string {
   if (Buffer.byteLength(name) <= 63) return name
   const hash = createHash('sha256').update(name).digest('hex').slice(0, 8)
@@ -52,7 +58,13 @@ const SUFFIX: Readonly<Record<ConstraintKind, string>> = {
   tenantIndex: 'idx',
 }
 
-/** Deterministic default names: `invoices_number_unique`, `invoices_customer_id_fk`, … */
+/**
+ * Deterministic default names: `invoices_number_unique`, `invoices_customer_id_fk`, …
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export const defaultNaming: Naming = (kind, table, column) =>
   shortenIdentifier(
     kind === 'tenantIndex' ? `${table}_tenant_id_idx` : `${table}_${column}_${SUFFIX[kind]}`,
@@ -133,7 +145,13 @@ function pgColumn(def: FieldDef, col: string): PgBuilder {
   return b
 }
 
-/** Compile models to Postgres tables, keyed by table name. */
+/**
+ * Compile models to Postgres tables, keyed by table name.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export function compilePg(
   models: readonly ModelDefinition[],
   options: CompileOptions = {},
@@ -237,7 +255,13 @@ function liteColumn(def: FieldDef, col: string): LiteBuilder {
   return b
 }
 
-/** Compile models to SQLite tables, keyed by table name. */
+/**
+ * Compile models to SQLite tables, keyed by table name.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export function compileSqlite(
   models: readonly ModelDefinition[],
   options: CompileOptions = {},

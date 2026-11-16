@@ -26,7 +26,7 @@
  */
 import { OrmUsageError } from '../orm/errors.ts'
 import type { ModelBase } from '../orm/model.ts'
-import type { AnyModelClass, InstanceOf, TableOf } from '../orm/types.ts'
+import type { AnyModel, AnyModelClass, InstanceOf, TableOf } from '../orm/types.ts'
 import type { InsertOf } from '../schema/registry.ts'
 import { createFaker, type Faker } from './faker.ts'
 
@@ -64,6 +64,8 @@ export interface AnyFactory {
 export interface FactoryRun {
   readonly faker: Faker
   readonly recycled: ReadonlyMap<AnyModelClass, readonly ModelBase[]>
+  /** Rows built so far per definition in this run (each definition's `sequence` starts at 1). */
+  readonly sequences: Map<unknown, number>
 }
 
 interface Child {
@@ -85,7 +87,6 @@ interface Settings<TClass extends AnyModelClass> {
   readonly children: readonly Child[]
   readonly recycle: readonly ModelBase[]
   readonly seed: number | undefined
-  readonly counter: { value: number }
 }
 
 /** `post_tag` → `post_tag`, `categories` → `category`: the Laravel foreign-key guess. */
@@ -163,8 +164,9 @@ export class Factory<TClass extends AnyModelClass, TMany extends boolean = false
    * @example
    * await PostFactory.count(3).for(author, 'author_id').create()
    */
-  for(parent: ModelBase, foreignKey?: string): Factory<TClass, TMany> {
-    return this.#with({ parents: [...this.#settings.parents, { model: parent, foreignKey }] })
+  for(parent: AnyModel, foreignKey?: string): Factory<TClass, TMany> {
+    const model = parent as unknown as ModelBase
+    return this.#with({ parents: [...this.#settings.parents, { model, foreignKey }] })
   }
 
   /**
@@ -186,8 +188,8 @@ export class Factory<TClass extends AnyModelClass, TMany extends boolean = false
    * const users = await UserFactory.count(5).create()
    * await PostFactory.count(50).recycle(users).create() // 50 posts spread over 5 users
    */
-  recycle(models: ModelBase | readonly ModelBase[]): Factory<TClass, TMany> {
-    const list = Array.isArray(models) ? models : [models as ModelBase]
+  recycle(models: AnyModel | readonly AnyModel[]): Factory<TClass, TMany> {
+    const list = (Array.isArray(models) ? models : [models]) as unknown as readonly ModelBase[]
     return this.#with({ recycle: [...this.#settings.recycle, ...list] })
   }
 
@@ -209,9 +211,13 @@ export class Factory<TClass extends AnyModelClass, TMany extends boolean = false
    * const attributes = PostFactory.raw()
    */
   raw(): Record<string, unknown>[] {
-    const faker = createFaker(this.#settings.seed)
+    const run: FactoryRun = {
+      faker: createFaker(this.#settings.seed),
+      recycled: new Map(),
+      sequences: new Map(),
+    }
     return Array.from({ length: this.#settings.count }, () => {
-      const attributes = this.#attributes(faker)
+      const attributes = this.#attributes(run)
       for (const [key, value] of Object.entries(attributes))
         if (isFactory(value)) attributes[key] = undefined
       return attributes
@@ -233,7 +239,11 @@ export class Factory<TClass extends AnyModelClass, TMany extends boolean = false
       const ctor = model.constructor as unknown as AnyModelClass
       recycled.set(ctor, [...(recycled.get(ctor) ?? []), model])
     }
-    const run: FactoryRun = { faker: createFaker(factory.#settings.seed), recycled }
+    const run: FactoryRun = {
+      faker: createFaker(factory.#settings.seed),
+      recycled,
+      sequences: new Map(),
+    }
     const created: ModelBase[] = []
     for (let i = 0; i < factory.#settings.count; i++) created.push(await factory.createOne(run))
     const result = factory.#settings.many ? created : created[0]
@@ -242,7 +252,7 @@ export class Factory<TClass extends AnyModelClass, TMany extends boolean = false
 
   /** Create one model (used by parent and child factories). */
   async createOne(run: FactoryRun): Promise<ModelBase> {
-    const attributes = this.#attributes(run.faker)
+    const attributes = this.#attributes(run)
     for (const parent of this.#settings.parents)
       attributes[parent.foreignKey ?? `${singular(tableOfModel(parent.model))}_id`] = keyOf(
         parent.model,
@@ -271,9 +281,10 @@ export class Factory<TClass extends AnyModelClass, TMany extends boolean = false
     return model
   }
 
-  #attributes(faker: Faker): Record<string, unknown> {
-    this.#settings.counter.value += 1
-    const context: FactoryContext = { faker, sequence: this.#settings.counter.value }
+  #attributes(run: FactoryRun): Record<string, unknown> {
+    const sequence = (run.sequences.get(this.#settings.define) ?? 0) + 1
+    run.sequences.set(this.#settings.define, sequence)
+    const context: FactoryContext = { faker: run.faker, sequence }
     let attributes: Record<string, unknown> = { ...this.#settings.define(context) }
     for (const state of this.#settings.states) {
       const next = typeof state === 'function' ? state(attributes, context) : state
@@ -308,6 +319,5 @@ export function defineFactory<TClass extends AnyModelClass>(
     children: [],
     recycle: [],
     seed: undefined,
-    counter: { value: 0 },
   })
 }

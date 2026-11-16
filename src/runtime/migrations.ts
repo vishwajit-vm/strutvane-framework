@@ -253,7 +253,13 @@ export interface PackagedMigration {
 const packagedOf = (all: readonly MigrationSource[]): PackagedMigration[] =>
   all.flatMap((m) => (m.source !== undefined ? [{ name: m.name, source: m.source }] : []))
 
-/** Generate (when models changed) and apply migrations. */
+/**
+ * Generate (when models changed) and apply migrations.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export async function migrateProject(
   project: LoadedProject,
   options: MigrateProjectOptions = {},

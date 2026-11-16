@@ -1,18 +1,14 @@
 # v2/data-layer: progress notes (temporary, removed before merge)
 
 ## Done
-- `src/schema/**`, `src/entries/schema.ts`, `test/schema/**`: spike 10's offline pipeline (Schema builder, recorder, replay, types/resources.json/schema.json/SQL generation, DDL for SQLite/PostgreSQL/MySQL/MariaDB, MySQL index lint), plus #97 modifiers, tenant composite FKs and uniques (F-05, #92), UUIDv7 keys (#93). 199 tests green (`npx vitest run test/schema`).
-- Spike 11's ORM copied verbatim into `src/database/{db,orm,sql,schema}` and its tests into `test/database/**` (WIP: not adapted yet, does not type-check).
-- `mysql2@3.24.6` added as a dev dependency (to become an optional peer).
+- Schema pipeline (`src/schema/**`, `@strutvane/framework/schema`): Schema builder, replay, generators, DDL for SQLite/PostgreSQL/MySQL/MariaDB, MySQL index lint, #97 modifiers, tenant composite keys (F-05, #92), UUIDv7 keys (#93), ADR-0007 RLS emitted for `t.tenant()` tables on PostgreSQL.
+- ORM (`src/database/**`, `@strutvane/framework/database`): spike 11 adapted; drivers mysql2 (lazy), node-postgres (new), PGlite, node:sqlite; `wherePolicy()`; tenancy off by default and fail-closed (#90).
+- ADR-0008 compiler `compileFilterSql` through the grammar (all 4 dialects); v1 `compileFilter` delegates to it.
+- v2 migrator (`src/migrations/runner.ts`), introspection, F-06 sandbox (`sandbox.ts`, `replay-worker.ts`).
+- Commands: migrate*, db:seed, sync (`src/runtime/schema-commands.ts`), make:migration (`src/console/make/migration-first.ts`); seeders/factories (`src/database/seeding/**`); DB_* settings (`src/database/config.ts`).
+- Drizzle-based APIs marked `@deprecated`; minor changeset `.changeset/v2-data-layer.md`.
+- Real engines: uniquely named MySQL 8.4 / MariaDB 11.4 / PostgreSQL 18 containers via `test/helpers/db-servers.ts`.
 
 ## Next
-1. Adapt the ORM to the repo rules (isolatedDeclarations, imports, lazy mysql2, Biome), snapshot from `src/schema/columns.ts`.
-2. node-postgres ORM driver with ADR-0007 rules; real-engine globalSetup (MySQL 8.4, MariaDB 11.4, PostgreSQL 18, uniquely named containers, removed after).
-3. Policy compiler (ADR-0008) emitting through the grammar; RLS wiring.
-4. v2 migrator (`migrations` table, batches, rollback/fresh/refresh/step/pretend/isolated, #121 atomicity, MySQL resume), introspection + drift, F-06 replay sandbox.
-5. Commands: make:migration (+ model, `--seeder` → seeder + factory with #104 markers), migrate*, db:seed; defineSeeder/defineFactory v2; DB_CONNECTION/DB_URL/DB_SOCKET/DB_SSLMODE/DB_SSL_CA.
-6. Deprecate Drizzle-based v1 APIs; `./schema` export; changeset (minor); gate x3.
-
-## Test state
-- Baseline `npm run ci` on main: 1465 passed, 1 load-sensitive failure (serve-lifecycle grace period) while another job was running.
-- `test/schema` green; `test/database` not yet compiling (WIP).
+- Gate x3, publint/attw/package check, dist sandbox smoke test.
+- Not built (see the report): generated CRUD API over the ORM, auto-seeding new seeders in development, observers/events, upserts/chunking.

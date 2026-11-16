@@ -13,6 +13,8 @@
  *
  * @module
  */
+
+import { disableTenantRls, enableTenantRls } from '../../migrations/rls.ts'
 import { applyOperation } from '../apply.ts'
 import {
   type ColumnDef,
@@ -112,9 +114,15 @@ function compileAlter(
   for (const action of actions) {
     const table = requireTable(state, tableName)
     const next = applyOperation(state, { type: 'alterTable', table: tableName, actions: [action] })
-    statements.push(
-      ...compileTableAction(state, table, requireTable(next, tableName), action, dialect),
-    )
+    const after = requireTable(next, tableName)
+    // A tenant column added later gets RLS once it exists; one dropped loses it first (the
+    // policies depend on the column, so PostgreSQL would refuse the drop).
+    const dropsTenant =
+      action.type === 'dropColumn' && findColumn(table, action.name)?.tenant === true
+    const addsTenant = action.type === 'addColumn' && action.column.tenant === true
+    if (dropsTenant) statements.push(...tenantRls(table, dialect, 'disable'))
+    statements.push(...compileTableAction(state, table, after, action, dialect))
+    if (addsTenant) statements.push(...tenantRls(after, dialect, 'enable'))
     state = next
   }
   return statements
@@ -251,7 +259,23 @@ function createTableSql(table: TableState, dialect: Dialect): string[] {
     ...table.indexes.map((index) => createIndexSql(table.name, index, dialect)),
     ...later,
     ...table.columns.flatMap((column) => columnCommentSql(table.name, column, dialect)),
+    ...tenantRls(table, dialect, 'enable'),
   ]
+}
+
+/**
+ * PostgreSQL row-level security for a tenant table, exactly as v1 enables it (ADR-0007: a
+ * RESTRICTIVE policy with USING and WITH CHECK, FORCE ROW LEVEL SECURITY, the tenant read with
+ * `NULLIF(current_setting('app.tenant_id', true), '')::uuid`). Other engines: nothing (the ORM's
+ * tenant scope is the guarantee there).
+ */
+function tenantRls(table: TableState, dialect: Dialect, mode: 'enable' | 'disable'): string[] {
+  if (dialect !== 'postgres') return []
+  const column = table.columns.find((candidate) => candidate.tenant === true)
+  if (column === undefined) return []
+  const statements =
+    mode === 'enable' ? enableTenantRls(table.name, column.name) : disableTenantRls(table.name)
+  return statements.map((statement) => statement.replace(/;$/, ''))
 }
 
 /**

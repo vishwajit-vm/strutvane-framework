@@ -21,13 +21,20 @@ import type { Database } from '../database/types.ts'
 
 const TENANT_EXPR = `NULLIF(current_setting('app.tenant_id', true), '')::uuid`
 
-/** Statements that enable tenant isolation on a table. */
-export function enableTenantRls(table: string): string[] {
+/**
+ * Statements that enable tenant isolation on a table. `column` is the app's tenant column
+ * (`tenant_id`, or `team_id` for teams); v1 models always use `tenant_id`.
+ *
+ * @example
+ * enableTenantRls('projects') // ['ALTER TABLE "projects" ENABLE ROW LEVEL SECURITY;', …]
+ */
+export function enableTenantRls(table: string, column = 'tenant_id'): string[] {
   const t = ident(table)
+  const c = ident(column)
   return [
     `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`,
     `ALTER TABLE ${t} FORCE ROW LEVEL SECURITY;`,
-    `CREATE POLICY "tenant_isolation" ON ${t} AS RESTRICTIVE FOR ALL USING ("tenant_id" = ${TENANT_EXPR}) WITH CHECK ("tenant_id" = ${TENANT_EXPR});`,
+    `CREATE POLICY "tenant_isolation" ON ${t} AS RESTRICTIVE FOR ALL USING (${c} = ${TENANT_EXPR}) WITH CHECK (${c} = ${TENANT_EXPR});`,
     `CREATE POLICY "tenant_access" ON ${t} AS PERMISSIVE FOR ALL USING (true) WITH CHECK (true);`,
   ]
 }

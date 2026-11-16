@@ -105,7 +105,7 @@ describe('golden files', () => {
     const result = spawnSync(process.execPath, [GENERATE, app], { encoding: 'utf8' })
     expect(result.status).toBe(1)
     expect(result.stderr).toContain(
-      '[UNKNOWN_TABLE] in 2026_01_08_000000_typo.ts: There is no table "post"',
+      '[unknown_table] in 2026_01_08_000000_typo.ts: There is no table "post"',
     )
     expect(result.stderr).toContain('Hint: Known tables: users, posts, categories, tags.')
   })

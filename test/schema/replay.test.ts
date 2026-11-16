@@ -143,7 +143,7 @@ describe('failure cases', () => {
       run()
     } catch (error) {
       expect((error as SchemaError).describe()).toBe(
-        '[UNKNOWN_TABLE] in 2026_01_02_000000_oops.ts: There is no table "post" at this point in the migrations. Hint: Known tables: posts. Check the spelling and the migration order.',
+        '[unknown_table] in 2026_01_02_000000_oops.ts: There is no table "post" at this point in the migrations. Hint: Known tables: posts. Check the spelling and the migration order.',
       )
     }
   })
