@@ -2,6 +2,26 @@
 
 Working notes for the spike 12 port (MVC app core + Laravel-style commands). Delete before merge.
 
+## Overall state (paused 2026-11-16, coordinator)
+- Lint is clean. `tsc` has ONE error, in `test/commands/caches.test.ts:135` (a `RouteList<unknown>` that is
+  assigned to a typed list; fix the fixture's type). The full gate (`npm run ci`) has NOT been run on this
+  branch. Last green targeted runs: test/http + storage + security + runtime + core (704 tests),
+  test/app + routing + foundation (190), test/exceptions (45), test/facades (10), test/console (380).
+- Baseline on main before the port: 1465 passed, 1 failed (`test/runtime/serve-lifecycle.test.ts`
+  "a request that outlives the grace period is cut off": a load-sensitive timing test, flaky under load;
+  it must be made deterministic for the "3 green runs under load" gate).
+- Not started: the lowercase error-code migration (#123) and the issue `field` member (#69); wiring the
+  APP_/SECURITY_/MAINTENANCE_/CACHE_ catalogs into `src/messages.ts` (Application registers APP_ and
+  SECURITY_ itself for now); `src/index.ts` exports + `./facades` subpath; `route` swap to
+  `routing/route-helper.ts` in `src/index.ts`; the Node adapter (`src/runtime/serve.ts`) passing
+  `{ ip, waitUntil }` and booting `bootstrap/app.ts`; `createHttpApp`/`serve.ts` switching to
+  `resolveTrustProxy` (list-form `trustProxy` throws in `trustedHops` today); the CLI changes listed in
+  the commands section; the minor changeset (#128); docs/README; R1/R5 checks; the gate 3 times.
+- Decisions for the lead: generated apps must not set `isolatedDeclarations` (typed route()/config() need
+  `typeof web`); `route:list` is the app command and `routes` stays for strutvane.config.ts projects;
+  HSTS is now production-only in `securityHeaders()` once `createHttpApp` passes `environment`;
+  an unsafe request with a session cookie to an unknown path answers 419 (CSRF runs before routing).
+
 ## Done (tests green: tsc clean, biome clean, test/http + storage + security + runtime + core + app + routing + foundation pass)
 - Foundation: `BootError`, class injection over the core container, current-application context,
   `Application.configure()…create()` (bootstrap/app.ts), typed config/env, providers (objects and
