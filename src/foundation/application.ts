@@ -27,6 +27,7 @@
 
 import { PolicyRegistry, PolicyRegistryToken } from '../auth/policies.ts'
 import { CacheManagerToken } from '../cache/contract.ts'
+import { createCacheManager } from '../cache/store.ts'
 import type { AnyCommand } from '../console/framework/command.ts'
 import type { Actor } from '../contracts/actor.ts'
 import {
@@ -79,6 +80,7 @@ import {
   trustedHostStage,
 } from '../http/app/kernel.ts'
 import { MemoryCacheStore } from '../http/app/memory-cache.ts'
+import { checkMaintenance } from '../maintenance/maintenance.ts'
 import {
   buildMiddleware,
   type Middleware,
@@ -138,6 +140,8 @@ import {
   UrlSignerToken,
   UsedSignatureStoreToken,
 } from '../security/signer.ts'
+import { SessionStoreToken } from '../session/contract.ts'
+import { FileSessionStore } from '../session/file-store.ts'
 import { closestMatch } from '../support/str.ts'
 import { BootError, isBootError } from './boot-error.ts'
 import type { CacheUse } from './bootstrap-cache.ts'
@@ -798,6 +802,15 @@ export class Application implements CoreApplication<object> {
       () => new UrlSigner(keyring, { usedSignatures: container.make(UsedSignatureStoreToken) }),
     )
     fill(HttpClientToken, () => new HttpClient())
+    fill(MaintenanceCheckToken, () => checkMaintenance)
+    fill(CacheManagerToken, () =>
+      createCacheManager({
+        basePath: this.basePath,
+        clock,
+        config: this.configRepository.has('cache') ? this.configRepository.get('cache') : undefined,
+      }),
+    )
+    fill(SessionStoreToken, () => new FileSessionStore(this.basePath))
     fill(IdempotencyStoreToken, () => new MemoryIdempotencyStore())
     fill(RateLimitStoreToken, () =>
       container.has(CacheManagerToken)

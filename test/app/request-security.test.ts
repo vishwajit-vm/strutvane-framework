@@ -77,7 +77,11 @@ describe('security headers', () => {
 
   it('shows debug details only with APP_DEBUG in local or testing', async () => {
     const debug = await blogApp({ APP_DEBUG: 'true' })
-    const shown = await (await send(debug.app, 'http://localhost/_diagnostics/boom')).json()
+    const shown = await (
+      await send(debug.app, 'http://localhost/_diagnostics/boom', {
+        headers: { accept: 'application/json' },
+      })
+    ).json()
     expect(JSON.stringify(shown)).toContain('reading \\"title\\"')
     const production = await blogApp(
       { APP_ENV: 'production', APP_DEBUG: 'true' },

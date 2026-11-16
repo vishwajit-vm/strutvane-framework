@@ -28,3 +28,18 @@ Working notes for the spike 12 port (MVC app core + Laravel-style commands). Del
    `{ path, field, code, message }` (#69).
 5. Wire catalogs into `src/messages.ts`, exports in `src/index.ts`, Node adapter passes `{ ip, waitUntil }`.
 6. Minor changeset (#128), docs, full gate 3x, R1/R5 checks.
+
+## Exceptions + facades (WIP, paused 2026-11-16)
+- Done: `src/exceptions/` (ExceptionsConfig: dontReport, report/render global or per class,
+  shouldRenderJsonWhen, throttle; ExceptionHandler; debug page + "Copy as Markdown for AI" +
+  JSON `debug` member, redaction, app-only frames, nonce CSP; `report()` + ExceptionHandlerToken),
+  wired into `Application` (temporary renderer removed from `http/app/errors.ts`; routed ctx is now
+  the current HttpContext). `src/facades/` (Log, Cache, DB, Route, Storage, Http, Event, Crypt, Url;
+  Mail/Queue/Bus/Notification/Hash throw `facade_not_available`). Tests: test/exceptions (45),
+  test/facades (10 + type tests); test/app green after one test asked for JSON explicitly.
+- Half-done: last `npx biome check` on these paths reported an error not yet inspected (re-run
+  `npx biome check src/exceptions src/facades test/exceptions test/facades`); last edits (debug-page
+  fail-closed fallback + its test) not re-run; coverage of src/exceptions + src/facades not measured.
+- Next: fix lint, run test/exceptions test/facades test/app, measure coverage; export from
+  `src/index.ts` (exceptions) and add a `./facades` subpath (Route facade must not shadow the
+  routing `Route` builder); no new catalog codes (500s use core INTERNAL_ERROR).

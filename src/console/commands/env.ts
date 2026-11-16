@@ -1,5 +1,6 @@
 /**
- * `sv env:check` and `sv key:generate` (docs/09 §2).
+ * `node strut env:check` and `node strut key:generate` (docs/09 §2). Changing a key without
+ * breaking existing data is `node strut key:rotate` (`app/key-rotate.ts`).
  *
  * @module
  */
@@ -11,6 +12,7 @@ import { CliError, usageError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
 import { checkEnv, isValidEnvName } from '../project/env-check.ts'
 import { readEnvFile } from '../project/env-file.ts'
+import { findAppRoot } from './app/support.ts'
 
 export const envCheckCommand: AnyCommand = defineCommand({
   name: 'env:check',
@@ -23,7 +25,11 @@ export const envCheckCommand: AnyCommand = defineCommand({
   flags: {
     strict: { type: 'boolean', description: 'Treat unknown and empty keys as errors' },
   },
-  examples: ['sv env:check', 'sv env:check --env test --strict', 'sv env:check --json'],
+  examples: [
+    'node strut env:check',
+    'node strut env:check --env test --strict',
+    'node strut env:check --json',
+  ],
   run(ctx) {
     const root = ctx.requireProject().root
     const envName = ctx.globals.env
@@ -68,7 +74,13 @@ export const envCheckCommand: AnyCommand = defineCommand({
  */
 const APP_KEY_LINE = /^(\uFEFF?[ \t]*(?:export[ \t]+)?APP_KEY[ \t]*=).*$/gm
 
-/** A new application key: 32 random bytes, base64url (the same format devkit uses for secrets). */
+/**
+ * A new application key: 32 random bytes, base64url (the same format devkit uses for secrets).
+ * `key:generate` and `key:rotate` both use it.
+ *
+ * @example
+ * generateAppKey() // 'q3J…' (43 characters)
+ */
 export function generateAppKey(): string {
   return randomBytes(32).toString('base64url')
 }
@@ -82,13 +94,18 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
     '--show is passed (and then nothing is written).',
     'Replacing a non-empty key needs --force; unless APP_ENV is local, test, testing or',
     'development it also needs --i-understand. Every APP_KEY line in .env is replaced.',
+    'To change a key without breaking encrypted values and signed links, use node strut key:rotate.',
   ].join('\n'),
-  // --show works anywhere; writing calls requireProject().
+  // --show works anywhere; writing needs an app (bootstrap/app.ts) or a project.
   requiresProject: false,
   flags: {
     show: { type: 'boolean', description: 'Print a new key instead of writing it' },
   },
-  examples: ['sv key:generate', 'sv key:generate --force', 'sv key:generate --show'],
+  examples: [
+    'node strut key:generate',
+    'node strut key:generate --force',
+    'node strut key:generate --show',
+  ],
   async run(ctx) {
     const { out } = ctx
     const key = generateAppKey()
@@ -97,7 +114,7 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
       out.raw(key)
       return { data: { key, written: false } }
     }
-    const root = ctx.requireProject().root
+    const root = ctx.project?.root ?? findAppRoot(ctx) ?? ctx.requireProject().root
     const existing = readEnvFile(join(root, '.env'))
     const current = existing?.entries.get('APP_KEY')
     // Every APP_KEY line counts (a duplicate earlier in the file may hold the real key).
@@ -120,7 +137,11 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
     }
     const env = createEnvEditor(fs, { generateSecret: () => key })
     await env.ensure('Application', [
-      { key: 'APP_KEY', secret: true, comment: 'Encryption key. Generate with: sv key:generate' },
+      {
+        key: 'APP_KEY',
+        secret: true,
+        comment: 'Encryption key. Generate with: node strut key:generate',
+      },
     ])
     const changes = await fs.changes()
     const files = changes.map((c) => c.path)
@@ -136,7 +157,7 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
     )
     if (replacesKey) {
       out.warn(
-        'The previous key was replaced: existing sessions and encrypted values can no longer be read.',
+        'The previous key was replaced: existing sessions and encrypted values can no longer be read. Next time, node strut key:rotate keeps them readable.',
       )
     }
     return { data: { written: true, dryRun: false, files } }
