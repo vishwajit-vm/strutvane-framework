@@ -1,48 +1,73 @@
 /**
- * Signed, expiring URLs for private files (`temporaryUrl`). The signature is an HMAC-SHA256 over
- * the disk, key, method and expiry, so a URL cannot be extended, moved to another key, or reused
- * for another method. Comparison is constant-time.
+ * Signed, expiring URLs for private files (`temporaryUrl`), made and checked by the framework's
+ * one URL signer (CONSISTENCY #64, `security/signer.ts`). The link's path is the file key; the
+ * signer's `purpose` is `storage:<disk>:<METHOD>`, so a URL cannot be extended, moved to another
+ * key or disk, reused for another method, or replayed as any other kind of signed link.
+ * Comparison is constant-time.
  *
- * The HMAC key is not the configured secret itself but a subkey derived from it with HKDF-SHA256
- * (label `strutvane/storage/signed-url/v1`). `APP_KEY` usually signs other things too (sessions,
- * other tokens); deriving a purpose-bound key means a signature made for one purpose can never be
- * replayed as another, and the raw secret is never used directly as an HMAC key.
+ * The HMAC key is never the configured secret itself: the secret becomes a keyring and the signer
+ * derives its own purpose-bound subkey from it (HKDF-SHA256, CONSISTENCY #66). Passing the app's
+ * {@link Keyring} instead of a secret also accepts links made with `APP_PREVIOUS_KEYS`, so
+ * `key:rotate` keeps unexpired links working.
  *
  * @module
  */
-import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto'
+import { Keyring, parseAppKey } from '../security/keyring.ts'
+import { UrlSigner } from '../security/signer.ts'
 
-/** Options for {@link signUrl} / {@link verifySignedUrl}. */
+/**
+ * Options for {@link signUrl} / {@link verifySignedUrl}.
+ *
+ * @example
+ * const options: SigningOptions = { secret: process.env.APP_KEY ?? '' }
+ */
 export interface SigningOptions {
-  /** At least 32 bytes of secret (e.g. `APP_KEY`). */
-  readonly secret: string
+  /** At least 32 bytes of secret (e.g. `APP_KEY`), or the app's keyring. */
+  readonly secret: string | Keyring
+  /** Epoch milliseconds. Default `Date.now`. */
   readonly now?: () => number
 }
 
-const payload = (disk: string, key: string, method: string, expires: number): string =>
-  `${method.toUpperCase()}\n${disk}\n${key}\n${expires}`
+/** The longest a storage link may live: past a week, a "temporary" URL is a permanent leak. */
+const MAX_EXPIRY_SECONDS = 7 * 24 * 3600
 
-const SUBKEY_INFO = 'strutvane/storage/signed-url/v1'
-const subkeys = new Map<string, Buffer>()
+const bySecret = new Map<string, UrlSigner>()
+const byKeyring = new WeakMap<Keyring, UrlSigner>()
 
-/** The purpose-bound signing key derived from `secret` (cached; derivation is deterministic). */
-function subkey(secret: string): Buffer {
-  let key = subkeys.get(secret)
-  if (!key) {
-    key = Buffer.from(hkdfSync('sha256', secret, '', SUBKEY_INFO, 32))
-    if (subkeys.size > 16) subkeys.clear() // a handful of secrets at most; never grows unbounded
-    subkeys.set(secret, key)
+/** The signer for a secret or keyring (cached: building one derives keys). */
+function signerFor(secret: string | Keyring): UrlSigner {
+  if (secret instanceof Keyring) {
+    let signer = byKeyring.get(secret)
+    if (signer === undefined) {
+      signer = new UrlSigner(secret)
+      byKeyring.set(secret, signer)
+    }
+    return signer
   }
-  return key
-}
-
-function sign(secret: string, data: string): string {
   if (Buffer.byteLength(secret) < 32)
     throw new Error('The URL signing secret must be at least 32 bytes')
-  return createHmac('sha256', subkey(secret)).update(data).digest('base64url')
+  let signer = bySecret.get(secret)
+  if (signer === undefined) {
+    signer = new UrlSigner(new Keyring(parseAppKey(secret, 'the URL signing secret')))
+    if (bySecret.size > 16) bySecret.clear() // a handful of secrets at most; never grows unbounded
+    bySecret.set(secret, signer)
+  }
+  return signer
 }
 
-/** Build `<base>/<key>?expires=…&signature=…`. */
+const purpose = (disk: string, method: string | undefined): string =>
+  `storage:${disk}:${(method ?? 'GET').toUpperCase()}`
+
+/** The key as a URL path: each segment percent-encoded, so `/` stays the separator. */
+const keyPath = (key: string): string => `/${key.split('/').map(encodeURIComponent).join('/')}`
+
+/**
+ * Build `<base>/<key>?expires=…&signature=…`, valid for `expiresInSeconds` (1 second to 7 days).
+ *
+ * @example
+ * signUrl('/storage/files', 'files', 'docs/a.pdf', 300, { secret: env.APP_KEY })
+ * // '/storage/files/docs/a.pdf?expires=1763200000&signature=…'
+ */
 export function signUrl(
   base: string,
   disk: string,
@@ -53,18 +78,25 @@ export function signUrl(
   if (
     !Number.isInteger(expiresInSeconds) ||
     expiresInSeconds < 1 ||
-    expiresInSeconds > 7 * 24 * 3600
+    expiresInSeconds > MAX_EXPIRY_SECONDS
   ) {
     throw new RangeError('expiresInSeconds must be between 1 second and 7 days')
   }
   const now = options.now ?? Date.now
-  const expires = Math.floor(now() / 1000) + expiresInSeconds
-  const signature = sign(options.secret, payload(disk, key, options.method ?? 'GET', expires))
-  const path = key.split('/').map(encodeURIComponent).join('/')
-  return `${base.replace(/\/+$/, '')}/${path}?expires=${expires}&signature=${signature}`
+  const signed = signerFor(options.secret).sign(keyPath(key), {
+    purpose: purpose(disk, options.method),
+    expiresAt: now() + expiresInSeconds * 1000,
+  })
+  return `${base.replace(/\/+$/, '')}${signed}`
 }
 
-/** Verify a signed URL's parameters. Returns `false` for anything wrong or expired. */
+/**
+ * Verify a signed URL's parameters. Returns `false` for anything wrong, expired or unsigned
+ * (storage links always expire), and never throws for hostile parameters.
+ *
+ * @example
+ * verifySignedUrl('files', 'docs/a.pdf', { expires: url.searchParams.get('expires'), signature: url.searchParams.get('signature') }, { secret })
+ */
 export function verifySignedUrl(
   disk: string,
   key: string,
@@ -73,11 +105,12 @@ export function verifySignedUrl(
 ): boolean {
   const { expires, signature } = params
   if (!expires || !signature || !/^\d{1,12}$/.test(expires)) return false
+  const query = new URLSearchParams({ expires, signature })
   const now = options.now ?? Date.now
-  if (Number(expires) < Math.floor(now() / 1000)) return false
-  const expected = Buffer.from(
-    sign(options.secret, payload(disk, key, options.method ?? 'GET', Number(expires))),
+  return (
+    signerFor(options.secret).verifySync(`${keyPath(key)}?${query.toString()}`, {
+      purpose: purpose(disk, options.method),
+      now: now(),
+    }) === 'valid'
   )
-  const given = Buffer.from(signature)
-  return given.length === expected.length && timingSafeEqual(given, expected)
 }
