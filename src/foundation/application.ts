@@ -59,16 +59,13 @@ import {
   LoggerToken,
   MessagesToken,
 } from '../core/tokens.ts'
+import { ExceptionHandler, ExceptionsConfig } from '../exceptions/handler.ts'
+import { ExceptionHandlerToken } from '../exceptions/report.ts'
 import { APP_ERRORS, APP_MESSAGES_EN } from '../http/app/catalog.ts'
 import { type HttpContext as Ctx, HttpContext, runWithHttpContext } from '../http/app/context.ts'
 import { cspReportRoutes } from '../http/app/csp-report.ts'
 import { checkCsrf } from '../http/app/csrf.ts'
-import {
-  createProblemRenderer,
-  type ExceptionRenderer,
-  type ExceptionRequestInfo,
-  ExceptionSettings,
-} from '../http/app/errors.ts'
+import type { ExceptionRenderer, ExceptionRequestInfo } from '../http/app/errors.ts'
 import {
   corsPreflightStage,
   decorateResponse,
@@ -80,7 +77,6 @@ import {
   trustedHostStage,
 } from '../http/app/kernel.ts'
 import { MemoryCacheStore } from '../http/app/memory-cache.ts'
-import { checkMaintenance } from '../maintenance/maintenance.ts'
 import {
   buildMiddleware,
   type Middleware,
@@ -108,6 +104,7 @@ import {
   SessionCookieToken,
   sessionCookieName,
 } from '../http/session-cookie.ts'
+import { checkMaintenance } from '../maintenance/maintenance.ts'
 import { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from '../messages.ts'
 import {
   defineRoutes,
@@ -227,7 +224,7 @@ interface Blueprint {
   providers: AnyProvider[]
   routing: RoutingOptions
   readonly middleware: ((config: MiddlewareConfig) => void)[]
-  readonly exceptions: ((config: ExceptionSettings) => void)[]
+  readonly exceptions: ((config: ExceptionsConfig) => void)[]
   readonly commands: AnyCommand[]
 }
 
@@ -303,7 +300,7 @@ export class ApplicationBuilder {
    * @example
    * .withExceptions((e) => e.dontReport(PaymentDeclined))
    */
-  withExceptions(configure: (exceptions: ExceptionSettings) => void): this {
+  withExceptions(configure: (exceptions: ExceptionsConfig) => void): this {
     this.#blueprint.exceptions.push(configure)
     return this
   }
@@ -379,7 +376,7 @@ export class Application implements CoreApplication<object> {
   readonly #blueprint: Blueprint
   readonly #core: CoreApplication<object>
   readonly #middleware = new MiddlewareConfig()
-  readonly #exceptions = new ExceptionSettings()
+  readonly #exceptions = new ExceptionsConfig()
   readonly #extraRoutes: {
     readonly source: RoutesSource
     readonly prefix: string
@@ -723,12 +720,16 @@ export class Application implements CoreApplication<object> {
       FRAMEWORK_MESSAGES_EN,
       defineMessages('en', { ...SECURITY_MESSAGES_EN, ...APP_MESSAGES_EN }),
     ])
-    const renderer = createProblemRenderer(this.#exceptions, {
+    const renderer = new ExceptionHandler(this.#exceptions, {
       showDetails,
+      environment,
+      basePath: this.basePath,
       logger,
       messages,
       errors,
+      now: () => clock.now(),
     })
+    container.value(ExceptionHandlerToken, renderer)
     const apiPrefix = this.#blueprint.routing.apiPrefix ?? '/api'
     const { routes, fallbacks } = this.#compileRoutes(apiPrefix)
     const middleware = new Map<CompiledRoute, ResolvedRouteMiddleware>()
@@ -1128,7 +1129,10 @@ export class Application implements CoreApplication<object> {
           matched?.params ?? { fallbackPlaceholder: path },
           { ...ctx.state, method },
         )
-        return this.#dispatch(route, resolved.references, routed, run)
+        // The routed context becomes current: `Route.current()` and `report()` see the route.
+        return runWithHttpContext(routed, () =>
+          this.#dispatch(route, resolved.references, routed, run),
+        )
       },
     )
   }
