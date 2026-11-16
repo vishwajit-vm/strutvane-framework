@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "tables": {
+    "users": {
+      "name": "users",
+      "columns": [
+        {
+          "name": "id",
+          "kind": "id",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "kind": "string",
+          "nullable": false,
+          "length": 255
+        },
+        {
+          "name": "email",
+          "kind": "string",
+          "nullable": false,
+          "length": 255
+        },
+        {
+          "name": "password",
+          "kind": "string",
+          "nullable": true,
+          "length": 255
+        },
+        {
+          "name": "created_at",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "kind": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_email_unique",
+          "columns": [
+            "email"
+          ],
+          "unique": true
+        }
+      ]
+    },
+    "posts": {
+      "name": "posts",
+      "columns": [
+        {
+          "name": "id",
+          "kind": "id",
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "kind": "string",
+          "nullable": false,
+          "length": 200
+        },
+        {
+          "name": "slug",
+          "kind": "slug",
+          "nullable": false,
+          "length": 255,
+          "slugFrom": "title"
+        },
+        {
+          "name": "content",
+          "kind": "text",
+          "nullable": true
+        },
+        {
+          "name": "price",
+          "kind": "decimal",
+          "nullable": false,
+          "precision": 12,
+          "scale": 2,
+          "default": 0
+        },
+        {
+          "name": "status",
+          "kind": "enum",
+          "nullable": false,
+          "values": [
+            "draft",
+            "published"
+          ],
+          "default": "draft"
+        },
+        {
+          "name": "author_id",
+          "kind": "foreignId",
+          "nullable": false,
+          "references": {
+            "table": "users",
+            "column": "id",
+            "onDelete": "cascade",
+            "name": "posts_author_id_foreign"
+          }
+        },
+        {
+          "name": "featured",
+          "kind": "boolean",
+          "nullable": false,
+          "default": false
+        },
+        {
+          "name": "published_on",
+          "kind": "date",
+          "nullable": true
+        },
+        {
+          "name": "meta",
+          "kind": "json",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "deleted_at",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "string",
+          "nullable": true,
+          "length": 255
+        },
+        {
+          "name": "category_id",
+          "kind": "foreignId",
+          "nullable": true,
+          "references": {
+            "table": "categories",
+            "column": "id",
+            "onDelete": "set null",
+            "name": "posts_category_id_foreign"
+          }
+        }
+      ],
+      "indexes": [
+        {
+          "name": "posts_slug_unique",
+          "columns": [
+            "slug"
+          ],
+          "unique": true
+        },
+        {
+          "name": "posts_status_index",
+          "columns": [
+            "status"
+          ],
+          "unique": false
+        }
+      ]
+    },
+    "categories": {
+      "name": "categories",
+      "columns": [
+        {
+          "name": "id",
+          "kind": "id",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "kind": "string",
+          "nullable": false,
+          "length": 100
+        },
+        {
+          "name": "slug",
+          "kind": "slug",
+          "nullable": false,
+          "length": 255,
+          "slugFrom": "name"
+        },
+        {
+          "name": "created_at",
+          "kind": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "kind": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "categories_slug_unique",
+          "columns": [
+            "slug"
+          ],
+          "unique": true
+        }
+      ]
+    },
+    "tags": {
+      "name": "tags",
+      "columns": [
+        {
+          "name": "id",
+          "kind": "id",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "kind": "string",
+          "nullable": false,
+          "length": 50
+        },
+        {
+          "name": "position",
+          "kind": "integer",
+          "nullable": false,
+          "default": 0
+        }
+      ],
+      "indexes": [
+        {
+          "name": "labels_name_unique",
+          "columns": [
+            "name"
+          ],
+          "unique": true
+        }
+      ]
+    }
+  }
+}
