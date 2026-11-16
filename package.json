@@ -103,13 +103,14 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "build": "tsdown",
-    "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown",
+    "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown && node scripts/smoke-dist.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "changeset publish",
     "test:perf": "vitest run --config vitest.perf.config.ts",
     "test:soak": "vitest run --config vitest.soak.config.ts",
-    "test:tripwire": "vitest run --config vitest.tripwire.config.ts"
+    "test:tripwire": "vitest run --config vitest.tripwire.config.ts",
+    "test:dist": "node scripts/smoke-dist.mjs"
   },
   "dependencies": {
     "@clack/prompts": "1.9.0",
