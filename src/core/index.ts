@@ -1,5 +1,5 @@
 /**
- * `@strutvane/core`: the Strutvane kernel.
+ * `@strutvane/framework/core`: the Strutvane kernel.
  *
  * A typed container, service providers and the application lifecycle, plus:
  * - validated config and env
@@ -9,7 +9,7 @@
  * - a default logger
  * - clock and UUIDv7 ids
  *
- * Depends only on `@strutvane/contracts`.
+ * Depends only on the contracts (`@strutvane/framework/contracts`).
  *
  * @packageDocumentation
  */
@@ -119,6 +119,7 @@ export {
 } from './messages/catalog.ts'
 export { type FormatResult, formatMessage, type MessageParam } from './messages/format.ts'
 export { baseLanguage, canonicalLocale, localeChain, negotiateLocale } from './messages/locale.ts'
+export { detectPackageManager, installCommand, type PackageManager } from './package-manager.ts'
 export {
   ClockToken,
   ErrorRegistryToken,

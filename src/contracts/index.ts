@@ -1,5 +1,5 @@
 /**
- * `@strutvane/contracts`: the shared language of the Strutvane ecosystem.
+ * `@strutvane/framework/contracts`: the shared language of the Strutvane ecosystem.
  *
  * Types and wire protocols only, with zero runtime dependencies. Packages like
  * `@strutvane/framework`, `@strutvane/auth` and `@strutvane/ui` never import each other; they all

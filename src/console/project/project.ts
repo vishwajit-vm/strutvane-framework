@@ -9,6 +9,10 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import {
+  detectPackageManager as detectProjectPackageManager,
+  type PackageManager,
+} from '../../core/package-manager.ts'
 import type { Project } from '../framework/command.ts'
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
@@ -109,26 +113,12 @@ export function declaredRange(
   return undefined
 }
 
-/** Package managers the CLI knows how to drive. */
-export type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun'
-
-const LOCKFILES: readonly [string, PackageManager][] = [
-  ['pnpm-lock.yaml', 'pnpm'],
-  ['yarn.lock', 'yarn'],
-  ['bun.lock', 'bun'],
-  ['bun.lockb', 'bun'],
-  ['package-lock.json', 'npm'],
-]
+/** Package managers the CLI knows how to drive (one detection rule, shared with the runtime). */
+export type { PackageManager }
 
 /** Detect the package manager: `packageManager` field first, then the lockfile, else npm. */
 export function detectPackageManager(project: Project): PackageManager {
-  const field = project.packageJson['packageManager']
-  if (typeof field === 'string') {
-    const name = field.split('@')[0]
-    if (name === 'pnpm' || name === 'npm' || name === 'yarn' || name === 'bun') return name
-  }
-  for (const [file, pm] of LOCKFILES) if (existsSync(join(project.root, file))) return pm
-  return 'npm'
+  return detectProjectPackageManager(project.root, project.packageJson)
 }
 
 /** The command line that adds (or removes) packages with a package manager. */

@@ -1,8 +1,8 @@
 /**
- * The installer protocol: how `pnpm sv add <package>` sets a package up completely, with config
+ * The installer protocol: how `sv add <package>` sets a package up completely, with config
  * files, `.env` + `.env.example` keys, migrations, routes and UI screens.
  *
- * `@strutvane/devkit` provides `defineInstaller()` and the real implementations of the context
+ * `@strutvane/framework/devkit` provides `defineInstaller()` and the real implementations of the context
  * below (staged, transactional file writes). Packages only depend on these interfaces.
  *
  * Status: **draft (v0)**.

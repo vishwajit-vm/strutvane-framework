@@ -117,7 +117,7 @@ export interface CommandContext<F extends FlagMap = FlagMap, A extends ArgMap = 
   /** Diagnostic logging (stderr, JSON lines). Enabled at `debug` with `--verbose`. */
   readonly log: Logger
   readonly services: CliServices
-  /** The `@strutvane/cli` version. */
+  /** The `@strutvane/framework` version (the CLI ships in it). */
   readonly version: string
   /**
    * `APP_ENV` as the runtime will see it: the process environment (empty counts as unset), then

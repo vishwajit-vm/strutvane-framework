@@ -2,7 +2,7 @@
  * Field keys loggers must redact: every model field marked `sensitive()` or `hidden()`.
  *
  * The framework never imports a logging package. At boot it registers these keys with core's
- * process-wide redaction registry (`registerSensitiveKeys` from `@strutvane/core`), which both
+ * process-wide redaction registry (`registerSensitiveKeys` from `@strutvane/framework/core`), which both
  * core's fallback logger and `@strutvane/logs` consult on every record, including loggers that
  * were created before the keys were registered.
  *

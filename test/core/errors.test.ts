@@ -81,7 +81,7 @@ describe('error registry', () => {
     })
     expect(registry.get('INVOICE_ALREADY_PAID')?.title).toBe('Already paid')
     expect(() => registry.register({ code: 'NOT_FOUND', status: 404, title: 'x' })).toThrow(
-      /@strutvane\/core/,
+      /@strutvane\/framework/,
     )
     // snake_case (CONSISTENCY #68) or the older SCREAMING_SNAKE_CASE, never a mix of the two.
     registry.register({ code: 'csrf_token_mismatch', status: 419, title: 'Page expired' })

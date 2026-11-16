@@ -130,7 +130,7 @@ function existingFields(
  * The field-syntax part of `sv help make:model`. Both spellings are always accepted; the order
  * depends on the platform because on Windows the parenthesised one breaks before the CLI even
  * runs: PowerShell strips the quotes and cmd.exe re-parses the arguments inside the `.cmd` shims
- * of corepack, pnpm and npx, where `)` ends a block ("… was unexpected at this time"). That
+ * that npm and npx run through, where `)` ends a block ("… was unexpected at this time"). That
  * cannot be detected at runtime, so help text and docs are the guard (see `make/fields.ts`).
  */
 export function fieldSyntaxDetails(platform: NodeJS.Platform): string {
@@ -153,8 +153,8 @@ export function fieldSyntaxDetails(platform: NodeJS.Platform): string {
     '[square brackets] or (parentheses), which mean the same.',
     ...(windows
       ? [
-          'On Windows use square brackets: parentheses break inside the .cmd shims that corepack,',
-          'pnpm and npx run through ("… was unexpected at this time"), even when quoted:',
+          'On Windows use square brackets: parentheses break inside the .cmd shims that npm and',
+          'npx run through ("… was unexpected at this time"), even when quoted:',
           ...brackets,
           'Parentheses (fine from cmd.exe or Git Bash when quoted):',
           ...parens,
@@ -162,7 +162,7 @@ export function fieldSyntaxDetails(platform: NodeJS.Platform): string {
       : [
           ...parens,
           'Square brackets (use these on Windows, where parentheses break inside the .cmd shims of',
-          'corepack, pnpm and npx; in zsh, quote them):',
+          'npm and npx; in zsh, quote them):',
           ...brackets,
         ]),
     'Without fields (in a terminal) an interactive field builder opens.',

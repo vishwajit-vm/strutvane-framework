@@ -29,7 +29,7 @@ const IMPORT_DEFINE = "import { defineSeeder } from '@strutvane/framework/databa
 /** The database seeder `create-strutvane` generates (without the optional auth note). */
 export const CANONICAL_DATABASE_SEEDER: string = [
   '/**',
-  " * Seeds the database (`pnpm sv db:seed`). `sv make:model` registers each new model's seeder here,",
+  " * Seeds the database (`sv db:seed`). `sv make:model` registers each new model's seeder here,",
   ' * after the seeders of the models it belongs to.',
   ' */',
   IMPORT_DEFINE,

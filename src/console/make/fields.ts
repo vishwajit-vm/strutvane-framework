@@ -13,12 +13,12 @@
  *
  * **Square brackets work everywhere parentheses do** (`title:string[200]:required`,
  * `amount:decimal[12,2]:min[0]`, `customer:belongsTo[Customer]`). They exist for Windows: in
- * PowerShell, `corepack pnpm sv …`, `pnpm sv …` and `npx …` start `.cmd` shims, PowerShell
+ * PowerShell, `npm run sv …` and `npx …` start `.cmd` shims (so do other package managers'), PowerShell
  * removes the quotes around an argument without spaces, and cmd.exe then re-parses `%*` inside the
  * shims' parenthesised `IF … ( … )` blocks, where a `)` in an argument ends the block
  * ("… was unexpected at this time"). Nothing in the CLI runs before that happens, so it cannot be
  * detected; the bracket spelling simply avoids it. Checked on Windows 11 with PowerShell 5.1,
- * cmd.exe, `corepack.cmd` and an npm/pnpm-style shim: `[`, `]`, `,` and `'` reach the CLI
+ * cmd.exe and an npm-style shim: `[`, `]`, `,` and `'` reach the CLI
  * unchanged, quoted or not; a double quote inside a PowerShell argument does not (PowerShell 5.1
  * drops it), so bracket arguments are quoted with single quotes: `"due:date:label['Due date']"`.
  * In zsh, quote bracket specs (`[…]` is a glob pattern there).

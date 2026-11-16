@@ -41,7 +41,7 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.error.INVALID_PACKAGE_JSON': 'Could not read {path}: {detail}.',
   'cli.error.INVALID_FIELD': 'Invalid field "{spec}": {detail}',
   'cli.hint.INVALID_FIELD':
-    'Field syntax: name:type[:modifier]…, arguments in [brackets] or (parentheses), e.g. status:enum[draft,paid]:default[draft]. On Windows use brackets: parentheses break inside the .cmd shims of corepack, pnpm and npx.',
+    'Field syntax: name:type[:modifier]…, arguments in [brackets] or (parentheses), e.g. status:enum[draft,paid]:default[draft]. On Windows use brackets: parentheses break inside the .cmd shims of npm and npx.',
   'cli.error.INVALID_NAME': '{detail}',
   'cli.error.MODEL_NOT_FOUND': 'Model "{model}" does not exist ({path} is missing).',
   'cli.hint.MODEL_NOT_FOUND': 'Create it first: sv make:model {model}',

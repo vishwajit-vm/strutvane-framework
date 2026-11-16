@@ -1,7 +1,7 @@
 /**
- * `@strutvane/cli`: the Strutvane command line, as a library.
+ * `@strutvane/framework/console`: the Strutvane command line, as a library.
  *
- * Most people run it as `strutvane` / `pnpm sv` (via the `strutvane` launcher). The exports here
+ * Most people run it as the `strutvane` bin of `@strutvane/framework` (`sv` in an app). The exports here
  * are for plugin authors (`defineCommand` and the command types), for tools that embed the CLI
  * (`runCli`, `main`), and for tools that want the same building blocks (the field mini-language,
  * the generators, the registry compiler).

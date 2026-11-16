@@ -12,6 +12,7 @@
 import type { Server } from 'node:http'
 import { join } from 'node:path'
 import { LoggerToken } from '../core/index.ts'
+import { detectPackageManager, installCommand } from '../core/package-manager.ts'
 import type { TrustProxy } from '../http/proxy.ts'
 import { hasBuiltUi } from '../http/static-files.ts'
 import { type BootedProject, bootProject } from './boot.ts'
@@ -77,7 +78,8 @@ export async function startServer(options: StartServerOptions): Promise<StartedS
   else if (devVite?.status === 'not-installed')
     logger.info('Found a Vite config but "vite" is not installed: serving the API only', {
       configFile: devVite.configFile,
-      hint: 'install the project dependencies (e.g. npm install)',
+      // The project's own package manager, never a hard-coded one.
+      hint: `install the project dependencies (${installCommand(detectPackageManager(options.root))})`,
     })
   let dev: ViteDevServerLike | undefined
   const appConfig = loaded.config['app'] as

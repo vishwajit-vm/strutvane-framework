@@ -1,5 +1,5 @@
 /**
- * `@strutvane/devkit`: the SDK behind `sv add`, `sv make:*` and `sv upgrade`.
+ * `@strutvane/framework/devkit`: the SDK behind `sv add`, `sv make:*` and `sv upgrade`.
  *
  * - **Installers** (`defineInstaller`, `runInstaller`): transactional, previewable, idempotency-checked
  *   package setup: config files, `.env` + `.env.example`, `package.json`, `strutvane.config.ts`.

@@ -4,7 +4,7 @@
  *
  * **Why.** Before 1.0 every Strutvane package is published under a prerelease dist-tag (`next`),
  * while `latest` still points at the name placeholder (`0.0.0-reserved.0`). A bare
- * `pnpm add @strutvane/auth` resolves `latest` and installs the placeholder, so every install
+ * `npm install @strutvane/auth` resolves `latest` and installs the placeholder, so every install
  * this CLI runs or suggests must name the channel the CLI itself was released on. A pinned
  * version would not do: the packages live in different repositories and are versioned
  * independently, so the CLI's version may not exist for another package. The channel is what all

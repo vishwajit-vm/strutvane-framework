@@ -1,6 +1,6 @@
 /**
  * Standard Schema v1 interface (https://standardschema.dev), copied as the spec intends so that
- * `@strutvane/contracts` keeps zero runtime dependencies. Any compliant validator (Zod, Valibot,
+ * The contracts keep zero runtime dependencies. Any compliant validator (Zod, Valibot,
  * ArkType, …) satisfies {@link StandardSchemaV1} structurally, without importing this package.
  *
  * The upstream spec uses a TypeScript namespace; it is flattened here into plain interfaces to

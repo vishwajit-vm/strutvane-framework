@@ -36,7 +36,7 @@ export interface ErrorRegistry {
 /** One case per code: `csrf_token_mismatch` or `NOT_FOUND`, never `Not_Found`. */
 const CODE = /^(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9_]*)$/
 
-/** The built-in codes from `@strutvane/contracts` (RFC-0002 and RFC-0003). */
+/** The built-in codes from the framework's contracts (RFC-0002 and RFC-0003). */
 export const BUILTIN_ERRORS: readonly ErrorDefinition[] = Object.freeze(
   (
     [
@@ -63,7 +63,7 @@ export const BUILTIN_ERRORS: readonly ErrorDefinition[] = Object.freeze(
       ['SCAN_UNAVAILABLE', 503, 'File scanning temporarily unavailable'],
     ] as const satisfies readonly (readonly [ProblemCode, number, string])[]
   ).map(([code, status, title]) =>
-    Object.freeze({ code, status, title, owner: '@strutvane/core' }),
+    Object.freeze({ code, status, title, owner: '@strutvane/framework' }),
   ),
 )
 

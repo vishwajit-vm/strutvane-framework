@@ -6,7 +6,7 @@
  *   any dependency field) is kept and reported. The developer's choice wins.
  * - **Refuses local-only specs** (`link:`, `file:`, `workspace:`, paths). They work on one machine
  *   and break everyone else's install (ADR-0016).
- * - Keys inside each dependency field are sorted, matching what npm/pnpm do, so diffs stay small.
+ * - Keys inside each dependency field are sorted, matching what package managers do, so diffs stay small.
  * - Indentation, line endings and the final newline of the original file are preserved.
  *
  * @module

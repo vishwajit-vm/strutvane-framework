@@ -4,7 +4,7 @@
  * Declare models as fields and types; get migrations, a secured CRUD API with OpenAPI docs and
  * a manifest, tenancy with Postgres row-level security, and storage with safe uploads.
  *
- * Depends only on `@strutvane/core` and `@strutvane/contracts`.
+ * Built on its own kernel and contracts (`/core`, `/contracts`).
  *
  * @packageDocumentation
  */

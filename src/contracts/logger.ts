@@ -1,7 +1,7 @@
 /**
  * The logging contract ([RFC-0004](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0004-logs-package.md)).
  *
- * Every Strutvane package logs through {@link Logger}, never through `console.*`. `@strutvane/core`
+ * Every Strutvane package logs through {@link Logger}, never through `console.*`. `@strutvane/framework/core`
  * provides a minimal default implementation (structured, redacting, stdout), so logging always
  * works; `@strutvane/logs` replaces it with the full one (files, retention, viewer).
  *

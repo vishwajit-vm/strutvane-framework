@@ -202,7 +202,7 @@ export interface HttpAppOptions {
 }
 
 /**
- * The hook payloads live in `@strutvane/contracts` (`http-hooks.ts`) so the framework and the
+ * The hook payloads live in the contracts (`@strutvane/framework/contracts`, `http-hooks.ts`) so the framework and the
  * packages that handle them (auth, logs) compile against one definition. Re-exported here for
  * compatibility with code that imported them from the framework.
  */

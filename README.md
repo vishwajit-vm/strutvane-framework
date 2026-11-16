@@ -192,7 +192,7 @@ handlers may set `actor`/`tenant`, add response `headers` (a refreshed session c
 the request themselves with `response` + `control.stop()` (sign-in routes, the log viewer); such
 answers still get security headers, `X-Request-Id` and `http.onResponse`. The payload types and
 hook names (`HttpRequestHookPayload`, `HttpResponseHookPayload`, `HTTP_HOOKS`) come from
-`@strutvane/contracts` and are re-exported here. `http.onResponse` receives `route`, the matched
+`@strutvane/framework/contracts` and are re-exported here. `http.onResponse` receives `route`, the matched
 route template (`/api/v1/invoices/:id`), or nothing for unmatched requests. Policies get their schema
 from a model with `policySchema(Invoice)` (typed per field, so `row.stage.eq('won')` and `row.amount.lte(100)` type-check and a typo does not compile) (plain data in `@strutvane/auth`'s `ModelSchema` shape).
 

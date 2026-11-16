@@ -106,7 +106,7 @@ export function esmEntry(pkg: Readonly<Record<string, unknown>>): string | undef
 /**
  * The `package.json` of a package installed for the project: Node's `node_modules` lookup from
  * the project root up through its parents (a workspace root may hold it), and nothing else.
- * Global folders (`NODE_PATH`, which `pnpm exec` points at its own store) are deliberately not
+ * Global folders (`NODE_PATH`, which some package managers point at their own store) are deliberately not
  * searched: they could hand back some other tool's copy. Symlinked installs (pnpm) count, since
  * the link lives in the project's `node_modules`.
  */
