@@ -147,6 +147,7 @@
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.1.0",
     "fast-check": "4.10.2",
+    "mysql2": "3.24.6",
     "pg": "8.23.1",
     "tsdown": "0.23.7",
     "typescript": "6.0.3",
