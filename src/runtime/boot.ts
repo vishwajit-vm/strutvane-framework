@@ -4,7 +4,7 @@
  *
  * @module
  */
-import { type Application, createApp } from '../core/index.ts'
+import { type Application, createApp, EnvValidationError } from '../core/index.ts'
 import { createHttpApp, type HttpApp } from '../http/create-http-app.ts'
 import type { CsrfOptions } from '../http/csrf.ts'
 import type { TrustProxy } from '../http/proxy.ts'
@@ -12,6 +12,7 @@ import type { ResourceConfig } from '../http/resource.ts'
 import type { AnyModel } from '../model/define-model.ts'
 import { ProjectModelsToken, ProjectSignedFilesToken } from '../tokens.ts'
 import { firstAppEnv, processAppEnv } from './app-env.ts'
+import { validateBootSettings } from './boot-validation.ts'
 import type { LoadedProject } from './project.ts'
 
 /** A booted project. */
@@ -121,6 +122,9 @@ export async function bootProject(
   const session = project.config['session'] as SessionConfig | undefined
   // Trimmed, lowercased, empty = unset; the CLI's guard reads APP_ENV the same way.
   const env = firstAppEnv(options.env, appConfig?.env, processAppEnv()) ?? 'production'
+  // Before anything boots: a malformed setting is a configuration error (exit 3) naming the key.
+  const problems = validateBootSettings(project)
+  if (problems.length > 0) throw new EnvValidationError(problems)
   const app = createApp({ config: project.config, providers: project.providers })
   app.container.value(ProjectModelsToken, project.models)
   // One guarded block (kernel and resilience audits both fixed this): a failed or timed-out boot,
