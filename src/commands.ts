@@ -30,7 +30,7 @@ import {
 import { importDefault, type LoadedProject, loadProject } from './runtime/project.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
 import { assertCanListen } from './runtime/serve.ts'
-import { exitCodeForStop, startServer, stopOnSignals } from './runtime/server.ts'
+import { exitCodeForStop, startedEnv, startProject, stopOnSignals } from './runtime/server.ts'
 
 /** The parts of the CLI's command context these commands use. */
 export interface CommandContextLike {
@@ -339,13 +339,13 @@ const startCommand: ContributedCommand = {
     const port = str(ctx.flags['port'])
     const host = str(ctx.flags['host'])
     const appEnv = commandAppEnv(ctx)
-    const started = await startServer({
+    const started = await startProject({
       root,
       ...(appEnv !== undefined ? { env: appEnv } : {}),
       ...(port ? { port: Number(port) } : {}),
       ...(host ? { hostname: host } : {}),
     })
-    ctx.out.success(`Listening on ${started.server.url} (APP_ENV=${started.project.env})`)
+    ctx.out.success(`Listening on ${started.server.url} (APP_ENV=${startedEnv(started)})`)
     // Keep the signal's exit code (143 for SIGTERM, ADR-0015), so a process manager can tell a
     // requested stop from a crash; Ctrl+C is reported as 130 by the CLI itself.
     const reason = await stopOnSignals(started)

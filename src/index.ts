@@ -365,7 +365,15 @@ export {
   type ServeOptions,
   serve,
 } from './runtime/serve.ts'
-export { type StartedServer, type StartServerOptions, startServer } from './runtime/server.ts'
+export {
+  type StartApplicationOptions,
+  type StartedApplication,
+  type StartedServer,
+  type StartServerOptions,
+  startApplication,
+  startProject,
+  startServer,
+} from './runtime/server.ts'
 // Schema and migrations
 export {
   compilePg,

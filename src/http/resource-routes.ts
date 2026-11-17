@@ -79,6 +79,8 @@ export interface RequestState {
  */
 export interface HttpBindings {
   readonly clientAddress?: string | undefined
+  /** The TCP peer address (this package's `serve`), never from headers. */
+  readonly ip?: string | undefined
   readonly incoming?: { readonly socket?: { readonly remoteAddress?: string | undefined } }
 }
 

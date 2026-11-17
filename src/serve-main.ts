@@ -6,11 +6,11 @@
  * @module
  */
 import { ServerListenError } from './runtime/serve.ts'
-import { startServer, stopOnSignals } from './runtime/server.ts'
+import { startProject, stopOnSignals } from './runtime/server.ts'
 
 const [root = process.cwd(), port, hostname] = process.argv.slice(2)
 try {
-  const started = await startServer({
+  const started = await startProject({
     root,
     // The dev UI comes from the project's Vite (same port, HMR); a stale dist/web from an
     // earlier build must not shadow it.

@@ -13,6 +13,16 @@ import { BootError } from './boot-error.ts'
 const CANDIDATES = ['app.ts', 'app.mts', 'app.js', 'app.mjs']
 
 /**
+ * `true` when `root` holds an application (`bootstrap/app.ts`, or its built `.js`).
+ *
+ * @example
+ * hasBootstrapApp('/srv/blog') // true
+ */
+export function hasBootstrapApp(root: string): boolean {
+  return CANDIDATES.some((name) => existsSync(join(root, 'bootstrap', name)))
+}
+
+/**
  * Import `<root>/bootstrap/app.ts` and return its default export. Throws a friendly `BootError`
  * when the file is missing or doesn't export an application. The app is not booted.
  *

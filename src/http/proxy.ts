@@ -154,7 +154,7 @@ export interface ForwardedClient {
  */
 export function forwardedClient(
   peer: string | undefined,
-  request: Request,
+  request: ForwardedRequest,
   proxies: ResolvedProxies,
 ): ForwardedClient {
   const url = new URL(request.url)
@@ -164,9 +164,7 @@ export function forwardedClient(
     secure: url.protocol === 'https:',
     host: url.hostname.toLowerCase(),
   }
-  const trusted =
-    proxies.hops > 0 || (peerIp !== undefined && isTrustedPeer(peerIp, proxies.ranges))
-  if (!trusted) return direct
+  if (!isTrustedProxy(peer, proxies)) return direct
   const headers = request.headers
   const reads = (name: ForwardedHeader): boolean => proxies.headers.includes(name)
   const proto = reads('proto')
@@ -186,6 +184,32 @@ export function forwardedClient(
     secure: proto === 'https' ? true : proto === 'http' ? false : direct.secure,
     host: host ?? direct.host,
   }
+}
+
+/**
+ * What {@link forwardedClient} reads from a request: its URL and headers. A `Request` fits; the Node
+ * adapter passes a view of the raw Node request instead of building one.
+ *
+ * @example
+ * const view: ForwardedRequest = { url: 'http://127.0.0.1:3000/', headers: new Headers() }
+ */
+export interface ForwardedRequest {
+  readonly url: string
+  readonly headers: { get(name: string): string | null }
+}
+
+/**
+ * `true` when the peer's `X-Forwarded-*` headers may be believed: always in the hop-count model
+ * (`trustProxy: true` or a number), and for a peer inside one of the listed ranges otherwise.
+ *
+ * @example
+ * isTrustedProxy('10.0.0.5', resolveTrustProxy(['10.0.0.0/8'])) // true
+ * isTrustedProxy('203.0.113.7', resolveTrustProxy(['10.0.0.0/8'])) // false
+ */
+export function isTrustedProxy(peer: string | undefined, proxies: ResolvedProxies): boolean {
+  if (proxies.hops > 0) return true
+  const peerIp = peer === undefined ? undefined : canonicalIp(peer)
+  return peerIp !== undefined && isTrustedPeer(peerIp, proxies.ranges)
 }
 
 function isTrustedPeer(address: string, ranges: readonly Cidr[]): boolean {

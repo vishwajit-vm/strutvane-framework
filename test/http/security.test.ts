@@ -516,15 +516,31 @@ describe('client address, proxies and request ids', () => {
     expect(plain.headers.get('x-request-id')).not.toBe('req-12345678')
     expect(plain.headers.get('strict-transport-security')).toBeNull()
     await t.close()
-    await boot({ trustProxy: true })
+    // HSTS is production-only (a local https dev server must not pin the browser to HTTPS).
+    await boot({ trustProxy: true, env: 'production' })
     const proxied = await t.http.request('/health', { headers: spoof })
     expect(proxied.headers.get('x-request-id')).toBe('req-12345678')
     expect(proxied.headers.get('strict-transport-security')).toContain('max-age=')
     await t.close()
-    await boot({ publicUrl: 'https://app.example.test' })
+    await boot({ publicUrl: 'https://app.example.test', env: 'production' })
     expect((await t.http.request('/health')).headers.get('strict-transport-security')).toContain(
       'max-age=',
     )
+    await t.close()
+    await boot({ publicUrl: 'https://app.example.test', env: 'local' })
+    expect((await t.http.request('/health')).headers.get('strict-transport-security')).toBeNull()
+  })
+
+  it('trustProxy as a list of proxies: only a listed peer may forward (it never throws)', async () => {
+    const spoof = { 'x-request-id': 'req-12345678', 'x-forwarded-for': '198.51.100.4' }
+    await boot({ trustProxy: ['10.0.0.0/8'] })
+    const fromProxy = await t.http.request('/health', { headers: spoof }, { ip: '10.1.2.3' })
+    expect(fromProxy.headers.get('x-request-id')).toBe('req-12345678')
+    const direct = await t.http.request('/health', { headers: spoof }, { ip: '203.0.113.9' })
+    expect(direct.headers.get('x-request-id')).not.toBe('req-12345678')
+    expect(seen).toEqual(['198.51.100.4', '203.0.113.9'])
+    await t.close()
+    await expect(boot({ trustProxy: ['*'] })).rejects.toThrow(/never "*"/)
   })
 
   it('http.onResponse gets the route template, never a raw unmatched path', async () => {
