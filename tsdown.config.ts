@@ -14,6 +14,7 @@ export default defineConfig({
     'devkit/index': 'src/devkit/index.ts',
     'console/index': 'src/console/index.ts',
     'console/bin': 'src/console/bin.ts',
+    'facades/index': 'src/facades/index.ts',
   },
   format: 'esm',
   platform: 'node',

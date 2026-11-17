@@ -19,13 +19,12 @@ export {
   type WriteChange,
   type WriteContext,
 } from '../http/resource.ts'
-export {
-  type RouteContext,
-  type RouteDefinition,
-  type RouteHandler,
-  type RouteMethod,
-  type RouteOptions,
-  route,
+export type {
+  RouteContext,
+  RouteDefinition,
+  RouteHandler,
+  RouteMethod,
+  RouteOptions,
 } from '../http/route.ts'
 export {
   DEFAULT_SESSION_COOKIE,
@@ -34,3 +33,5 @@ export {
   sessionCookieName,
   XSRF_COOKIE,
 } from '../http/session-cookie.ts'
+// The callable route() URL helper; it keeps the v1 route.get/post/… builders (deprecated).
+export { type RouteHelper, route } from '../routing/route-helper.ts'

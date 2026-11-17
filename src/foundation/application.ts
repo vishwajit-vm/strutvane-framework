@@ -48,7 +48,6 @@ import type { DeepReadonly } from '../core/config.ts'
 import type { Container, Token } from '../core/container.ts'
 import { runWithContext } from '../core/context.ts'
 import { NotFoundError, StrutvaneError } from '../core/errors/errors.ts'
-import { defineMessages } from '../core/messages/catalog.ts'
 import { negotiateLocale } from '../core/messages/locale.ts'
 import {
   ClockToken,
@@ -61,7 +60,6 @@ import {
 } from '../core/tokens.ts'
 import { ExceptionHandler, ExceptionsConfig } from '../exceptions/handler.ts'
 import { ExceptionHandlerToken } from '../exceptions/report.ts'
-import { APP_ERRORS, APP_MESSAGES_EN } from '../http/app/catalog.ts'
 import { type HttpContext as Ctx, HttpContext, runWithHttpContext } from '../http/app/context.ts'
 import { cspReportRoutes } from '../http/app/csp-report.ts'
 import { checkCsrf } from '../http/app/csrf.ts'
@@ -105,7 +103,7 @@ import {
   sessionCookieName,
 } from '../http/session-cookie.ts'
 import { checkMaintenance } from '../maintenance/maintenance.ts'
-import { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from '../messages.ts'
+import { applicationMessages, registerApplicationErrors } from '../messages.ts'
 import {
   defineRoutes,
   Route,
@@ -124,7 +122,6 @@ import {
 } from '../routing/router.ts'
 import { UrlGenerator, UrlGeneratorToken } from '../routing/url.ts'
 import { checkBootGuards } from '../security/boot-guards.ts'
-import { SECURITY_ERRORS, SECURITY_MESSAGES_EN } from '../security/catalog.ts'
 import { Encrypter, EncrypterToken } from '../security/encrypter.ts'
 import { HttpClient, HttpClientToken } from '../security/http.ts'
 import { inCidr, parseIp } from '../security/ip.ts'
@@ -714,12 +711,8 @@ export class Application implements CoreApplication<object> {
     })
     container.value(SecurityToken, security)
     const errors = container.make(ErrorRegistryToken)
-    for (const definition of [...FRAMEWORK_ERRORS, ...SECURITY_ERRORS, ...APP_ERRORS])
-      if (errors.get(definition.code) === undefined) errors.register(definition)
-    const messages = withFrameworkMessages(container.make(MessagesToken), [
-      FRAMEWORK_MESSAGES_EN,
-      defineMessages('en', { ...SECURITY_MESSAGES_EN, ...APP_MESSAGES_EN }),
-    ])
+    registerApplicationErrors(errors)
+    const messages = applicationMessages(container.make(MessagesToken))
     const renderer = new ExceptionHandler(this.#exceptions, {
       showDetails,
       environment,

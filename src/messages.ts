@@ -5,6 +5,8 @@
  *
  * @module
  */
+
+import { CACHE_ERRORS, CACHE_MESSAGES_EN } from './cache/catalog.ts'
 import {
   defineMessages,
   type ErrorDefinition,
@@ -14,6 +16,9 @@ import {
   type MessageLookup,
   type Messages,
 } from './core/index.ts'
+import { APP_ERRORS, APP_MESSAGES_EN } from './http/app/catalog.ts'
+import { MAINTENANCE_ERRORS, MAINTENANCE_MESSAGES_EN } from './maintenance/catalog.ts'
+import { SECURITY_ERRORS, SECURITY_MESSAGES_EN } from './security/catalog.ts'
 
 /** English messages for the framework's issue and problem codes. */
 export const FRAMEWORK_MESSAGES_EN: MessageCatalog = defineMessages('en', {
@@ -93,6 +98,58 @@ export const FRAMEWORK_ERRORS: readonly ErrorDefinition[] = Object.freeze(
 export function registerFrameworkErrors(registry: ErrorRegistry): void {
   for (const definition of FRAMEWORK_ERRORS)
     if (!registry.get(definition.code)) registry.register(definition)
+}
+
+/**
+ * The extra codes of an application (`bootstrap/app.ts`): the security kit, the HTTP kernel,
+ * maintenance mode and the cache. Kept apart from {@link FRAMEWORK_ERRORS} so a v1
+ * `createHttpApp` project registers only the codes it can return.
+ *
+ * @example
+ * APPLICATION_ERRORS.map((definition) => definition.code) // ['invalid_signature', …, 'maintenance_mode', 'cache_unavailable']
+ */
+export const APPLICATION_ERRORS: readonly ErrorDefinition[] = Object.freeze([
+  ...SECURITY_ERRORS,
+  ...APP_ERRORS,
+  ...MAINTENANCE_ERRORS,
+  ...CACHE_ERRORS,
+])
+
+/**
+ * English messages for {@link APPLICATION_ERRORS}, plus the application's friendlier wording of a
+ * few validation messages (it wins over {@link FRAMEWORK_MESSAGES_EN} for an application).
+ *
+ * @example
+ * APPLICATION_MESSAGES_EN.messages['errors.maintenance_mode.title'] // 'Down for maintenance'
+ */
+export const APPLICATION_MESSAGES_EN: MessageCatalog = defineMessages('en', {
+  ...SECURITY_MESSAGES_EN,
+  ...APP_MESSAGES_EN,
+  ...MAINTENANCE_MESSAGES_EN,
+  ...CACHE_MESSAGES_EN,
+})
+
+/**
+ * Register every code an application can return (framework + application codes), skipping codes a
+ * package already registered.
+ *
+ * @example
+ * registerApplicationErrors(app.make(ErrorRegistryToken))
+ */
+export function registerApplicationErrors(registry: ErrorRegistry): void {
+  for (const definition of [...FRAMEWORK_ERRORS, ...APPLICATION_ERRORS])
+    if (registry.get(definition.code) === undefined) registry.register(definition)
+}
+
+/**
+ * An application's messages: the app's own catalogs first, then the application catalog, then the
+ * framework catalog.
+ *
+ * @example
+ * const messages = applicationMessages(app.make(MessagesToken))
+ */
+export function applicationMessages(messages: Messages): Messages {
+  return withFrameworkMessages(messages, [FRAMEWORK_MESSAGES_EN, APPLICATION_MESSAGES_EN])
 }
 
 /**
