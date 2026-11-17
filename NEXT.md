@@ -2,98 +2,82 @@
 
 Working notes for the spike 12 port (MVC app core + Laravel-style commands). Delete before merge.
 
-## Overall state (paused 2026-11-16, coordinator)
-- Lint is clean. `tsc` has ONE error, in `test/commands/caches.test.ts:135` (a `RouteList<unknown>` that is
-  assigned to a typed list; fix the fixture's type). The full gate (`npm run ci`) has NOT been run on this
-  branch. Last green targeted runs: test/http + storage + security + runtime + core (704 tests),
-  test/app + routing + foundation (190), test/exceptions (45), test/facades (10), test/console (380).
-- Baseline on main before the port: 1465 passed, 1 failed (`test/runtime/serve-lifecycle.test.ts`
-  "a request that outlives the grace period is cut off": a load-sensitive timing test, flaky under load;
-  it must be made deterministic for the "3 green runs under load" gate).
-- Not started: the lowercase error-code migration (#123) and the issue `field` member (#69); wiring the
-  APP_/SECURITY_/MAINTENANCE_/CACHE_ catalogs into `src/messages.ts` (Application registers APP_ and
-  SECURITY_ itself for now); `src/index.ts` exports + `./facades` subpath; `route` swap to
-  `routing/route-helper.ts` in `src/index.ts`; the Node adapter (`src/runtime/serve.ts`) passing
-  `{ ip, waitUntil }` and booting `bootstrap/app.ts`; `createHttpApp`/`serve.ts` switching to
-  `resolveTrustProxy` (list-form `trustProxy` throws in `trustedHops` today); the CLI changes listed in
-  the commands section; the minor changeset (#128); docs/README; R1/R5 checks; the gate 3 times.
-- Decisions for the lead: generated apps must not set `isolatedDeclarations` (typed route()/config() need
-  `typeof web`); `route:list` is the app command and `routes` stays for strutvane.config.ts projects;
-  HSTS is now production-only in `securityHeaders()` once `createHttpApp` passes `environment`;
-  an unsafe request with a session cookie to an unknown path answers 419 (CSRF runs before routing).
+## State (2026-11-17, agent session; numbers are *(agent-reported)* until the coordinator re-runs them)
+Every item of the paused plan is done; the branch is ready for the coordinator's verification
+and the merge with `v2/data-layer`.
 
-## Done (tests green: tsc clean, biome clean, test/http + storage + security + runtime + core + app + routing + foundation pass)
-- Foundation: `BootError`, class injection over the core container, current-application context,
-  `Application.configure()…create()` (bootstrap/app.ts), typed config/env, providers (objects and
-  classes), helpers (`route`, `config`, `app`, `now`, `redirect`), registries, navigation, listener
-  discovery, bootstrap caches, `loadApplication(root)`.
-- Routing: `Route.*`, callback route files and groups (#46, #106), resource/apiResource, singleton,
-  shallow, fallback, `_method` spoofing (POST only), typed `route()`, `url.signedRoute()` /
-  `temporarySignedRoute()` (#52, #65), `/up` (#45).
-- HTTP kernel (`src/http/app/`): HttpContext, middleware in every style (#16, #106), protections
-  (csrf, auth, can, throttle, signed, idempotent) reusing the fix-pass CSRF/hosts/idempotency,
-  policies with auto-discovery (#73), defer/terminable middleware, ResourceController over a
-  `ResourceModel` interface, FormRequest, test client.
-- Security kit (`src/security/`): keyring with `derive(purpose)` + `APP_PREVIOUS_KEYS` (#66), one
-  signer (#64), AES-GCM with full 16-byte tags, CSP-nonce security headers, trusted proxies (CIDR),
-  SSRF-safe `HttpClient` with `fake()`, CORS, redirect guard, boot guards, settings.
+- Gate (`npm run ci`: lint, typecheck, tests + coverage 90/90/85/90, build), 3 runs in a row while
+  a CPU burner kept 8 of 16 cores busy: 
+  - run 1: tests all passed, but exit 1: 5 test files never started (vitest "Timeout waiting for
+    worker to respond", 60 s worker start under the overload; cold transform cache). No test failed.
+  - runs 2, 3, 4 (in a row): exit 0, 1,987 passed, 14 skipped (2,001), 0 type errors; coverage
+    97.03 / 91.8 / 97.04 / 97.87 (statements / branches / functions / lines). Build OK.
+  - If the "under load" gate must survive heavier load than this, cap `maxWorkers` in
+    vitest.config.ts (not done: data-layer also edits that file).
+- R1/R5 (agent-run): `check-code-rules.mjs` OK, `check-deps.mjs` OK, `check-package.mjs` OK (162 files),
+  publint 0.3.25 `--strict` All good, attw 0.18.5 `--profile esm-only` exit 0 (node16-ESM and bundler green on every subpath, incl. `./facades`),
+  `npm audit --omit=dev --audit-level=high` exit 0 (4 moderate, all through drizzle-kit's esbuild).
 
-## Next
-1. Commands: optimize, config/route/event cache+clear, event:list, cache:clear/forget, key:rotate,
-   env:encrypt/decrypt, down/up (all options) + maintenance stage, session:flush, security:check,
-   route:list --security, make:command/rule/observer, list. All text says `node strut` (#127).
-2. Exception handler + dev error page ("Copy as Markdown for AI"); swap into `Application`.
-3. Facades (#47, #80) resolved from the current app container; unbuilt ones throw "coming in 0.3".
-4. Error codes to lowercase snake_case with a one-minor compatibility window (#123); issue shape
-   `{ path, field, code, message }` (#69).
-5. Wire catalogs into `src/messages.ts`, exports in `src/index.ts`, Node adapter passes `{ ip, waitUntil }`.
-6. Minor changeset (#128), docs, full gate 3x, R1/R5 checks.
+## Done (commits on this branch since ef3ab03)
+1. tsc fixture in `test/commands/caches.test.ts` (the helpers' `web` option takes any routes source).
+2. Command tests: `test/commands/{maintenance,keys,cache-store,security,make,cli}.test.ts`
+   (down/up with every option, 9 hostile `--redirect` values, `--render` checks, corrupt state,
+   another Node process reading the state; key rotation keeps old ciphertexts and signed links;
+   env crypt round trip, wrong key, flipped byte, 4/8/12-byte tags; file cache with 4 processes
+   incrementing one key, lock takeover/timeout; `security:check` incl. `--audit` via a fake
+   spawner; `route:list --security`; `make:*` outputs type-checked with tsc).
+3. Lowercase error codes (#123) across src/test/README with `core/errors/legacy-codes.ts`
+   (`LEGACY_ERROR_CODES`, `currentErrorCode`; StrutvaneError and the registry map old names with a
+   one-time `DeprecationWarning`, code `STRUTVANE_UPPERCASE_ERROR_CODE`); issue `field` member (#69).
+   Type tests: `test/core/error-codes.test-d.ts`, `test/contracts/v01-types.test-d.ts`.
+4. `src/messages.ts` owns the application catalogs (`APPLICATION_ERRORS`, `APPLICATION_MESSAGES_EN`,
+   `registerApplicationErrors`, `applicationMessages`); `src/index.ts` exports the app core;
+   `./facades` subpath (package.json + tsdown); `route` = `routing/route-helper.ts` (index and /http).
+5. `serve.ts` passes `{ ip, waitUntil }` (close waits for waitUntil work); `startApplication()` /
+   `startProject()` boot `bootstrap/app.ts` for `node strut start`/`dev`; `resolveTrustProxy` in
+   `serve.ts` and `createHttpApp` (list form works, `'*'` refused at boot); HSTS production-only.
+6. CLI: app roots are projects (`APP_MARKERS`, `isAppRoot` in `console/project/project.ts`; no
+   package.json needed), app `withCommands()` merged into the CLI, `list` with `help` as alias,
+   BootError mapped in `toFailure`, `sv` → `node strut` in CLI text, help, templates and goldens.
+7. `serve-lifecycle.test.ts` "outlives the grace period": injected grace timer
+   (`ServeOptions.timer`), now also proves the request is alive until the deadline.
+8. Changeset `.changeset/v2-app-core.md` (minor, #128); README "The application core (v2)" and
+   "Upgrading to 0.2: lowercase error codes".
 
-## Exceptions + facades (WIP, paused 2026-11-16)
-- Done: `src/exceptions/` (ExceptionsConfig: dontReport, report/render global or per class,
-  shouldRenderJsonWhen, throttle; ExceptionHandler; debug page + "Copy as Markdown for AI" +
-  JSON `debug` member, redaction, app-only frames, nonce CSP; `report()` + ExceptionHandlerToken),
-  wired into `Application` (temporary renderer removed from `http/app/errors.ts`; routed ctx is now
-  the current HttpContext). `src/facades/` (Log, Cache, DB, Route, Storage, Http, Event, Crypt, Url;
-  Mail/Queue/Bus/Notification/Hash throw `facade_not_available`). Tests: test/exceptions (45),
-  test/facades (10 + type tests); test/app green after one test asked for JSON explicitly.
-- Half-done: last `npx biome check` on these paths reported an error not yet inspected (re-run
-  `npx biome check src/exceptions src/facades test/exceptions test/facades`); last edits (debug-page
-  fail-closed fallback + its test) not re-run; coverage of src/exceptions + src/facades not measured.
-- Next: fix lint, run test/exceptions test/facades test/app, measure coverage; export from
-  `src/index.ts` (exceptions) and add a `./facades` subpath (Route facade must not shadow the
-  routing `Route` builder); no new catalog codes (500s use core INTERNAL_ERROR).
+## For the merge with v2/data-layer (coordinator)
+- Expected conflicts: `src/commands.ts` (start uses `startProject`/`startedEnv`), `package.json`
+  (`./facades` export), `tsdown.config.ts` (`facades/index` entry), `src/index.ts`, NEXT.md.
+- data-layer adds `'INVALID_ARGUMENT'` in its make.ts diff: rename it to `invalid_argument`.
+- Still saying `sv` (left alone to avoid conflicts; data-layer owns them): `src/commands.ts`,
+  `src/console/commands/make.ts`, `src/runtime/seeders.ts`, `src/runtime/migrations.ts`,
+  `src/migrations/*`. Run `grep -rnE "(^|[\` '\"(])sv [a-z]" src` after the merge.
+- Re-run the codemod check after merging: `grep -rnE "['\"][A-Z]+(_[A-Z0-9]+)+['\"]" src` should
+  list only env variable names and the legacy table.
 
-## Commands, maintenance, cache and session stores (WIP, paused 2026-11-16)
-- Committed in c22065b (swept into the exceptions commit through the shared index; all files are mine
-  except src/exceptions, src/facades, src/http/app/errors.ts and their tests).
-- Done (tsc + biome clean on these paths, test/console still green, 380 tests):
-  - `src/maintenance/` (state.ts: stat-cached state file, corrupt = down, fields re-checked;
-    maintenance.ts: `checkMaintenance` bound as default `MaintenanceCheckToken`, secret HMAC under
-    `derive('maintenance')`, bypass cookie bound to the secret, verified with every key, /up open;
-    page.ts: `--render` path checks; catalog.ts: `maintenance_mode` 503).
-  - `src/cache/` (file-lock.ts O_EXCL per-key lock with stale takeover + 503 `cache_unavailable`;
-    file-store.ts; store.ts `createCacheManager` from config/cache.ts, bound as default
-    `CacheManagerToken`; catalog.ts). `src/session/file-store.ts` bound as default `SessionStoreToken`.
-  - `src/support/env-file.ts`; `src/console/commands/app/*` spread into BUILTIN_COMMANDS as
-    `APP_COMMANDS` (optimize, optimize:clear, config/route/event cache+clear, event:list,
-    cache:clear/forget, key:rotate, env:encrypt/decrypt, down/up, session:flush, security:check
-    [--audit], route:list [--security], make:command/rule/observer); `--force-debug` is a per-command
-    flag on booting commands; key:generate finds v2 apps and says `node strut`.
-- Half-done: tests. Only test/commands/helpers.ts + caches.test.ts are written and NOT run yet.
-- Next:
-  1. Run `npx vitest run test/commands --coverage.enabled=false`, fix.
-  2. Write test/commands/{cache-store,keys,maintenance,security,make}.test.ts (port spike 12
-     commands.test.ts: env crypt round trip/wrong key/4-8-12 byte tags, key rotation keeps old
-     ciphertexts + signed links, down retry/refresh, /up, bypass cookie, 9 hostile --redirect values,
-     --render checks, corrupt state, real multi-process down/up via `writeRealApp` + spawned
-     `node -e "import main…"`, cross-process file-cache increment, session:flush, security:check
-     pass/production failures/refused boot/--audit with fakeSpawner, make:* outputs compile with tsc).
-  3. Coverage of my files (aim 95/90).
-- Needs a decision / files I don't own:
-  - `src/console/project/project.ts` findProjectRoot: also accept `bootstrap/app.ts`/`strut.js` as a
-    project marker, else v2 apps get no `.env` APP_ENV for the production guard.
-  - `src/console/framework/run.ts`: `words[0] === 'help' || words[0] === 'list'` (CONSISTENCY #13).
-  - `src/console/framework/errors.ts` toFailure: handle BootError (code, message, hint); my
-    `defineAppCommand` converts it meanwhile. CLI catalog/help still say `sv` (#127).
-  - Wire MAINTENANCE_/CACHE_ catalogs into src/messages.ts; merge `app.commands` into the CLI.
+## Decisions for the lead
+- Error codes: the compat window maps old names in `StrutvaneError` and the registry, and
+  `LEGACY_ERROR_CODES` covers HTTP, CLI, devkit, container and DSL codes. Message-catalog keys are
+  NOT mapped (`errors.NOT_FOUND.title` overrides stop applying); the framework is unreleased, so
+  no app should have them. auth/ui (main) still compare uppercase codes (e.g. `'VALIDATION_FAILED'`
+  44× in auth, `'NOT_FOUND'` in ui): their v2 branches must switch before the 0.2 train.
+- `ValidationIssue.field` is required in the contract type (an add-on that builds issues by hand
+  must add it); RFC-0003 in the hub needs the matching update (`field`, lowercase codes).
+- HSTS is production-only in `createHttpApp` too (was: any HTTPS request).
+- An app's own commands (`withCommands`) are read without booting; commands a provider adds in
+  `register()` are not in the CLI yet (would need a boot per CLI call).
+- `node strut start` on an app does not pass `trustProxy`/`publicUrl` to the adapter: the app
+  applies its own `trustProxies()` from `withMiddleware` to the socket peer.
+- Earlier, still open: generated apps must not set `isolatedDeclarations`; `route:list` (apps) and
+  `routes` (strutvane.config.ts projects) both stay; an unsafe request with a session cookie to an
+  unknown path answers 419 (CSRF runs before routing).
+
+## How to verify
+```bash
+npm ci
+npm run ci                                  # 3x; also under load
+node .github/scripts/check-code-rules.mjs && node .github/scripts/check-deps.mjs
+npm pack --pack-destination ../pack && node .github/scripts/check-package.mjs
+npm exec --yes --package=publint@0.3.25 -- publint run ../pack/*.tgz --strict
+npm exec --yes --package=@arethetypeswrong/cli@0.18.5 -- attw ../pack/*.tgz --profile esm-only
+npm audit --omit=dev --audit-level=high
+```
