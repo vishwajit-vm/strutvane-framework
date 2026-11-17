@@ -1,6 +1,6 @@
 {
   "name": "@strutvane/framework",
-  "version": "0.1.0-next.1",
+  "version": "0.2.0-next.0",
   "description": "The Strutvane backend and database core: model DSL, migrations, data access with tenant isolation, an automatic CRUD API with OpenAPI, storage and uploads, and testing helpers, plus the kernel (core), shared contracts, the CLI (console) and the installer/generator SDK (devkit).",
   "keywords": [
     "strutvane",

@@ -1,5 +1,83 @@
 # @strutvane/framework
 
+## 0.2.0-next.0
+
+### Minor Changes
+
+- 9fbd206: The v2 application core (Laravel's flow): `Application.configure({ basePath }).withRouting().withMiddleware().withExceptions().withCommands().create()` in `bootstrap/app.ts`, routing (`Route`, `defineRoutes`, resources, signed URLs, a typed callable `route()`), the HTTP kernel with middleware and protections, form requests, the exception handler and dev error page, the security kit (keyring with `APP_PREVIOUS_KEYS`, one URL signer, AES-GCM, SSRF-safe `HttpClient`, CORS, CSP nonces), maintenance mode, the cache (`memory`, `file`) and session stores, facades on the new `@strutvane/framework/facades` subpath, and the app commands (`optimize`, `config:cache`, `route:cache`, `event:cache`, `route:list --security`, `key:rotate`, `env:encrypt`/`env:decrypt`, `down`/`up`, `cache:clear`, `session:flush`, `security:check`, `make:command`/`make:rule`/`make:observer`).
+  
+  `node strut start`/`dev` serve `bootstrap/app.ts` (booted before the port opens); the Node adapter passes the socket peer and `waitUntil`; `trustProxy` accepts a list of proxy addresses or CIDR ranges; HSTS is sent in production only; `node strut list` is the listing command (`help` is an alias); every message says `node strut`.
+  
+  **Breaking (pre-1.0, CONSISTENCY #123):** every error code is now lowercase `snake_case` (`NOT_FOUND` → `not_found`, `VALIDATION_FAILED` → `validation_failed`, CLI and devkit codes alike). The old names keep working through 0.2 with a `DeprecationWarning`; `LEGACY_ERROR_CODES` lists every rename. Validation issues gain a `field` member with the dotted path (CONSISTENCY #69).
+- 2943aaa: The v2 data layer: migration-first schema and Strutvane's own ORM (blueprint §2.3, §2.4, §4).
+  
+  **Migrations are the source of truth.** `database/migrations/*.ts` use Laravel's Schema builder
+  from the new `@strutvane/framework/schema` entry (`schema.create('posts', (t) => { … })`, with
+  `.secret()`, `.hidden()`, `t.tenant()`, `{ global: true }`, `{ internal: true }`, UUIDv7 keys and
+  tenant-safe composite keys). They are replayed offline, in a sandboxed child process (no secrets,
+  no network, a timeout, symlinks refused), into `.strutvane/types/models.d.ts`,
+  `.strutvane/resources.json`, `.strutvane/schema.json` and per-engine SQL.
+  
+  **The ORM** (`@strutvane/framework/database`): `class Post extends Model('posts', { fillable })`,
+  a typed query builder, relations, casts, scopes, soft deletes, slugs, pagination, transactions
+  with savepoints, the tenant scope, and `wherePolicy()` for ADR-0008 policy filters. It runs on
+  MySQL 8.4+ (the default), MariaDB, PostgreSQL (node-postgres or PGlite) and SQLite (`node:sqlite`).
+  PostgreSQL tables with `t.tenant()` get ADR-0007 row-level security from their migration.
+  
+  **Commands** for migration-first projects: `migrate` (`--pretend`, `--step`, `--seed`, `--force`,
+  `--isolated`), `migrate:status`, `migrate:rollback`, `migrate:reset`, `migrate:refresh`,
+  `migrate:fresh`, `db:seed` (`--class`, `--tenant`, `--force`), `sync`, and `make:migration`
+  (writes the model; `--seeder` adds the seeder and factory). Production needs `--force`.
+  `defineSeeder({ after, run })` and `defineFactory(Model, ({ faker, sequence }) => …)` are new.
+  
+  **Configuration:** `DB_CONNECTION` = `mysql` | `mariadb` | `pgsql` (`postgres` accepted) |
+  `sqlite`, plus `DB_URL`, `DB_SOCKET`, `DB_SSLMODE` and `DB_SSL_CA`. `mysql2` is a new optional
+  peer dependency.
+  
+  **Upgrading from 0.1 (breaking, pre-1.0):**
+  - v1 (`defineModel`) projects keep working: the commands detect them and run the v1 path.
+  - Drizzle-based planning (`planMigration`, `compilePg`, `compileSqlite`, `writeMigration`,
+    `migrateProject`, …) is deprecated and will be removed in 0.3. Move models' columns into
+    migrations, then use `node strut migrate`.
+  - `defineSeeder({ run })` (object form) now receives the migration-first context
+    (`{ db, env, tenantId, faker, call }`); the string form keeps the v1 context.
+  - Tenancy in the ORM is off unless enabled (`config/tenancy.ts`), and a `t.tenant()` table is
+    refused while it is off.
+  - New error codes are lowercase `snake_case`; existing v1 codes are unchanged in this release.
+
+### Patch Changes
+
+- c762578: Security hardening of the v2 data layer (migration replay sandbox and ORM).
+  
+  **Replay sandbox.** The static gate and the child process now resolve relative imports with one
+  shared function that accepts only plain `./`/`../` paths ending in `.ts`. The child loads only
+  the files the gate approved, pinned by SHA-256 and always as ES modules. It checks its own
+  confinement before running anything, empties its global scope to an allowlist, freezes what is
+  left, and runs with frozen intrinsics, a heap cap and no addons. Text from a failing migration is
+  stripped of control characters before it is shown.
+  
+  What may break a migrations folder:
+  - A `package.json` or `node_modules` inside `database/migrations` is refused.
+  - `module`, `exports`, `__dirname`, `__filename`, `import x = require()` and `export =` are refused.
+  - Column sizes are bounded: length 1–65,535, precision 1–65, scale up to the precision.
+  - One migration may record at most 1,000 operations.
+  
+  **ORM.** Columns that the migration marks `.hidden()` or `.secret()`, and columns named like secrets,
+  are hidden from every model without listing them in `hidden`. The secret names are `password`,
+  `*_token`, `*_secret`, `api_key`, `private_key`, `*_access_key`, `recovery_codes` and the like, and
+  they are now shared with the type and metadata generators. A hidden column is never included in:
+  - `toJSON()`
+  - `util.inspect`
+  - request filters, sorts and searches
+  - `cursorPaginate()` sort keys (refused with `cursor_hidden_column`)
+  - "did you mean" hints
+  
+  A secret column in `fillable` must also be listed in `allowSensitive`, otherwise it is refused with
+  `secret_fillable`. The conditions a relation, `whereHas`, an eager load or a cursor adds can no
+  longer be OR-ed away by `orWhere`. Request text for contains/startsWith is capped at 200
+  characters, and `sort()` takes at most 8 columns. `SqlFragment.trusted` is gone: fragments come
+  only from the `sql` tag, and every identifier is checked again when the SQL is rendered.
+
 ## 0.1.0-next.1
 
 ### Minor Changes
