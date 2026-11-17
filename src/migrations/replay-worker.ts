@@ -36,7 +36,8 @@ import { join, parse } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { formatWithOptions } from 'node:util'
 import { SchemaError } from '../schema/errors.ts'
-import { type LoadedMigration, loadMigrations, replayMigrations } from '../schema/replay.ts'
+import { assertMigration } from '../schema/migration.ts'
+import { type LoadedMigration, replayMigrations } from '../schema/replay.ts'
 import {
   isInside,
   type ReplayManifest,
@@ -163,6 +164,12 @@ export interface SandboxRules {
   readonly schemaUrl: string
   /** `file:` URL of every approved file → the SHA-256 the gate saw. */
   readonly approved: ReadonlyMap<string, string>
+  /**
+   * Set once the global scope is locked down. From then on only the schema entry (already loaded)
+   * and approved files resolve or load: no `node:` module and no other framework file, whoever
+   * asks, so a migration that tampers with a web API can't steer the worker's own imports.
+   */
+  locked: boolean
 }
 
 /**
@@ -194,6 +201,7 @@ export function sandboxRules(manifest: ReplayManifest, workerUrl: string): Sandb
     frameworkDir: fileURLToPath(new URL(workerUrl.endsWith('.ts') ? '..' : '.', workerUrl)),
     schemaUrl: schemaEntryUrl(workerUrl),
     approved,
+    locked: false,
   }
 }
 
@@ -236,8 +244,12 @@ export function sandboxResolve(
     if (url !== undefined && rules.approved.has(url)) return { url }
     return refuse(`"${specifier}"`)
   }
-  // The framework's own modules (replay.ts imports each migration by its URL) resolve normally.
-  if (parentUrl !== undefined && isFrameworkFile(filePath(parentUrl), rules)) return 'next'
+  const fromFramework = parentUrl !== undefined && isFrameworkFile(filePath(parentUrl), rules)
+  // The worker imports each migration by its exact, approved URL.
+  if (fromFramework && rules.approved.has(specifier)) return { url: specifier }
+  // Before the lockdown the framework's own modules (the schema entry and what it imports)
+  // resolve normally; after it, nothing else does.
+  if (fromFramework && !rules.locked) return 'next'
   return refuse(`"${specifier}"`)
 }
 
@@ -249,7 +261,9 @@ export function sandboxResolve(
  * checkResolved('file:///app/database/migrations/2026_…_x.ts', rules) // ok when approved
  */
 export function checkResolved(url: string, rules: SandboxRules): void {
-  if (url.startsWith('node:') || rules.approved.has(url)) return
+  if (rules.approved.has(url)) return
+  if (rules.locked) refuse(`"${url}"`)
+  if (url.startsWith('node:')) return
   if (isFrameworkFile(filePath(url), rules)) return
   refuse(`"${url}"`)
 }
@@ -279,7 +293,7 @@ export function sandboxLoad(
       )
     return { source: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
   }
-  if (url.startsWith('node:') || isFrameworkFile(path, rules)) return 'next'
+  if (!rules.locked && (url.startsWith('node:') || isFrameworkFile(path, rules))) return 'next'
   return refuse(`"${url}"`)
 }
 
@@ -383,6 +397,10 @@ export function lockDown(
     writable: false,
     enumerable: false,
   })
+  // What is left is frozen too: `--frozen-intrinsics` covers the language built-ins, not the web
+  // APIs (URL, TextDecoder, EventTarget, timers…), whose prototypes a migration could otherwise
+  // rewrite to steer code that runs after it.
+  for (const key of Reflect.ownKeys(scope)) freezeDeep(Reflect.get(scope, key))
   for (const name of SEALED_PROCESS_METHODS) {
     Object.defineProperty(proc, name, {
       value: () => refuse(`process.${name}`),
@@ -391,6 +409,23 @@ export function lockDown(
     })
   }
   return removed
+}
+
+/**
+ * Freeze a value and, for a class, its prototype. Prototype chains end in other globals (frozen by
+ * their own entry) or in language intrinsics (frozen by `--frozen-intrinsics`).
+ *
+ * @example
+ * freezeDeep(URL) // URL and URL.prototype can no longer change
+ */
+export function freezeDeep(value: unknown): void {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return
+  if (value === globalThis) return
+  Object.freeze(value)
+  if (typeof value === 'function') {
+    const prototype: unknown = Reflect.get(value, 'prototype')
+    if (typeof prototype === 'object' && prototype !== null) Object.freeze(prototype)
+  }
 }
 
 /**
@@ -406,11 +441,22 @@ export async function recordMigrations(
   files: readonly string[],
 ): Promise<WorkerMessage> {
   try {
+    // Every URL is a plain string computed before the first migration runs: nothing a migration
+    // does to URL or path helpers can change which file the next import names.
+    const targets = files.map((file) => ({
+      file,
+      name: file.slice(0, -'.ts'.length),
+      url: pathToFileURL(join(migrationsDir, file)).href,
+    }))
     const loaded: LoadedMigration[] = []
-    for (const file of files) {
-      const name = file.slice(0, -'.ts'.length)
+    for (const { file, name, url } of targets) {
       try {
-        loaded.push(...(await loadMigrations([{ name, path: join(migrationsDir, file) }])))
+        const module: unknown = await import(url)
+        const exported =
+          typeof module === 'object' && module !== null && 'default' in module
+            ? module.default
+            : undefined
+        loaded.push({ name, migration: assertMigration(exported, file) })
       } catch (error) {
         throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
           migration: file,
@@ -513,9 +559,20 @@ async function main(): Promise<void> {
         return { format: 'module-typescript', source: decision.source, shortCircuit: true }
       },
     })
+    // Load the schema entry (and everything it imports) while the framework may still resolve
+    // normally; migrations then get it from the module cache.
+    await import(rules.schemaUrl)
     lockDown(globalThis, proc, (text) => {
       stderr.write(text)
     })
+    // Timer handles are objects a migration can get (setTimeout's return value): freeze their
+    // prototypes as well.
+    const timeout = setTimeout(() => {}, 0)
+    clearTimeout(timeout)
+    const immediate = setImmediate(() => {})
+    clearImmediate(immediate)
+    for (const handle of [timeout, immediate]) freezeDeep(Object.getPrototypeOf(handle))
+    rules.locked = true
     message = await recordMigrations(manifest.folder, manifest.entries)
   } catch (error) {
     message = failure(error)

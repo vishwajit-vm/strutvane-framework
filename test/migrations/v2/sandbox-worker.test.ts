@@ -164,6 +164,41 @@ describe('the child alone (static gate bypassed)', () => {
     )
   })
 
+  test('web APIs and timer objects are frozen: a migration cannot rewrite them for later code', async () => {
+    allBlocked(
+      await probe({
+        urlHref:
+          "(Object.defineProperty(URL.prototype, 'href', { get() { return 'node:child_process' } }), true)",
+        urlStatic: '((URL as any).canParse = () => true, true)',
+        textDecoder: '((TextDecoder.prototype as any).decode = () => "", true)',
+        eventTarget: '((EventTarget.prototype as any).dispatchEvent = () => true, true)',
+        abortSignal: '((AbortSignal as any).timeout = () => 1, true)',
+        timeout:
+          '((Object.getPrototypeOf(setTimeout(() => {}, 0)) as any).refresh = () => 1, true)',
+        immediate: '((Object.getPrototypeOf(setImmediate(() => {})) as any).ref = () => 1, true)',
+        consoleLog: '((console as any).log = () => 1, true)',
+      }),
+    )
+  })
+
+  test('one migration cannot steer which file the worker imports next', async () => {
+    const second = '2026_01_02_000000_create_notes_table.ts'
+    const manifest = hostileApp({
+      [NAME]: `${HEADER}try { Object.defineProperty(URL.prototype, 'href', { get() { return 'node:child_process' } }) } catch {}
+${VALID.slice(HEADER.length)}`,
+      [second]: `${HEADER}export default migration({
+  up(schema) { schema.create('notes', (t) => { t.id() }) },
+  down(schema) { schema.dropIfExists('notes') },
+})
+`,
+    })
+    const message = await runReplayWorker({ ...manifest, entries: [NAME, second] }, 20_000)
+    expect(message).toMatchObject({
+      ok: true,
+      migrations: [{ name: NAME.slice(0, -3) }, { name: second.slice(0, -3) }],
+    })
+  })
+
   test('every import the parent did not approve is refused, however it is spelled', async () => {
     const outside = pathToFileURL(join(tmpdir(), 'outside.ts')).href
     allBlocked(
@@ -292,6 +327,20 @@ describe('the worker hooks (unit)', () => {
     ).toThrow(/may not use/)
   })
 
+  test('once locked, only the schema entry and approved files resolve or load, whoever asks', () => {
+    const locked = { ...rules, locked: true }
+    expect(sandboxResolve('@strutvane/framework/schema', migrationUrl, locked)).toEqual({
+      url: rules.schemaUrl,
+    })
+    expect(sandboxResolve(migrationUrl, frameworkUrl, locked)).toEqual({ url: migrationUrl })
+    for (const specifier of ['node:fs', 'node:child_process', './chunk.mjs'])
+      expect(() => sandboxResolve(specifier, frameworkUrl, locked)).toThrow(/may not use/)
+    expect(() => checkResolved('node:fs', locked)).toThrow(/may not use/)
+    expect(() => checkResolved(frameworkUrl, locked)).toThrow(/may not use/)
+    expect(() => sandboxLoad('node:fs', locked, () => new Uint8Array())).toThrow(/may not use/)
+    expect(() => sandboxLoad(frameworkUrl, locked, () => new Uint8Array())).toThrow(/may not use/)
+  })
+
   test('checks what the framework resolved: approved URLs exactly, built-ins, framework files', () => {
     expect(() => checkResolved(migrationUrl, rules)).not.toThrow()
     expect(() => checkResolved('node:fs', rules)).not.toThrow()
@@ -407,7 +456,16 @@ describe('the confinement self-check (fail closed)', () => {
 
 describe('lockDown (unit)', () => {
   test('removes every global outside the allowlist, replaces console and seals process', () => {
-    const scope: Record<string, unknown> = { Object, JSON, process: {}, Buffer: 1, secret: 2 }
+    // Stand-ins under allowlisted names: lockDown freezes what it keeps, and the test process's
+    // real Object and JSON must stay as they are.
+    class FakeUrl {}
+    const scope: Record<string, unknown> = {
+      Object: FakeUrl,
+      JSON: { parse: () => 1 },
+      process: {},
+      Buffer: 1,
+      secret: 2,
+    }
     Object.defineProperty(scope, Symbol('hidden'), { value: 1, configurable: true })
     const proc: Record<string, unknown> = { getBuiltinModule: () => 1 }
     const written: string[] = []
@@ -419,6 +477,10 @@ describe('lockDown (unit)', () => {
     console.time()
     expect(written).toEqual(['hello { a: 1 }\n'])
     expect(Object.isFrozen(console)).toBe(true)
+    // What stays is frozen, prototypes included, so a migration can't rewrite it for later code.
+    expect(Object.isFrozen(FakeUrl)).toBe(true)
+    expect(Object.isFrozen(FakeUrl.prototype)).toBe(true)
+    expect(Object.isFrozen(scope['JSON'])).toBe(true)
     for (const name of SEALED_PROCESS_METHODS) {
       const sealed = proc[name] as () => unknown
       expect(sealed).toThrow(/may not use/)
