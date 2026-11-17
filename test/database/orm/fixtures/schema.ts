@@ -27,6 +27,10 @@ export const snapshot: SchemaSnapshot = {
         { name: 'email', kind: 'string', nullable: false, length: 255 },
         { name: 'password', kind: 'string', nullable: true, length: 255 },
         { name: 'is_admin', kind: 'boolean', nullable: false },
+        // Hidden by the migration, not by the model: a secret by name, a .secret() and a .hidden().
+        { name: 'api_token', kind: 'string', nullable: true, length: 80 },
+        { name: 'backup_phrase', kind: 'string', nullable: true, length: 200, secret: true },
+        { name: 'internal_note', kind: 'text', nullable: true, hidden: true },
         ...timestamps,
       ],
       indexes: [{ name: 'users_email_unique', columns: ['email'], unique: true }],

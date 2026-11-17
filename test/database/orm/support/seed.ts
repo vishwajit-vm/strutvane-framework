@@ -11,12 +11,12 @@ import { User } from '../fixtures/app/models/user.ts'
  * @example
  * const ada = await makeUser('Ada')
  */
-export function makeUser(name: string): Promise<User> {
-  return User.create({
-    name,
-    email: `${name.toLowerCase()}@example.test`,
-    password: 'not-a-real-secret',
-  })
+export async function makeUser(name: string): Promise<User> {
+  // Secrets are never mass-assigned: set them from trusted code (here, the seed).
+  const user = new User().fill({ name, email: `${name.toLowerCase()}@example.test` })
+  user.forceFill({ password: 'not-a-real-secret', api_token: `token-${name}` })
+  await user.save()
+  return user
 }
 
 /**

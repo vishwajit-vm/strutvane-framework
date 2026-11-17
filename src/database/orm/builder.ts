@@ -1113,7 +1113,16 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       // The primary key breaks ties, so rows with equal sort values are never skipped or repeated.
       orders.push({ column: this.#column(primaryKey), direction: last?.direction ?? 'asc' })
     }
+    const hidden = this.#model.settings().hidden
     for (const order of orders) {
+      // The cursor carries the last row's sort values to the client: a hidden column there would
+      // hand out its value (a password hash, a token) in every nextCursor.
+      if (hidden.has(order.column.column)) {
+        throw new OrmUsageError(
+          'cursor_hidden_column',
+          `cursorPaginate() can't sort by "${order.column.column}": it is hidden, and the page cursor would reveal its values. Sort by a visible column, or use paginate().`,
+        )
+      }
       if (this.#definition(order.column.column).nullable) {
         throw new OrmUsageError(
           'cursor_nullable_column',

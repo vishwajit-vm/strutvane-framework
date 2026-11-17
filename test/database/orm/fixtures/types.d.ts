@@ -10,8 +10,21 @@ export interface User {
   email: string
   password: string | null
   is_admin: boolean
+  api_token: string | null
+  backup_phrase: string | null
+  internal_note: string | null
   created_at: Date | null
   updated_at: Date | null
+}
+
+/** A user as the API returns it: hidden and secret columns are not part of it. */
+export interface UserJson {
+  id: number
+  name: string
+  email: string
+  is_admin: boolean
+  created_at: string | null
+  updated_at: string | null
 }
 
 /** What creating a user needs. Columns the database or framework can fill in are optional. */
@@ -20,6 +33,9 @@ export interface NewUser {
   email: string
   password?: string | null
   is_admin?: boolean
+  api_token?: string | null
+  backup_phrase?: string | null
+  internal_note?: string | null
 }
 
 /** A row of the `posts` table. */
@@ -150,7 +166,7 @@ export interface NewTeamProject {
 
 /** Every table, with its four shapes. */
 export interface Tables {
-  users: { row: User; insert: NewUser; update: Partial<NewUser>; json: object }
+  users: { row: User; insert: NewUser; update: Partial<NewUser>; json: UserJson }
   posts: { row: Post; insert: NewPost; update: Partial<NewPost>; json: object }
   tags: { row: Tag; insert: NewTag; update: Partial<NewTag>; json: object }
   post_tag: { row: PostTag; insert: NewPostTag; update: Partial<NewPostTag>; json: object }

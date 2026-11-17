@@ -5,7 +5,7 @@
  * Nothing here exists at runtime except two symbols. Read it top to bottom: model markers, the
  * shapes of a model's attributes, relations, eager-loaded results, and JSON.
  */
-import type { ColumnOf, InsertOf, RowOf, TableName } from '../schema/registry.ts'
+import type { ColumnOf, InsertOf, RowOf, TableName, TableRegistry } from '../schema/registry.ts'
 import type { CompareOperator } from '../sql/ast.ts'
 import type { SqlFragment } from '../sql/fragment.ts'
 import type { Builder } from './builder.ts'
@@ -317,10 +317,23 @@ type HiddenOf<TInstance> = TInstance extends {
     : never
   : never
 
+/**
+ * The columns the API returns for a table: the keys of the generated `json` shape, which already
+ * leaves out `.hidden()`, `.secret()` and secret-looking columns. A table whose types were written
+ * without a precise `json` shape (`json: object`) falls back to all its columns.
+ */
+type JsonColumnOf<TTable extends TableName> = TableRegistry[TTable] extends {
+  readonly json: infer TJson
+}
+  ? [keyof TJson] extends [never]
+    ? ColumnOf<TTable>
+    : keyof TJson & ColumnOf<TTable>
+  : ColumnOf<TTable>
+
 type IsJsonKey<TInstance, TKey extends keyof TInstance> =
   TKey extends HiddenOf<TInstance>
     ? false
-    : TKey extends ColumnOf<TableOfInstance<TInstance>>
+    : TKey extends JsonColumnOf<TableOfInstance<TInstance>>
       ? true
       : TKey extends `${string}_count`
         ? TInstance[TKey] extends number

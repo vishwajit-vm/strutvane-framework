@@ -22,6 +22,7 @@
  * knows its table and options.
  */
 
+import { isHiddenColumn, isSecretColumn } from '../../schema/columns.ts'
 import type { Connection } from '../db/connection.ts'
 import type { Row } from '../db/driver.ts'
 import { defaultConnection } from '../db/manager.ts'
@@ -579,7 +580,8 @@ export class ModelBase {
   }
 
   /**
-   * The model as plain JSON data: columns minus `hidden`, dates as ISO strings, loaded relations
+   * The model as plain JSON data: columns minus hidden ones (the model's `hidden`, the
+   * migration's `.hidden()`/`.secret()` and secret-looking names), dates as ISO strings, loaded relations
    * and counts included. `JSON.stringify(post)` calls this.
    *
    * @example
@@ -1080,6 +1082,18 @@ function isSensitiveColumn(column: string): boolean {
 /** Names a query builder must never have as methods, or it would be mistaken for a promise. */
 const PROMISE_MEMBERS: ReadonlySet<string> = new Set(['then', 'catch', 'finally'])
 
+/**
+ * Every column kept out of `toJSON()`, request filters, sorts, searches, cursors and hints: the
+ * model's own `hidden` list plus every column the migration marked `.hidden()` or `.secret()`,
+ * and every column named like a secret (`password`, `*_token`, `api_key`, …). The schema decides
+ * first, so forgetting `hidden` on a model never leaks a secret.
+ */
+function hiddenColumns(info: TableInfo, options: RuntimeOptions): ReadonlySet<string> {
+  const hidden = new Set(options.hidden ?? [])
+  for (const column of info.columns.values()) if (isHiddenColumn(column)) hidden.add(column.name)
+  return hidden
+}
+
 /** Columns a "Did you mean" hint may name: never a hidden one (its name alone is a leak). */
 function hintableColumns(info: TableInfo, hidden: ReadonlySet<string>): string[] {
   return [...info.columns.keys()].filter((column) => !hidden.has(column))
@@ -1202,6 +1216,14 @@ function buildSettings(
       )
     }
   }
+  for (const column of options.hidden ?? []) {
+    if (!info.columns.has(column))
+      throw new OrmUsageError(
+        'unknown_hidden_column',
+        `${modelName} hides "${column}", but "${info.name}" has no such column.`,
+      )
+  }
+  const hidden = hiddenColumns(info, options)
   const acknowledged = new Set(options.allowSensitive ?? [])
   for (const column of options.fillable ?? []) {
     if (!info.columns.has(column))
@@ -1209,9 +1231,18 @@ function buildSettings(
         info.name,
         column,
         'unknown',
-        closest(column, hintableColumns(info, new Set(options.hidden ?? []))),
+        closest(column, hintableColumns(info, hidden)),
       )
     if (isSystemColumn(column)) throw new MassAssignmentError(info.name, column, 'system')
+    const definition = info.columns.get(column)
+    if (definition !== undefined && isSecretColumn(definition) && !acknowledged.has(column)) {
+      throw new OrmUsageError(
+        'secret_fillable',
+        `${modelName} lists "${column}" as fillable, and it is a secret (.secret() or a name like password, *_token, api_key). ` +
+          `A request must not set it directly: set it in your own code (forceFill/forceCreate) after hashing or generating it, ` +
+          `or, if users really may send it, also list it in allowSensitive: ['${column}'].`,
+      )
+    }
     if (isSensitiveColumn(column) && !acknowledged.has(column)) {
       throw new OrmUsageError(
         'sensitive_fillable',
@@ -1219,13 +1250,6 @@ function buildSettings(
           `If users really may set it from a request, also list it in allowSensitive: ['${column}']; otherwise set it in your own code.`,
       )
     }
-  }
-  for (const column of options.hidden ?? []) {
-    if (!info.columns.has(column))
-      throw new OrmUsageError(
-        'unknown_hidden_column',
-        `${modelName} hides "${column}", but "${info.name}" has no such column.`,
-      )
   }
   const casts = new Map<string, Cast<unknown>>()
   for (const [column, cast] of Object.entries(options.casts ?? {})) {
@@ -1254,13 +1278,26 @@ function buildSettings(
   }
   return {
     fillable: options.fillable === undefined ? undefined : new Set(options.fillable),
-    hidden: new Set(options.hidden ?? []),
+    hidden,
     casts,
     perPage: options.perPage ?? 15,
     scopes,
     globalScopes,
   }
 }
+
+// What `console.log(user)` and `util.inspect(user)` print: the same fields as `toJSON()`, so a
+// stray debug or log line never prints a password hash or a token (server code that really needs
+// one reads the attribute itself). Defined here because a symbol-named method can't be declared
+// under isolatedDeclarations.
+Object.defineProperty(ModelBase.prototype, Symbol.for('nodejs.util.inspect.custom'), {
+  value(this: ModelBase): Record<string, unknown> {
+    return this.toJSON()
+  },
+  enumerable: false,
+  writable: false,
+  configurable: false,
+})
 
 /** Keys arrive as `unknown` on the runtime side; their types were checked by the static API. */
 function asKey(key: unknown): KeyOf<AnyModelClass> {

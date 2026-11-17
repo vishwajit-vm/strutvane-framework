@@ -271,21 +271,65 @@ export const MANAGED_TIMESTAMPS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Column names that hold secrets. They are never returned by the API, never searched and never
- * shown in the UI, whatever the migration says. This mirrors Laravel's `$hidden` defaults.
+ * Column names that hold secrets. They are never returned by the API or `toJSON()`, never
+ * filtered, sorted or searched from a request and never shown in the UI, whatever the migration
+ * says. This mirrors (and widens) Laravel's `$hidden` defaults: a column called `api_key` that
+ * someone forgot to mark `.secret()` must not leak because of that.
+ *
+ * Matched case-insensitively: the whole name (`password`, `token`, `api_key`, …) or its last
+ * `_` part(s) (`*_password`, `*_token`, `*_secret`, `*_api_key`, `*_private_key`, …).
  *
  * @example
- * isSensitiveColumn('password') // true
+ * isSensitiveColumn('password')       // true
+ * isSensitiveColumn('stripe_api_key') // true
+ * isSensitiveColumn('token_count')    // false
  */
 export function isSensitiveColumn(name: string): boolean {
-  return SENSITIVE_NAMES.has(name) || name.endsWith('_secret') || name.endsWith('_token')
+  const lower = name.toLowerCase()
+  if (SENSITIVE_NAMES.has(lower)) return true
+  return SENSITIVE_SUFFIXES.some((suffix) => lower.endsWith(`_${suffix}`))
 }
 
+/** Whole column names that are secrets. */
 const SENSITIVE_NAMES: ReadonlySet<string> = new Set([
   'password',
+  'password_hash',
+  'passwd',
+  'passcode',
+  'pin_hash',
+  'token',
+  'secret',
+  'salt',
+  'api_key',
+  'apikey',
+  'private_key',
+  'secret_key',
+  'access_key',
+  'signing_key',
+  'encryption_key',
+  'recovery_codes',
+  'otp',
   'remember_token',
   'two_factor_secret',
+  'two_factor_recovery_codes',
 ])
+
+/** Name endings (after an `_`) that make a column a secret. */
+const SENSITIVE_SUFFIXES: readonly string[] = [
+  'password',
+  'password_hash',
+  'passwd',
+  'token',
+  'secret',
+  'api_key',
+  'apikey',
+  'private_key',
+  'secret_key',
+  'access_key',
+  'signing_key',
+  'encryption_key',
+  'recovery_codes',
+]
 
 /**
  * Is this column a secret: `.secret()`, or named like one (see {@link isSensitiveColumn})?

@@ -64,6 +64,8 @@ async function massAssignment(): Promise<void> {
   await User.create({ name: 'Ada', email: 'ada@example.test' })
   // @ts-expect-error: is_admin is not fillable
   await User.create({ name: 'Ada', email: 'ada@example.test', is_admin: true })
+  // @ts-expect-error: secrets are not fillable on this model (the seed sets them with forceFill)
+  await User.create({ name: 'Ada', email: 'ada@example.test', password: 'x' })
   // @ts-expect-error: name is required
   await User.create({ email: 'ada@example.test' })
   // @ts-expect-error: tenant_id is never fillable, not even with forceCreate
@@ -124,6 +126,11 @@ async function serialization(): Promise<void> {
   const json = user.toJSON()
   expectTypeOf(json).toEqualTypeOf<JsonOf<User>>()
   expectTypeOf(json).not.toHaveProperty('password')
+  // Hidden by the migration (secret name, .secret(), .hidden()): gone from the type too.
+  expectTypeOf(json).not.toHaveProperty('api_token')
+  expectTypeOf(json).not.toHaveProperty('backup_phrase')
+  expectTypeOf(json).not.toHaveProperty('internal_note')
+  expectTypeOf(json).toHaveProperty('email')
   expectTypeOf(json.created_at).toEqualTypeOf<string | null>()
   expectTypeOf(json).not.toHaveProperty('posts')
   const post = await Post.query().with('author').firstOrFail()
