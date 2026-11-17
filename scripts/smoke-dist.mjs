@@ -12,9 +12,12 @@ try {
   const migrations = join(dir, 'database', 'migrations')
   mkdirSync(migrations, { recursive: true })
   const header = "import { migration } from '@strutvane/framework/schema'\n"
+  // A CommonJS package scope above the folder must not change how migrations load (always ESM),
+  // and the child's second barrier must hold: console hands out no stream, no process global.
+  writeFileSync(join(dir, 'package.json'), '{"type":"commonjs"}')
   writeFileSync(
     join(migrations, '2026_01_01_000000_create_tags_table.ts'),
-    `${header}export default migration({ up(schema) { schema.create('tags', (t) => { t.id(); t.string('name') }) }, down(schema) { schema.drop('tags') } })\n`,
+    `${header}const leaks = [(console as any)._stderr, (console as any)._stdout, typeof Buffer === "undefined" ? undefined : 1].filter((x) => x !== undefined)\nif (leaks.length > 0) throw new Error('the sandbox leaked a capability')\nexport default migration({ up(schema) { schema.create('tags', (t) => { t.id(); t.string('name') }) }, down(schema) { schema.drop('tags') } })\n`,
   )
   const replay = await replayInSandbox(migrations)
   const tables = replay.state.tables.map((table) => table.name).join(',')

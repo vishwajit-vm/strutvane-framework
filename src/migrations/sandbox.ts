@@ -7,34 +7,49 @@
  * or start programs while that happens. So the replay runs like this:
  *
  * 1. **Files first.** Each migration must be a real file (no symlink) whose real path stays inside
- *    the migrations folder (`lstat` + `realpath`), checked before anything runs.
+ *    the migrations folder (`lstat` + `realpath`), checked before anything runs. The folder may
+ *    not contain a `package.json` or `node_modules`, which would change how files load.
  * 2. **Static gate** (oxc-parser), before import: imports only from `@strutvane/framework/schema`
- *    and relative `.ts` files inside the folder (checked the same way, recursively); no dynamic
- *    `import()`, `import.meta`, and no `process`, `globalThis`, `global`, `eval`, `Function`,
- *    `fetch` or `require`. Every finding names `file:line:col`.
- * 3. **A child process** (`node --permission`): it may read only the migrations folder and the
- *    framework's own files; it may not write files, start processes or workers, or load native
- *    addons; code generation from strings (`eval`, `new Function`) is off; its environment is
- *    empty apart from what Node needs on Windows (`SystemRoot`), so no `.env` value, token or
- *    `NODE_OPTIONS` reaches it. A resolve hook refuses every import except the schema entry and
- *    files in the folder, and the network globals are removed. Node 24 has no `--allow-net`, so the
- *    network is closed by the hook, the gate, the removed globals and the permission model together.
+ *    and relative `.ts` files inside the folder (resolved by {@link resolveMigrationImport}, the
+ *    same function the child's import hook uses, and checked the same way, recursively); no
+ *    dynamic `import()`, `import.meta`, `import x = require()`, `export =`, and no `process`,
+ *    `globalThis`, `global`, `eval`, `Function`, `fetch`, `require`, `module`, `exports`,
+ *    `__dirname` or `__filename`. Every finding names `file:line:col`. Every file it approves is
+ *    pinned by the SHA-256 of the bytes it checked.
+ * 3. **A child process** (`node --permission`) that holds even if the gate were bypassed (see
+ *    `replay-worker.ts`): it may read only the migrations folder and the framework's own files; it
+ *    may not write files, start processes or workers, or load native addons; code generation from
+ *    strings is off, intrinsics are frozen and `__proto__` throws; memory is capped; its
+ *    environment is empty apart from what Node needs on Windows (`SystemRoot`), so no `.env`
+ *    value, token or `NODE_OPTIONS` reaches it. It checks its own confinement before running
+ *    anything, loads only the approved bytes (always as ES modules) and empties its global scope.
  * 4. **A timeout** (default {@link DEFAULT_SANDBOX_TIMEOUT_MS}) kills a child that hangs.
- * 5. **Plain JSON out.** The child sends only the recorded operations over IPC; the parent
- *    re-validates and re-folds them with `replayRecorded`, so nothing from the child is trusted.
+ * 5. **Plain JSON out**, capped in size. The parent re-validates and re-folds it with
+ *    `replayRecorded`, so nothing from the child is trusted.
  *
  * @module
  */
 import { spawn } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
-import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseSync } from 'oxc-parser'
 import { discoverMigrations, type Replay, replayRecorded } from '../schema/replay.ts'
-import { SCHEMA_SPECIFIER, type WorkerMessage } from './replay-protocol.ts'
+import {
+  isInside,
+  RESULT_LIMIT_BYTES,
+  type ReplayManifest,
+  resolveMigrationImport,
+  SCHEMA_SPECIFIER,
+  type WorkerMessage,
+} from './replay-protocol.ts'
 
 /** How long a replay may take before the child is killed (ms). */
 export const DEFAULT_SANDBOX_TIMEOUT_MS = 10_000
+
+/** The child's heap limit (MB): far above what replaying schema operations needs. */
+const CHILD_HEAP_MB = 512
 
 /** Stable codes of {@link SandboxError} (lowercase snake_case, decision #68). */
 export type SandboxErrorCode =
@@ -42,6 +57,7 @@ export type SandboxErrorCode =
   | 'migration_outside_folder'
   | 'migration_forbidden_import'
   | 'migration_forbidden_code'
+  | 'migration_forbidden_file'
   | 'migration_syntax'
   | 'replay_timeout'
   | 'replay_failed'
@@ -90,7 +106,7 @@ export interface SandboxOptions {
   readonly timeoutMs?: number
 }
 
-/** Identifiers a migration may never mention. */
+/** Identifiers a migration may never mention (also the CommonJS ones, whatever the file's format). */
 const FORBIDDEN_IDENTIFIERS: ReadonlySet<string> = new Set([
   'process',
   'globalThis',
@@ -99,12 +115,25 @@ const FORBIDDEN_IDENTIFIERS: ReadonlySet<string> = new Set([
   'Function',
   'fetch',
   'require',
+  'module',
+  'exports',
+  '__dirname',
+  '__filename',
 ])
 
-const isInside = (parent: string, child: string): boolean => {
-  const rel = relative(parent, child)
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+/** TypeScript forms that only make sense in CommonJS. */
+const FORBIDDEN_NODES: Readonly<Record<string, string>> = {
+  TSImportEqualsDeclaration: '`import x = require()`',
+  TSExportAssignment: '`export =`',
+  TSExternalModuleReference: '`require()` imports',
 }
+
+/** Files that change how Node loads the files around them; never allowed in the folder. */
+const MODULE_SCOPE_FILES: ReadonlySet<string> = new Set(['package.json', 'node_modules'])
+
+/** How deep (and how wide) the folder scan goes before giving up, fail closed. */
+const SCAN_DEPTH = 16
+const SCAN_ENTRIES = 10_000
 
 /**
  * Replay the migrations in `migrationsDir` inside the sandbox and return the validated replay.
@@ -117,17 +146,9 @@ export async function replayInSandbox(
   migrationsDir: string,
   options: SandboxOptions = {},
 ): Promise<Replay> {
-  const folder = realpathSync(migrationsDir)
-  const files = discoverMigrations(folder)
-  for (const file of files) checkFile(folder, file.path, `${file.name}.ts`)
-  const checked = new Set<string>()
-  for (const file of files) gate(folder, file.path, checked)
-  if (files.length === 0) return replayRecorded([])
-  const message = await runWorker(
-    folder,
-    files.map((file) => `${file.name}.ts`),
-    options.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
-  )
+  const manifest = approveMigrations(migrationsDir)
+  if (manifest.entries.length === 0) return replayRecorded([])
+  const message = await runReplayWorker(manifest, options.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS)
   if (!message.ok) {
     const migration = message.error.migration
     throw new SandboxError(
@@ -138,6 +159,49 @@ export async function replayInSandbox(
     )
   }
   return replayRecorded(message.migrations)
+}
+
+/**
+ * Run every check that happens before anything executes (files, folder, static gate) and return
+ * the manifest the child gets: the migrations in order and every approved file with its SHA-256.
+ *
+ * @example
+ * const manifest = approveMigrations(join(root, 'database', 'migrations'))
+ */
+export function approveMigrations(migrationsDir: string): ReplayManifest {
+  const folder = realpathSync(migrationsDir)
+  scanFolder(folder)
+  const files = discoverMigrations(folder)
+  for (const file of files) checkFile(folder, file.path, `${file.name}.ts`)
+  const approved: Record<string, string> = {}
+  for (const file of files) gate(folder, file.path, approved)
+  return { folder, entries: files.map((file) => `${file.name}.ts`), approved }
+}
+
+/** Refuse a `package.json` or `node_modules` anywhere in the folder (links are not followed). */
+function scanFolder(folder: string): void {
+  let seen = 0
+  const walk = (dir: string, depth: number): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      seen += 1
+      const label = relative(folder, join(dir, entry.name)).replaceAll('\\', '/')
+      if (MODULE_SCOPE_FILES.has(entry.name.toLowerCase()))
+        throw new SandboxError(
+          'migration_forbidden_file',
+          `${label} is inside database/migrations. It would change how the migrations are loaded.`,
+          'Remove it: migrations are always ES modules that import only the schema builder and each other.',
+          { migration: label },
+        )
+      if (seen > SCAN_ENTRIES || depth > SCAN_DEPTH)
+        throw new SandboxError(
+          'migration_forbidden_file',
+          'database/migrations is too large or too deeply nested to check.',
+          'Keep only migrations and their helpers in the folder.',
+        )
+      if (entry.isDirectory()) walk(join(dir, entry.name), depth + 1)
+    }
+  }
+  walk(folder, 0)
 }
 
 /** A migration (or a file it imports) must be a plain file inside the folder. */
@@ -154,6 +218,13 @@ function checkFile(folder: string, path: string, label: string): void {
       'migration_outside_folder',
       `${label} resolves to a file outside database/migrations.`,
       'Keep migrations and the helpers they import inside database/migrations.',
+      { migration: label },
+    )
+  if (!lstatSync(path).isFile())
+    throw new SandboxError(
+      'migration_forbidden_file',
+      `${label} is not a regular file.`,
+      'Migrations and their helpers must be plain .ts files.',
       { migration: label },
     )
 }
@@ -174,13 +245,34 @@ const isNode = (value: unknown): value is AstNode =>
   typeof (value as { type?: unknown }).type === 'string' &&
   typeof (value as { start?: unknown }).start === 'number'
 
+/** Read a file once: its exact bytes' SHA-256 and the text (refusing what isn't UTF-8). */
+function readChecked(
+  path: string,
+  label: string,
+): { readonly hash: string; readonly source: string } {
+  const bytes = readFileSync(path)
+  let source: string
+  try {
+    source = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    throw new SandboxError(
+      'migration_syntax',
+      `${label} is not valid UTF-8 text.`,
+      'Save the file as UTF-8.',
+      { migration: label },
+    )
+  }
+  return { hash: createHash('sha256').update(bytes).digest('hex'), source }
+}
+
 /** The static gate for one file and, recursively, the relative files it imports. */
-function gate(folder: string, path: string, checked: Set<string>): void {
-  if (checked.has(path)) return
-  checked.add(path)
+function gate(folder: string, path: string, approved: Record<string, string>): void {
+  if (approved[path] !== undefined) return
   const label = relative(folder, path).replaceAll('\\', '/')
-  const source = readFileSync(path, 'utf8')
-  const parsed = parseSync(path, source, { sourceType: 'module' })
+  const { hash, source } = readChecked(path, label)
+  // Approve before descending, so import cycles end; a refusal below aborts the whole replay.
+  approved[path] = hash
+  const parsed = parseSync(path, source, { sourceType: 'module', lang: 'ts' })
   const where = (node: AstNode): string => `${label}:${position(source, node.start)}`
   const firstError = parsed.errors[0]
   if (firstError !== undefined)
@@ -200,25 +292,23 @@ function gate(folder: string, path: string, checked: Set<string>): void {
   }
   const importFrom = (node: AstNode, specifier: unknown): void => {
     if (specifier === SCHEMA_SPECIFIER) return
-    if (
-      typeof specifier === 'string' &&
-      (specifier.startsWith('./') || specifier.startsWith('../'))
-    ) {
-      const target = resolve(dirname(path), specifier)
-      if (extname(target) === '.ts' && isInside(folder, target) && existsSync(target)) {
-        checkFile(folder, target, relative(folder, target).replaceAll('\\', '/'))
-        gate(folder, target, checked)
-        return
-      }
+    const target =
+      typeof specifier === 'string' ? resolveMigrationImport(specifier, path, folder) : undefined
+    if (target !== undefined && existsSync(target)) {
+      checkFile(folder, target, relative(folder, target).replaceAll('\\', '/'))
+      gate(folder, target, approved)
+      return
     }
     throw new SandboxError(
       'migration_forbidden_import',
       `${where(node)}: migrations may not import "${String(specifier)}".`,
-      `Import only ${SCHEMA_SPECIFIER} and .ts files inside database/migrations (with their .ts extension).`,
+      `Import only ${SCHEMA_SPECIFIER} and .ts files inside database/migrations, as ./path/file.ts (letters, digits, _, - and dots only).`,
       { migration: label, location: where(node) },
     )
   }
   const visit = (node: AstNode, parent: AstNode | undefined, key: string): void => {
+    const forbiddenNode = FORBIDDEN_NODES[node.type]
+    if (forbiddenNode !== undefined) refuse(node, forbiddenNode)
     switch (node.type) {
       case 'ImportDeclaration':
       case 'ExportNamedDeclaration':
@@ -275,71 +365,99 @@ function childEnvironment(): Record<string, string> {
   return env
 }
 
-const STDERR_LIMIT = 4_000
-
-function runWorker(
-  folder: string,
-  files: readonly string[],
-  timeoutMs: number,
-): Promise<WorkerMessage> {
-  const worker = workerPath()
+/**
+ * The flags the child runs with. Exported so tests can prove each barrier is present.
+ *
+ * @example
+ * childArguments('/app/database/migrations', '/fw/dist/replay-worker.mjs')
+ */
+export function childArguments(folder: string, worker: string): string[] {
   const frameworkFiles = worker.endsWith('.ts') ? resolve(dirname(worker), '..') : dirname(worker)
-  const args = [
+  return [
     '--permission',
     `--allow-fs-read=${folder}`,
     `--allow-fs-read=${frameworkFiles}`,
     '--disallow-code-generation-from-strings',
+    '--frozen-intrinsics',
+    '--disable-proto=throw',
+    '--no-addons',
+    `--max-old-space-size=${CHILD_HEAP_MB}`,
     '--disable-warning=ExperimentalWarning',
     worker,
-    folder,
-    ...files,
   ]
+}
+
+const STDERR_LIMIT = 4_000
+
+/**
+ * Start the sandboxed child with a manifest and wait for its answer. Exported for the sandbox's
+ * own tests, which feed it files the static gate would refuse to prove the child holds alone; app
+ * code calls {@link replayInSandbox}.
+ *
+ * @example
+ * const message = await runReplayWorker(approveMigrations(dir), 10_000)
+ */
+export function runReplayWorker(
+  manifest: ReplayManifest,
+  timeoutMs: number,
+): Promise<WorkerMessage> {
+  const args = childArguments(manifest.folder, workerPath())
   return new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, args, {
       env: childEnvironment(),
-      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     })
     let stderr = ''
+    const stdout: Buffer[] = []
+    let stdoutBytes = 0
     let settled = false
-    let message: WorkerMessage | undefined
     const finish = (outcome: () => void): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       outcome()
     }
-    const timer = setTimeout(() => {
+    const fail = (code: SandboxErrorCode, message: string, hint: string): void => {
       child.kill('SIGKILL')
-      finish(() =>
-        reject(
-          new SandboxError(
-            'replay_timeout',
-            `Replaying the migrations took longer than ${timeoutMs} ms, so it was stopped.`,
-            'A migration probably loops forever or waits for something at the top level. Migrations must only call the schema builder.',
-          ),
+      finish(() => reject(new SandboxError(code, message, hint)))
+    }
+    const timer = setTimeout(
+      () =>
+        fail(
+          'replay_timeout',
+          `Replaying the migrations took longer than ${timeoutMs} ms, so it was stopped.`,
+          'A migration probably loops forever or waits for something at the top level. Migrations must only call the schema builder.',
         ),
-      )
-    }, timeoutMs)
-    child.stderr?.on('data', (chunk: Buffer) => {
+      timeoutMs,
+    )
+    child.stderr.on('data', (chunk: Buffer) => {
       if (stderr.length < STDERR_LIMIT) stderr += chunk.toString('utf8')
     })
-    child.on('message', (received: unknown) => {
-      if (message === undefined && isWorkerMessage(received)) message = received
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdoutBytes += chunk.length
+      if (stdoutBytes > RESULT_LIMIT_BYTES) {
+        fail(
+          'replay_failed',
+          `The replay process answered with more than ${RESULT_LIMIT_BYTES} bytes, so it was stopped.`,
+          'A migration produced an unreasonable amount of schema operations. Check the newest migrations.',
+        )
+        return
+      }
+      stdout.push(chunk)
     })
+    // The child may exit before reading its stdin (a crash at start); that is reported on exit.
+    child.stdin.on('error', () => {})
+    child.stdin.end(JSON.stringify(manifest))
     child.on('error', (error) =>
-      finish(() =>
-        reject(
-          new SandboxError(
-            'replay_failed',
-            `The replay process could not start: ${error.message}`,
-            'Check that Node 24.3 or newer is installed.',
-          ),
-        ),
+      fail(
+        'replay_failed',
+        `The replay process could not start: ${error.message}`,
+        'Check that Node 24.3 or newer is installed.',
       ),
     )
-    child.on('exit', (code) => {
-      const received = message
+    child.on('close', (code) => {
+      const received = parseAnswer(Buffer.concat(stdout).toString('utf8'))
       if (received !== undefined) {
         finish(() => resolvePromise(received))
         return
@@ -358,15 +476,28 @@ function runWorker(
   })
 }
 
+function parseAnswer(text: string): WorkerMessage | undefined {
+  if (text === '') return undefined
+  try {
+    const value: unknown = JSON.parse(text)
+    return isWorkerMessage(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function isWorkerMessage(value: unknown): value is WorkerMessage {
   if (typeof value !== 'object' || value === null) return false
   const record = value as Record<string, unknown>
   if (record['ok'] === true) return Array.isArray(record['migrations'])
   if (record['ok'] !== false) return false
   const error = record['error']
+  if (typeof error !== 'object' || error === null) return false
+  const fields = error as Record<string, unknown>
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    typeof (error as Record<string, unknown>)['message'] === 'string'
+    typeof fields['message'] === 'string' &&
+    ['code', 'hint', 'migration'].every(
+      (key) => fields[key] === undefined || typeof fields[key] === 'string',
+    )
   )
 }

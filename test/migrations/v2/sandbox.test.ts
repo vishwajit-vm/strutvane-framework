@@ -15,11 +15,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
-import {
-  recordMigrations,
-  sandboxResolve,
-  schemaEntryUrl,
-} from '../../../src/migrations/replay-worker.ts'
+import { recordMigrations } from '../../../src/migrations/replay-worker.ts'
 import { migrationChecksum } from '../../../src/migrations/runner.ts'
 import { replayInSandbox, SandboxError } from '../../../src/migrations/sandbox.ts'
 import { canonicalSchema } from '../../../src/schema/replay.ts'
@@ -225,42 +221,6 @@ export default migration({
     )
     expect(error.code).toBe('replay_failed')
     expect(error.message).toMatch(/Code generation from strings disallowed/i)
-  })
-})
-
-describe('the worker resolve hook', () => {
-  const rules = {
-    migrationsDir: join(tmpdir(), 'app', 'database', 'migrations'),
-    frameworkDir: join(tmpdir(), 'fw', 'dist'),
-    schemaUrl: 'file:///fw/dist/schema.mjs',
-  }
-  const migrationUrl = new URL(`file:///${join(rules.migrationsDir, NAME).replaceAll('\\', '/')}`)
-    .href
-
-  test('maps the schema entry and allows relative files inside the folder', () => {
-    expect(sandboxResolve('@strutvane/framework/schema', migrationUrl, rules)).toEqual({
-      url: rules.schemaUrl,
-    })
-    expect(sandboxResolve('./helpers/x.ts', migrationUrl, rules)).toMatchObject({
-      url: expect.stringMatching(/helpers\/x\.ts$/),
-    })
-    expect(sandboxResolve('node:fs', undefined, rules)).toBe('next')
-  })
-
-  test.each(['node:fs', 'node:net', 'pg', '../../../secrets.ts', './x.js'])(
-    'refuses %s from a migration',
-    (specifier) => {
-      expect(() => sandboxResolve(specifier, migrationUrl, rules)).toThrow(/may not use/)
-    },
-  )
-
-  test('finds the schema entry next to the worker in both layouts', () => {
-    expect(schemaEntryUrl('file:///repo/src/migrations/replay-worker.ts')).toBe(
-      'file:///repo/src/entries/schema.ts',
-    )
-    expect(
-      schemaEntryUrl('file:///app/node_modules/@strutvane/framework/dist/replay-worker.mjs'),
-    ).toBe('file:///app/node_modules/@strutvane/framework/dist/schema.mjs')
   })
 })
 
