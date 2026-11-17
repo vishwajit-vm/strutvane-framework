@@ -4,8 +4,17 @@
  */
 import { PGlite } from '@electric-sql/pglite'
 import { createClient } from '@libsql/client'
+import { vi } from 'vitest'
 import { type LibsqlLike, libsqlDatabase, pgliteDatabase } from '../../src/database/drivers.ts'
 import type { Database, Dialect } from '../../src/database/types.ts'
+
+// Every suite that imports this helper starts PGlite (a WASM Postgres) and usually plans
+// migrations with drizzle-kit, often once per test. Each takes seconds on a quiet machine and far
+// longer when the full gate runs every core at once (the real-server suites, the replay sandbox's
+// child processes and the coverage instrumentation all compete), which is how these suites hit
+// the 60 s default. The work itself is bounded, so give it a realistic ceiling instead of
+// changing what it checks (the same values test/helpers/server-database.ts uses).
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 300_000 })
 
 export const DIALECTS: readonly Dialect[] = ['postgres', 'sqlite']
 
