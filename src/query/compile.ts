@@ -17,13 +17,11 @@
  *
  * @module
  */
-import { frag, ident, join, type SqlFragment } from '../database/sql.ts'
+import type { SqlFragment as OrmFragment } from '../database/sql/fragment.ts'
+import { frag, ident, type SqlFragment } from '../database/sql.ts'
 import type { Dialect } from '../database/types.ts'
 import type { BoundField, BoundFilter } from './bind.ts'
-
-const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-const LOWER = 'abcdefghijklmnopqrstuvwxyz'
-const SYMBOL = { gt: '>', gte: '>=', lt: '<', lte: '<=' } as const
+import { compileFilterSql } from './compile-sql.ts'
 
 /** Options for {@link compileFilter}. */
 export interface CompileFilterOptions {
@@ -59,78 +57,31 @@ export function orderParam(field: Pick<BoundField, 'kind'>, dialect: Dialect): s
 const isTextual = (kind: BoundField['kind']): boolean =>
   kind === 'string' || kind === 'text' || kind === 'email' || kind === 'url' || kind === 'enum'
 
-function fold(expr: string, dialect: Dialect): string {
-  return dialect === 'postgres' ? `translate(${expr}, '${UPPER}', '${LOWER}')` : `lower(${expr})`
+/**
+ * Compile a bound filter to a WHERE fragment with `?` placeholders (see `render`).
+ *
+ * Kept for v1 callers (the repository and list queries on Postgres and SQLite). It delegates to
+ * {@link compileFilterSql}, the one ADR-0008 compiler shared with the ORM, and only re-renders
+ * its result in v1's fragment form, so both paths are covered by the same equivalence suite.
+ *
+ * @example
+ * const where = compileFilter(bound, { dialect: 'postgres', alias: 't' })
+ */
+export function compileFilter(filter: BoundFilter, options: CompileFilterOptions): SqlFragment {
+  return toLegacyFragment(compileFilterSql(filter, { dialect: options.dialect }, options.alias))
 }
 
-/** Compile a bound filter to a WHERE fragment (with `?` placeholders; see `render`). */
-export function compileFilter(filter: BoundFilter, options: CompileFilterOptions): SqlFragment {
-  const { dialect, alias } = options
-  const col = (f: BoundField): string => columnRef(f, alias)
-
-  const visit = (f: BoundFilter): SqlFragment => {
-    switch (f.op) {
-      case 'true':
-        return frag('(1 = 1)')
-      case 'false':
-        return frag('(1 = 0)')
-      case 'and':
-      case 'or': {
-        if (f.filters.length === 0) return frag(f.op === 'and' ? '(1 = 1)' : '(1 = 0)')
-        const inner = join(f.filters.map(visit), f.op === 'and' ? ' AND ' : ' OR ')
-        return frag(`(${inner.text})`, inner.params)
-      }
-      case 'not': {
-        const inner = visit(f.filter)
-        return frag(`(NOT ${inner.text})`, inner.params)
-      }
-      case 'isNull':
-        return frag(`(${col(f.field)} IS NULL)`)
-      case 'isNotNull':
-        return frag(`(${col(f.field)} IS NOT NULL)`)
-      case 'eq':
-        return frag(`COALESCE(${col(f.field)} = ?, FALSE)`, [f.value])
-      case 'ne':
-        return frag(`(NOT COALESCE(${col(f.field)} = ?, FALSE))`, [f.value])
-      case 'in':
-      case 'nin': {
-        if (f.values.length === 0) return frag(f.op === 'in' ? '(1 = 0)' : '(1 = 1)')
-        const list = f.values.map(() => '?').join(', ')
-        const expr = `COALESCE(${col(f.field)} IN (${list}), FALSE)`
-        return frag(f.op === 'in' ? expr : `(NOT ${expr})`, f.values)
-      }
-      case 'gt':
-      case 'gte':
-      case 'lt':
-      case 'lte':
-        return frag(
-          `COALESCE(${orderExpr(f.field, dialect, alias)} ${SYMBOL[f.op]} ${orderParam(f.field, dialect)}, FALSE)`,
-          [f.value],
-        )
-      case 'between': {
-        const e = orderExpr(f.field, dialect, alias)
-        const p = orderParam(f.field, dialect)
-        return frag(`COALESCE(${e} >= ${p} AND ${e} <= ${p}, FALSE)`, [f.from, f.to])
-      }
-      case 'contains':
-      case 'startsWith':
-      case 'endsWith': {
-        const c = f.caseSensitive ? col(f.field) : fold(col(f.field), dialect)
-        // Postgres cannot infer a parameter's type inside these functions: cast to text.
-        const p = dialect === 'postgres' ? 'CAST(? AS text)' : '?'
-        const v = f.caseSensitive ? p : fold(p, dialect)
-        if (dialect === 'postgres') {
-          if (f.op === 'contains') return frag(`COALESCE(strpos(${c}, ${v}) > 0, FALSE)`, [f.value])
-          if (f.op === 'startsWith')
-            return frag(`COALESCE(left(${c}, char_length(${p})) = ${v}, FALSE)`, [f.value, f.value])
-          return frag(`COALESCE(right(${c}, char_length(${p})) = ${v}, FALSE)`, [f.value, f.value])
-        }
-        if (f.op === 'contains') return frag(`COALESCE(instr(${c}, ${v}) > 0, FALSE)`, [f.value])
-        if (f.op === 'startsWith')
-          return frag(`COALESCE(substr(${c}, 1, length(?)) = ${v}, FALSE)`, [f.value, f.value])
-        return frag(`COALESCE(substr(${c}, -length(?)) = ${v}, FALSE)`, [f.value, f.value])
-      }
+/** An ORM fragment as a v1 `{ text, params }` fragment (`"quoted"` identifiers, `?` values). */
+function toLegacyFragment(fragment: OrmFragment): SqlFragment {
+  let text = ''
+  const params: unknown[] = []
+  for (const part of fragment.parts) {
+    if (part.kind === 'text') text += part.text
+    else if (part.kind === 'identifier') text += ident(part.name)
+    else {
+      text += '?'
+      params.push(part.value)
     }
   }
-  return visit(filter)
+  return frag(text, params)
 }

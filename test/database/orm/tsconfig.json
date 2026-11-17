@@ -1,0 +1,10 @@
+{
+  // The ORM suites use app-style models (`class Post extends Model('posts', …)`), which
+  // isolatedDeclarations forbids (TS9021). Apps don't use that flag; this project checks the
+  // suites, the fixtures and their compile-time assertions exactly as an app compiles them.
+  // Run by test/database/orm-types.test.ts as part of the gate.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": { "isolatedDeclarations": false },
+  "include": ["."],
+  "exclude": []
+}

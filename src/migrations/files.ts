@@ -84,7 +84,13 @@ export function checksumOf(statements: readonly string[]): string {
   return createHash('sha256').update(normalised).digest('hex')
 }
 
-/** Render a plan as migration file text. */
+/**
+ * Render a plan as migration file text.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export function renderMigration(
   plan: MigrationPlan,
   options: { name: string; createdAt: Date },
@@ -160,6 +166,10 @@ function optional<K extends string>(key: K, value: string | undefined): { [P in 
 /**
  * A resolver from recorded answers (`describeRename(candidate)` → decision). Unknown candidates
  * throw, so a changed model can never be resolved by a stale answer.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
  */
 export function answersResolver(answers: Readonly<Record<string, RenameDecision>>): RenameResolver {
   return (candidate: RenameCandidate) => {
@@ -180,6 +190,10 @@ async function writeAtomic(path: string, text: string): Promise<void> {
 /**
  * Write a planned migration and the new snapshot into `dir`. Returns the migration's name, or
  * `undefined` (and writes nothing) when the plan is empty.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
  */
 export async function writeMigration(
   dir: string,
@@ -202,7 +216,13 @@ export async function writeMigration(
   return name
 }
 
-/** Read the snapshot in `dir`; an empty model list when there is none yet. */
+/**
+ * Read the snapshot in `dir`; an empty model list when there is none yet.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export async function readSnapshot(dir: string, dialect: Dialect): Promise<Snapshot> {
   let text: string
   try {

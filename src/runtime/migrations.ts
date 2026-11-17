@@ -57,7 +57,7 @@ const UNIT_MS: Readonly<Record<string, number>> = { ms: 1, s: 1000, min: 60_000 
  * `30s`, `2min`). Unset means {@link DEFAULT_MIGRATION_LOCK_TIMEOUT_MS}; anything else is an
  * {@link EnvValidationError} naming the key (the CLI reports it as a config error, exit 3).
  */
-function migrationLockTimeoutMs(env: EnvSource): number {
+export function migrationLockTimeoutMs(env: EnvSource): number {
   const raw = env['DB_MIGRATION_LOCK_TIMEOUT']
   if (raw === undefined) return DEFAULT_MIGRATION_LOCK_TIMEOUT_MS
   const match = DURATION.exec(raw.trim())
@@ -253,7 +253,13 @@ export interface PackagedMigration {
 const packagedOf = (all: readonly MigrationSource[]): PackagedMigration[] =>
   all.flatMap((m) => (m.source !== undefined ? [{ name: m.name, source: m.source }] : []))
 
-/** Generate (when models changed) and apply migrations. */
+/**
+ * Generate (when models changed) and apply migrations.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export async function migrateProject(
   project: LoadedProject,
   options: MigrateProjectOptions = {},

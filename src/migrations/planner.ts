@@ -81,7 +81,13 @@ export interface DestructiveChange {
   readonly detail: string
 }
 
-/** Thrown when possible renames exist and no resolver was given. */
+/**
+ * Thrown when possible renames exist and no resolver was given.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export class RenameResolutionRequiredError extends Error {
   override readonly name = 'RenameResolutionRequiredError'
   readonly candidates: readonly RenameCandidate[]
@@ -93,7 +99,13 @@ export class RenameResolutionRequiredError extends Error {
   }
 }
 
-/** Thrown when a plan contains destructive changes and `allowDestructive` is not set. */
+/**
+ * Thrown when a plan contains destructive changes and `allowDestructive` is not set.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export class DestructiveChangeError extends Error {
   override readonly name = 'DestructiveChangeError'
   readonly changes: readonly DestructiveChange[]
@@ -110,7 +122,13 @@ export class DestructiveChangeError extends Error {
   }
 }
 
-/** A human description of a rename candidate (`table customers -> clients`). */
+/**
+ * A human description of a rename candidate (`table customers -> clients`).
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export function describeRename(c: RenameCandidate): string {
   return c.kind === 'table'
     ? `table ${c.fromTable} -> ${c.toTable}`
@@ -297,7 +315,13 @@ const textLength = (d: FieldDef): number => d.length ?? (d.kind === 'url' ? 2048
 const hasVarchar = (d: FieldDef): boolean =>
   d.kind === 'string' || d.kind === 'email' || d.kind === 'url'
 
-/** Detect every destructive or risky change between the renamed previous models and next. */
+/**
+ * Detect every destructive or risky change between the renamed previous models and next.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export function classifyChanges(
   renamedPrev: readonly ModelDefinition[],
   next: readonly ModelDefinition[],
@@ -513,6 +537,10 @@ function intermediateOf(
 /**
  * Invariant guard: a diff handed to drizzle-kit must not contain anything its prompts fire on
  * (a table both created and deleted, or a table both gaining and losing columns).
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
  */
 export function assertPromptFree(
   from: readonly ModelDefinition[],
@@ -583,7 +611,13 @@ function tenancyStatements(
   return out
 }
 
-/** Plan a migration from `previous` to `next`. Pure: never touches a database. */
+/**
+ * Plan a migration from `previous` to `next`. Pure: never touches a database.
+ *
+ * @deprecated Drizzle-based v1 (model-first) migration planning. Migration-first apps write
+ * migrations with the Schema builder (`@strutvane/framework/schema`) and run `node strut migrate`
+ * (`runMigrations` in `@strutvane/framework/database`). Kept working in 0.2; removed in 0.3.
+ */
 export async function planMigration(input: PlanInput): Promise<MigrationPlan> {
   const renames = await resolveRenames(input)
   const renamedPrev = applyRenames(input.previous, input.next, renames)

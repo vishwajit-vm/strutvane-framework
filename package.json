@@ -43,6 +43,10 @@
       "types": "./dist/database.d.mts",
       "default": "./dist/database.mjs"
     },
+    "./schema": {
+      "types": "./dist/schema.d.mts",
+      "default": "./dist/schema.mjs"
+    },
     "./commands": {
       "types": "./dist/commands.d.mts",
       "default": "./dist/commands.mjs"
@@ -103,13 +107,14 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "build": "tsdown",
-    "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown",
+    "ci": "biome check . && tsc --noEmit && vitest run --coverage && tsdown && node scripts/smoke-dist.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "changeset publish",
     "test:perf": "vitest run --config vitest.perf.config.ts",
     "test:soak": "vitest run --config vitest.soak.config.ts",
-    "test:tripwire": "vitest run --config vitest.tripwire.config.ts"
+    "test:tripwire": "vitest run --config vitest.tripwire.config.ts",
+    "test:dist": "node scripts/smoke-dist.mjs"
   },
   "dependencies": {
     "@clack/prompts": "1.9.0",
@@ -127,6 +132,7 @@
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.5.16",
     "@libsql/client": ">=0.18.0",
+    "mysql2": ">=3.24.6",
     "pg": ">=8.23.0"
   },
   "peerDependenciesMeta": {
@@ -134,6 +140,9 @@
       "optional": true
     },
     "@libsql/client": {
+      "optional": true
+    },
+    "mysql2": {
       "optional": true
     },
     "pg": {
@@ -151,6 +160,7 @@
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.1.0",
     "fast-check": "4.10.2",
+    "mysql2": "3.24.6",
     "pg": "8.23.1",
     "tsdown": "0.23.7",
     "typescript": "6.0.3",
