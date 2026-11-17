@@ -33,11 +33,11 @@ async function occupy(): Promise<number> {
 }
 
 describe('listen errors', () => {
-  it('serve() on a taken port rejects with PORT_IN_USE naming host, port and the fix', async () => {
+  it('serve() on a taken port rejects with port_in_use naming host, port and the fix', async () => {
     const port = await occupy()
     const error = await serve(() => new Response('x'), { port }).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ServerListenError)
-    expect(error).toMatchObject({ code: 'PORT_IN_USE', host: '127.0.0.1', port })
+    expect(error).toMatchObject({ code: 'port_in_use', host: '127.0.0.1', port })
     expect((error as Error).message).toContain(`Port ${port} is already in use (127.0.0.1:${port})`)
     expect((error as Error).message).toContain('APP_PORT')
     expect((error as Error).message).toContain('--port')
@@ -46,7 +46,7 @@ describe('listen errors', () => {
 
   it('assertCanListen probes and releases; port 0 always passes', async () => {
     const port = await occupy()
-    await expect(assertCanListen(port)).rejects.toMatchObject({ code: 'PORT_IN_USE', port })
+    await expect(assertCanListen(port)).rejects.toMatchObject({ code: 'port_in_use', port })
     await assertCanListen(0)
     // A free port passes and is released again (serve can take it right after).
     const free = await new Promise<number>((resolve) => {
@@ -64,11 +64,11 @@ describe('listen errors', () => {
   it('maps EACCES and EADDRNOTAVAIL, and passes other errors through unchanged', () => {
     const node = (code: string) => Object.assign(new Error(code), { code })
     expect(toListenError(node('EACCES'), '0.0.0.0', 80)).toMatchObject({
-      code: 'PORT_ACCESS_DENIED',
+      code: 'port_access_denied',
       message: expect.stringContaining('Not allowed to listen on 0.0.0.0:80'),
     })
     const v6 = toListenError(node('EADDRNOTAVAIL'), '::1', 3000) as Error
-    expect(v6).toMatchObject({ code: 'ADDRESS_NOT_AVAILABLE', host: '::1' })
+    expect(v6).toMatchObject({ code: 'address_not_available', host: '::1' })
     expect(v6.message).toContain('[::1]:3000')
     expect(v6.message).toContain('--host')
     const other = node('ECONNRESET')
@@ -83,7 +83,7 @@ describe('listen errors', () => {
     await migrateProject(await loadProject(p.root, { dotenv: false }))
     await expect(startServer({ root: p.root, port, env: 'local' })).rejects.toMatchObject({
       name: 'ServerListenError',
-      code: 'PORT_IN_USE',
+      code: 'port_in_use',
       port,
     })
     // sv dev fails before it spawns the watched child.
@@ -101,7 +101,7 @@ describe('listen errors', () => {
         table: () => undefined,
       },
     }
-    await expect(dev.run(ctx)).rejects.toMatchObject({ code: 'PORT_IN_USE', port })
+    await expect(dev.run(ctx)).rejects.toMatchObject({ code: 'port_in_use', port })
     expect(lines).toEqual([])
   })
 })

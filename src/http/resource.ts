@@ -148,7 +148,7 @@ export interface ResourceConfig {
 
 /**
  * Define a resource. Two equivalent forms:
- * - `defineResource(Invoice, { includes: ['customer'] })`: the form `sv make:resource`
+ * - `defineResource(Invoice, { includes: ['customer'] })`: the form `node strut make:resource`
  *   generates and the registry compiler reads (`app/resources/*.resource.ts`);
  * - `defineResource({ model: Invoice, includes: ['customer'] })`.
  */

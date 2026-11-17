@@ -89,7 +89,7 @@ export async function applyGenerator<Input>(
       return [
         ...generated.map((file) => {
           if (force && owned.has(file.path) && existsSync(join(projectRoot, file.path))) {
-            throw new CliError('OWNED_FILE', {
+            throw new CliError('owned_file', {
               exitCode: EXIT.CONFLICT,
               params: { path: file.path },
             })
@@ -112,7 +112,7 @@ export async function applyGenerator<Input>(
       ctx.globals.diff &&
       !(await ctx.prompt.confirm('Write these changes?', { default: true }))
     ) {
-      throw new CliError('INTERRUPTED', { exitCode: EXIT.INTERRUPTED })
+      throw new CliError('interrupted', { exitCode: EXIT.INTERRUPTED })
     }
     changes = (await runGenerator(wrapped, input, { projectRoot, dryRun: false })).changes
   }

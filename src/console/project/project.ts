@@ -29,9 +29,29 @@ import {
 /** The file that marks a Strutvane project root (docs/09 §1.1). */
 export const PROJECT_MARKER = 'strutvane.config.ts'
 
+/** Files that mark an application root (`bootstrap/app.ts`, its built form, or `strut.js`). */
+export const APP_MARKERS: readonly string[] = Object.freeze([
+  join('bootstrap', 'app.ts'),
+  join('bootstrap', 'app.mts'),
+  join('bootstrap', 'app.js'),
+  join('bootstrap', 'app.mjs'),
+  'strut.js',
+])
+
 /**
- * Find the project root for `start`: the nearest directory that contains `strutvane.config.ts`
- * or whose package.json declares `@strutvane/cli`, under the boundary rules of `boundary.ts`
+ * `true` when `dir` holds an application (`bootstrap/app.ts` or `strut.js`).
+ *
+ * @example
+ * isAppRoot('/srv/blog') // true
+ */
+export function isAppRoot(dir: string): boolean {
+  return APP_MARKERS.some((marker) => existsSync(join(dir, marker)))
+}
+
+/**
+ * Find the project root for `start`: the nearest directory that contains `strutvane.config.ts`,
+ * an application (`bootstrap/app.ts` or `strut.js`, so `.env`'s `APP_ENV` reaches the production
+ * guard) or whose package.json declares `@strutvane/cli`, under the boundary rules of `boundary.ts`
  * (never a drive or file-system root, the OS temp directory or a folder above home; on POSIX,
  * owned by the current user). The search stops at the first folder that breaks those rules, and at
  * the first project folder (one owned by someone else ends the search with no project). Returns
@@ -44,7 +64,8 @@ export function findProjectRoot(
   let dir = resolve(start)
   for (;;) {
     if (isForbiddenProjectDir(dir, facts)) return undefined
-    const isProject = existsSync(join(dir, PROJECT_MARKER)) || declaresCli(readManifest(dir))
+    const isProject =
+      existsSync(join(dir, PROJECT_MARKER)) || isAppRoot(dir) || declaresCli(readManifest(dir))
     if (isProject) return isOwnedByCurrentUser(dir, facts) ? dir : undefined
     const parent = dirname(dir)
     if (parent === dir) return undefined
@@ -52,20 +73,20 @@ export function findProjectRoot(
   }
 }
 
-/** Read and parse a JSON object file. Throws `INVALID_PACKAGE_JSON` (exit 3) when it is not one. */
+/** Read and parse a JSON object file. Throws `invalid_package_json` (exit 3) when it is not one. */
 export function readJsonObject(path: string): Record<string, unknown> {
   let parsed: unknown
   try {
     parsed = JSON.parse(stripBom(readFileSync(path, 'utf8')))
   } catch (error) {
-    throw new CliError('INVALID_PACKAGE_JSON', {
+    throw new CliError('invalid_package_json', {
       exitCode: EXIT.VALIDATION,
       params: { path, detail: error instanceof Error ? error.message : String(error) },
       cause: error,
     })
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new CliError('INVALID_PACKAGE_JSON', {
+    throw new CliError('invalid_package_json', {
       exitCode: EXIT.VALIDATION,
       params: { path, detail: 'expected a JSON object' },
     })
@@ -79,7 +100,10 @@ function stripBom(text: string): string {
 
 /** Load the project at `root`. */
 export function loadProject(root: string): Project {
-  return { root, packageJson: readJsonObject(join(root, 'package.json')) }
+  const manifest = join(root, 'package.json')
+  // An application without a package.json yet (a fresh skeleton, a test folder) is still a project.
+  if (!existsSync(manifest) && isAppRoot(root)) return { root, packageJson: {} }
+  return { root, packageJson: readJsonObject(manifest) }
 }
 
 /** Names of every dependency the project declares (prod, dev, optional, peer), sorted. */

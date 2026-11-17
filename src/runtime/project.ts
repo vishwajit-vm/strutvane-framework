@@ -27,7 +27,7 @@ import { normaliseAppEnv } from './app-env.ts'
 export class ProjectLoadError extends Error {
   override readonly name = 'ProjectLoadError'
   /** Stable code: the CLI reports it as a configuration error (exit 3), not as a bug. */
-  readonly code = 'PROJECT_INVALID'
+  readonly code = 'project_invalid'
 }
 
 /** A loaded project. */

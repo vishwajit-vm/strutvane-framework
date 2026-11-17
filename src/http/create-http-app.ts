@@ -65,11 +65,12 @@ import {
 } from './idempotency.ts'
 import { resolvePermissionProvider } from './permissions.ts'
 import {
-  clientAddressOf,
-  forwardedProtocol,
+  forwardedClient,
+  isTrustedProxy,
   parsePublicUrl,
+  type ResolvedProxies,
+  resolveTrustProxy,
   type TrustProxy,
-  trustedHops,
 } from './proxy.ts'
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -122,8 +123,9 @@ export interface HttpAppOptions {
    */
   readonly openapi?: boolean | 'public' | 'authenticated'
   /**
-   * Proxy hops in front of the app whose `X-Forwarded-For`, `X-Forwarded-Proto` and
-   * `X-Request-Id` headers are believed (`true` = one). Default `false`: clients can send those
+   * The proxies in front of the app whose `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`
+   * and `X-Request-Id` headers are believed: a hop count (`true` = one) or, safer, the proxies'
+   * addresses or CIDR ranges (`['10.0.0.0/8']`). Default `false`: clients can send those
    * headers themselves, so without a proxy you control they are ignored. The client address
    * handed to `http.onRequest` (`clientAddress`) then always comes from the socket.
    */
@@ -268,7 +270,11 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       throw new Error(`Resource ${r.definition.name} is not in the model registry`)
   }
   const info = options.info ?? { title: 'Strutvane API', version: '1.0.0' }
-  const hops = trustedHops(options.trustProxy)
+  // Every form of trustProxy (a hop count, or a list of proxy addresses and ranges), checked at
+  // boot: a bad entry throws a SecuritySettingError listing it.
+  const proxies = resolveTrustProxy(options.trustProxy)
+  const peerOf = (c: Context): string | undefined => peerAddress(c.env)
+  const viaTrustedProxy = (c: Context): boolean => isTrustedProxy(peerOf(c), proxies)
   const publicUrl = parsePublicUrl(options.publicUrl)
   const openapiMode =
     options.openapi === false
@@ -283,12 +289,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   const http = new OpenAPIHono<HttpEnv>()
 
   const isHttps = (c: Context): boolean =>
-    publicUrl?.protocol === 'https:' ||
-    forwardedProtocol(
-      c.req.header('x-forwarded-proto'),
-      hops,
-      new URL(c.req.url).protocol === 'https:' ? 'https' : 'http',
-    ) === 'https'
+    publicUrl?.protocol === 'https:' || forwardedClient(peerOf(c), c.req.raw, proxies).secure
   // One source for the session cookie's name (CONSISTENCY #105): the session layer reads it from
   // the container, the CSRF check below uses the same value. A binding that already exists (a
   // second HTTP app on the same application) wins, so the two can never disagree.
@@ -310,12 +311,10 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   if (csrf === undefined)
     logger.warn('CSRF protection is off (csrf: false): cookie-authenticated writes are unchecked')
 
-  http.use('*', securityHeaders({ isHttps }))
+  // HSTS only in production (a local https:// dev server must not pin the browser to HTTPS).
+  http.use('*', securityHeaders({ isHttps, environment: env }))
   // First after the headers: an unknown host never reaches a hook, a route or the dev UI.
-  http.use(
-    '*',
-    trustedHostsGuard(hosts, () => hops > 0),
-  )
+  http.use('*', trustedHostsGuard(hosts, viaTrustedProxy))
   // Before the request hooks, so a hook that never settles is bounded too.
   http.use('*', (c, next) => {
     if (routeTimeouts.length === 0) return timeout(c, next)
@@ -337,9 +336,9 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
   }
   http.use('*', async (c, next) => {
     // A client-sent id is only believed from a trusted proxy (else ids could be forged).
-    const requestId = acceptRequestId(c.req.header('x-request-id'), () => ids(), hops > 0)
+    const requestId = acceptRequestId(c.req.header('x-request-id'), () => ids(), viaTrustedProxy(c))
     const locale = negotiateLocale(c.req.header('accept-language'), messages.locales())
-    const clientAddress = resolveClientAddress(c.env, c.req.header('x-forwarded-for'), hops)
+    const clientAddress = resolveClientAddress(c.env, c.req.raw, proxies)
     const initial: HttpRequestHookPayload = {
       request: c.req.raw,
       actor: null,
@@ -389,7 +388,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     return undefined
   })
   const tooLarge = () => {
-    throw new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 })
+    throw new StrutvaneError('payload_too_large', { status: 413 })
   }
   const defaultLimit = bodyLimit({
     maxSize: options.bodyLimit ?? DEFAULT_BODY_LIMIT,
@@ -532,7 +531,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     const served = staticFiles ? await staticFiles(c.req.raw) : undefined
     if (served) return served
     const s = c.get('sv')
-    const problem = toProblemBody(new StrutvaneError('NOT_FOUND', { status: 404 }), {
+    const problem = toProblemBody(new StrutvaneError('not_found', { status: 404 }), {
       messages,
       registry: errors,
       locale: s?.locale ?? 'en',
@@ -540,7 +539,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       instance: new URL(c.req.url).pathname,
     })
     const response = problemResponse(problem)
-    // `sv dev`: the adapter hands this request to Vite instead (and sends this 404 if Vite
+    // `node strut dev`: the adapter hands this request to Vite instead (and sends this 404 if Vite
     // passes). Only UI requests are marked: API paths keep their problem+json 404.
     if (options.uiFallthrough === true && isUiRequest(c.req.raw, uiExclude))
       response.headers.set(UI_FALLTHROUGH_HEADER, '1')
@@ -600,17 +599,23 @@ function matchedRouteTemplate(c: Context): string | undefined {
 /**
  * The client address for this request. An adapter that already resolved it (this package's
  * `serve`, which applies `trustProxy` itself) passes `clientAddress`; otherwise the socket peer
- * from `@hono/node-server`'s `incoming` is used, with trusted `X-Forwarded-For` hops applied.
- * Never read from headers alone.
+ * from `@hono/node-server`'s `incoming` is used, with the trusted proxies' `X-Forwarded-For`
+ * applied. Never read from headers alone.
  */
 function resolveClientAddress(
   env: HttpBindings | undefined,
-  forwardedFor: string | undefined,
-  hops: number,
+  request: Request,
+  proxies: ResolvedProxies,
 ): string | undefined {
   if (env !== undefined && typeof env === 'object' && 'clientAddress' in env)
     return typeof env.clientAddress === 'string' ? env.clientAddress : undefined
-  return clientAddressOf(env?.incoming?.socket?.remoteAddress, forwardedFor, hops)
+  return forwardedClient(peerAddress(env), request, proxies).ip
+}
+
+/** The TCP peer: this package's `serve` passes `ip`; `@hono/node-server` passes `incoming`. */
+function peerAddress(env: HttpBindings | undefined): string | undefined {
+  if (env === undefined || typeof env !== 'object') return undefined
+  return env.ip ?? env.incoming?.socket?.remoteAddress
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

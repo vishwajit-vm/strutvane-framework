@@ -26,7 +26,7 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
       'app/models/broken.model.ts':
         "import { defineModel } from '@strutvane/framework'\nexport default defineModel('Broken', {\n",
     })
-    expect(d.code).toBe('PARSE_ERROR')
+    expect(d.code).toBe('parse_error')
     expect(d.file).toBe('app/models/broken.model.ts')
     expect(d.line).toBe(3)
     expect(d.hint).toBeDefined()
@@ -34,13 +34,13 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
 
   test('no default export', () => {
     const d = only({ 'app/models/nothing.model.ts': 'export const x = 1\n' })
-    expect(d.code).toBe('MISSING_DEFAULT_EXPORT')
+    expect(d.code).toBe('missing_default_export')
     expect(d.hint).toContain('export default defineModel(…)')
   })
 
   test('default export is not a define call', () => {
     const d = only({ 'app/models/plain.model.ts': 'export default { name: "Plain" }\n' })
-    expect(d.code).toBe('UNEXPECTED_DEFAULT_EXPORT')
+    expect(d.code).toBe('unexpected_default_export')
     expect([d.line, d.column]).toEqual([1, 16])
   })
 
@@ -49,7 +49,7 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
       'app/models/wrong.model.ts':
         "import { defineResource } from '@strutvane/framework'\nimport Order from './order.model.ts'\nexport default defineResource(Order)\n",
     })
-    expect(d.code).toBe('UNEXPECTED_DEFAULT_EXPORT')
+    expect(d.code).toBe('unexpected_default_export')
     expect(d.message).toContain('found defineResource')
   })
 
@@ -58,7 +58,7 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
       'app/models/fake.model.ts':
         "import { defineModel } from './my-own-thing.ts'\nexport default defineModel('Fake', {})\n",
     })
-    expect(d.code).toBe('NOT_IMPORTED_FROM_FRAMEWORK')
+    expect(d.code).toBe('not_imported_from_framework')
   })
 
   test('a non-literal model name points at the exact argument', () => {
@@ -66,7 +66,7 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
       'app/models/dyn.model.ts':
         "import { defineModel, field } from '@strutvane/framework'\nconst name = 'Dyn'\nexport default defineModel(name, { a: field.string() })\n",
     })
-    expect(d.code).toBe('NON_LITERAL_ARGUMENT')
+    expect(d.code).toBe('non_literal_argument')
     expect([d.line, d.column]).toEqual([3, 28])
   })
 
@@ -75,12 +75,12 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
       'app/models/spread.model.ts':
         "import { defineModel, field } from '@strutvane/framework'\nconst base = { a: field.string() }\nexport default defineModel('Spread', { ...base })\n",
     })
-    expect(d.code).toBe('NON_LITERAL_ARGUMENT')
+    expect(d.code).toBe('non_literal_argument')
   })
 
   test('model names must be PascalCase', () => {
     expect(only({ 'app/models/lower.model.ts': modelSource('lower') }).code).toBe(
-      'INVALID_MODEL_NAME',
+      'invalid_model_name',
     )
   })
 
@@ -89,7 +89,7 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
       project({ ...VALID, 'app/models/customer.model.ts': modelSource('Client') }),
     )
     expect(result.diagnostics.map((d) => [d.code, d.severity])).toEqual([
-      ['FILE_NAME_MISMATCH', 'warning'],
+      ['file_name_mismatch', 'warning'],
     ])
     expect(result.output).toBeDefined()
   })
@@ -99,7 +99,7 @@ describe('per-file errors (with file:line:column and a fix hint)', () => {
       'app/http/routes/api.ts':
         "import { route } from '@strutvane/framework'\nexport default [route.get('no-slash')]\n",
     })
-    expect(d.code).toBe('INVALID_ROUTE')
+    expect(d.code).toBe('invalid_route')
   })
 })
 
@@ -110,11 +110,11 @@ describe('cross-file errors', () => {
     const diagnostics = diagnosticsFor({ 'app/models/order2.model.ts': modelSource('Order') })
     const errors = diagnostics.filter((d) => d.severity === 'error')
     expect(errors).toHaveLength(1)
-    expect(errors[0]?.code).toBe('DUPLICATE_MODEL')
+    expect(errors[0]?.code).toBe('duplicate_model')
     expect(errors[0]?.file).toBe('app/models/order2.model.ts')
     expect(errors[0]?.message).toContain('app/models/order.model.ts')
     expect(diagnostics.filter((d) => d.severity === 'warning').map((d) => d.code)).toEqual([
-      'FILE_NAME_MISMATCH',
+      'file_name_mismatch',
     ])
   })
 
@@ -123,7 +123,7 @@ describe('cross-file errors', () => {
       'app/policies/ghost.policy.ts':
         "import { definePolicy } from '@strutvane/framework'\nexport default definePolicy('ghost', () => {})\n",
     })
-    expect(d.code).toBe('UNKNOWN_MODEL')
+    expect(d.code).toBe('unknown_model')
   })
 
   test('duplicate route, invalid permission, duplicate job, duplicate page URL', () => {
@@ -140,10 +140,10 @@ describe('cross-file errors', () => {
       'web/pages/invoices/index.tsx': 'export default () => null\n',
     }).map((d) => d.code)
     expect(codes.sort()).toEqual([
-      'DUPLICATE_JOB',
-      'DUPLICATE_PAGE_ROUTE',
-      'DUPLICATE_ROUTE',
-      'INVALID_PERMISSION',
+      'duplicate_job',
+      'duplicate_page_route',
+      'duplicate_route',
+      'invalid_permission',
     ])
   })
 
@@ -155,16 +155,16 @@ describe('cross-file errors', () => {
         "import { defineModel } from '@strutvane/framework'\nexport default defineModel('C', {\n",
     })
     expect(diagnostics.map((d) => d.code)).toEqual([
-      'MISSING_DEFAULT_EXPORT',
-      'UNEXPECTED_DEFAULT_EXPORT',
-      'PARSE_ERROR',
+      'missing_default_export',
+      'unexpected_default_export',
+      'parse_error',
     ])
   })
 
   test('formatted diagnostics read like compiler output with a hint line', () => {
     const d = only({ 'app/models/nothing.model.ts': 'export const x = 1\n' })
     expect(formatDiagnostic(d)).toMatch(
-      /^app\/models\/nothing\.model\.ts:1:1 error MISSING_DEFAULT_EXPORT .+\n {2}hint: /,
+      /^app\/models\/nothing\.model\.ts:1:1 error missing_default_export .+\n {2}hint: /,
     )
   })
 })
@@ -181,7 +181,7 @@ describe('fail closed: errors never produce or overwrite a registry', () => {
     const broken = compiler.write()
     expect(broken.written).toBe(false)
     expect(broken.result.output).toBeUndefined()
-    expect(broken.result.diagnostics[0]?.code).toBe('PARSE_ERROR')
+    expect(broken.result.diagnostics[0]?.code).toBe('parse_error')
     expect(readFileSync(first.outputPath, 'utf8')).toBe(good)
 
     writeFileSync(

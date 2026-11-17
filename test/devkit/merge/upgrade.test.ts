@@ -305,7 +305,7 @@ describe('preview and transactions', () => {
 
     const refused = await rejectionOf(applyUpgrade({ projectRoot, plan: p }))
     expect(refused).toBeInstanceOf(DevkitError)
-    expect((refused as DevkitError).code).toBe('INTERRUPTED_TRANSACTION')
+    expect((refused as DevkitError).code).toBe('interrupted_transaction')
     expect(await recoverTransactions({ io: nodeIo, projectRoot })).toBe(1)
     expect(await snapshot(projectRoot)).toEqual(before)
     expect(await recoverTransactions({ io: nodeIo, projectRoot })).toBe(0) // idempotent

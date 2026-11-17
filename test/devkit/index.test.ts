@@ -67,12 +67,12 @@ test('runtime exports', () => {
 
 test('errors carry stable codes and causes', () => {
   const cause = new Error('root')
-  const error = new devkit.DevkitError('FILE_EXISTS', 'exists', { cause })
-  expect(error).toMatchObject({ name: 'DevkitError', code: 'FILE_EXISTS', cause })
-  expect(new devkit.DevkitError('FILE_EXISTS', 'x').cause).toBeUndefined()
+  const error = new devkit.DevkitError('file_exists', 'exists', { cause })
+  expect(error).toMatchObject({ name: 'DevkitError', code: 'file_exists', cause })
+  expect(new devkit.DevkitError('file_exists', 'x').cause).toBeUndefined()
   expect(devkit.describeError(error)).toBe('exists')
   expect(devkit.describeError('plain')).toBe('plain')
   const aborted = new devkit.TransactionAbortedError('nope', false)
-  expect(aborted).toMatchObject({ code: 'TRANSACTION_ABORTED', rolledBack: false })
+  expect(aborted).toMatchObject({ code: 'transaction_aborted', rolledBack: false })
   expect(aborted).toBeInstanceOf(devkit.DevkitError)
 })

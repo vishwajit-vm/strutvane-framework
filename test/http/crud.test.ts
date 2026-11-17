@@ -100,7 +100,7 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
     })
     expect(res.status).toBe(422)
     expect(res.headers.get('content-type')).toBe('application/problem+json')
-    expect(res.body.code).toBe('VALIDATION_FAILED')
+    expect(res.body.code).toBe('validation_failed')
     const byPath = Object.fromEntries((res.body.issues ?? []).map((i) => [i.path.join('.'), i]))
     expect(byPath['email']?.code).toBe('invalid_email')
     expect(byPath['email']?.message).toBe('Email must be a valid email address.')
@@ -119,7 +119,7 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
       headers: { 'content-type': 'application/json' },
     })
     expect(malformed.status).toBe(400)
-    expect(malformed.body.code).toBe('MALFORMED_REQUEST')
+    expect(malformed.body.code).toBe('malformed_request')
     const form = await asA().request<Problem>('POST', `${BASE}/customers`, {
       body: 'name=x',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -129,7 +129,7 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
       body: { name: 'x'.repeat(1_100_000), email: 'a@b.test' },
     })
     expect(huge.status).toBe(413)
-    expect(huge.body.code).toBe('PAYLOAD_TOO_LARGE')
+    expect(huge.body.code).toBe('payload_too_large')
   })
 
   it('treats unknown, malformed and other-tenant ids as 404 (no enumeration)', async () => {
@@ -171,10 +171,10 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
     ])
   })
 
-  it('requires a tenant for tenant-scoped resources (403 TENANT_REQUIRED)', async () => {
+  it('requires a tenant for tenant-scoped resources (403 tenant_required)', async () => {
     const res = await t.actingAs(user('u'), {}).request<Problem>('GET', `${BASE}/customers`)
     expect(res.status).toBe(403)
-    expect(res.body.code).toBe('TENANT_REQUIRED')
+    expect(res.body.code).toBe('tenant_required')
   })
 
   it('rejects invalid list queries with every issue at once', async () => {
@@ -350,7 +350,7 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
     })
     const inUse = await client.request<Problem>('DELETE', `${BASE}/customers/${customer.id}`)
     expect(inUse.status).toBe(409)
-    expect(inUse.body.code).toBe('RECORD_IN_USE')
+    expect(inUse.body.code).toBe('record_in_use')
   })
 
   it('serves problems for unknown routes and sets security headers and request ids', async () => {
@@ -358,7 +358,7 @@ describe.each(DIALECTS)('HTTP CRUD on %s', (dialect) => {
       headers: { 'x-request-id': 'req-12345678' },
     })
     expect(res.status).toBe(404)
-    expect(res.body.code).toBe('NOT_FOUND')
+    expect(res.body.code).toBe('not_found')
     expect(res.headers.get('x-content-type-options')).toBe('nosniff')
     expect(res.headers.get('content-security-policy')).toContain("default-src 'none'")
     expect(res.headers.get('x-frame-options')).toBe('DENY')
@@ -409,14 +409,14 @@ describe('permissions', () => {
     try {
       const anon = await t.request<Problem>('GET', `${BASE}/customers`)
       expect(anon.status).toBe(401)
-      expect(anon.body.code).toBe('UNAUTHENTICATED')
+      expect(anon.body.code).toBe('unauthenticated')
       const denied = await t
         .actingAs(user('u'), { tenantId: TENANT_A })
         .request<Problem>('POST', `${BASE}/customers`, {
           body: { name: 'x', email: 'x@x.test' },
         })
       expect(denied.status).toBe(403)
-      expect(denied.body.code).toBe('FORBIDDEN')
+      expect(denied.body.code).toBe('forbidden')
     } finally {
       await t.close()
     }

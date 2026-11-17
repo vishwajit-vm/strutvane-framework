@@ -41,7 +41,7 @@ describe('create: anonymous callers get 401 before body validation', () => {
     for (const body of [{}, { codename: 1, level: 'x' }, { unknown: true }, '{not json']) {
       const res = await t.request<Problem>('POST', '/api/v1/secrets', { body })
       expect(res.status, JSON.stringify(body)).toBe(401)
-      expect(res.body.code).toBe('UNAUTHENTICATED')
+      expect(res.body.code).toBe('unauthenticated')
       expect(res.body.issues).toBeUndefined()
     }
     const wrongType = await t.request<Problem>('POST', '/api/v1/secrets', {

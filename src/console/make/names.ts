@@ -80,12 +80,12 @@ const NAME = /^[A-Za-z][A-Za-z0-9_-]*$/
 export const WINDOWS_RESERVED: RegExp = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i
 
 /**
- * Derive every spelling from `input`. Throws `INVALID_NAME` (exit 3) for names that cannot be a
+ * Derive every spelling from `input`. Throws `invalid_name` (exit 3) for names that cannot be a
  * TypeScript identifier and a file name on every OS (including Windows device names).
  */
 export function names(input: string, what = 'Name'): Names {
   if (!NAME.test(input)) {
-    throw new CliError('INVALID_NAME', {
+    throw new CliError('invalid_name', {
       exitCode: EXIT.VALIDATION,
       params: {
         detail: `${what} "${input}" must start with a letter and use only letters, digits, "-" or "_".`,
@@ -103,7 +103,7 @@ export function names(input: string, what = 'Name'): Names {
     pluralParts.join('_'),
   ].filter((file) => WINDOWS_RESERVED.test(file))
   if (reserved.length > 0) {
-    throw new CliError('INVALID_NAME', {
+    throw new CliError('invalid_name', {
       exitCode: EXIT.VALIDATION,
       params: {
         detail: `${what} "${input}" would create a file named "${reserved[0]}", which Windows reserves for a device. Choose another name.`,

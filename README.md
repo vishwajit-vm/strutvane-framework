@@ -119,7 +119,7 @@ discovers everything by convention, so there is nothing to wire by hand:
 | `app/http/routes/*.ts` | `export default [route.get('/hello', { public: true, handler })]`. A route needs `permission`, or `public: true`, or else a signed-in actor (deny-by-default). Handlers get the app's services (see below) and may set `bodyLimit` (bytes) for uploads. |
 | `config/filesystems.ts` | `{ default: 'local', disks: { local: { driver: 'local', root: 'storage/app' } } }` (`local` or `memory`; that disk is the default when the file is missing). Disks sign temporary links with `APP_KEY` (`config/app.ts` `key`, an HKDF subkey) and the app serves them at `/storage/<disk>/…`. |
 | `dist/web/` | `sv start` serves the built UI (`sv build`) next to the API: files, then `index.html` for client-side routes (never for the API base path, `/_strutvane`, `/storage` or discovery documents), with a page CSP. |
-| `vite.config.*` | `sv dev` mounts the project's own Vite (resolved from the project's `node_modules`; the framework has no Vite dependency) in middleware mode on the same port, with HMR over the same server: one URL for the API and the UI, so the UI's `/api/v1` fetches and auth's `trustedOrigins: [APP_URL]` work without a proxy. Vite only gets `GET`/`HEAD` requests the API did not answer, outside the API base path and framework paths (the same rule as `dist/web`). Without a Vite config or an installed `vite`, `sv dev` serves the API only and says so. A port that cannot be bound (taken, privileged, unknown interface) fails with `ServerListenError` (`PORT_IN_USE`, … plus `host`/`port`), which the CLI reports as a config error: change `APP_PORT` or pass `--port`. |
+| `vite.config.*` | `sv dev` mounts the project's own Vite (resolved from the project's `node_modules`; the framework has no Vite dependency) in middleware mode on the same port, with HMR over the same server: one URL for the API and the UI, so the UI's `/api/v1` fetches and auth's `trustedOrigins: [APP_URL]` work without a proxy. Vite only gets `GET`/`HEAD` requests the API did not answer, outside the API base path and framework paths (the same rule as `dist/web`). Without a Vite config or an installed `vite`, `sv dev` serves the API only and says so. A port that cannot be bound (taken, privileged, unknown interface) fails with `ServerListenError` (`port_in_use`, … plus `host`/`port`), which the CLI reports as a config error: change `APP_PORT` or pass `--port`. |
 | `database/migrations/` | `sv migrate` diffs the models with `snapshot.json`, writes a timestamped `.sql` file and applies it together with hand-written `.sql`/`.ts` migrations, in timestamp order (`--pretend`, `--rename old=new`, `--separate old=new`, `--allow-destructive`). |
 | package migrations | A dependency whose package.json declares `"strutvane": { "migrations": "./migrations" }` ships `<folder>/<dialect>/*.sql`; `sv migrate` applies and tracks them with the app's files (e.g. `@strutvane/auth`'s identity tables), so a package needs no separate migration step. They run as the database owner, so only folders the CLI vetted contribute (`ctx.packageMigrations()`): the app imports the package in `strutvane.config.ts`, it is a direct dependency named `@strutvane/*` or `strutvane-plugin-*`, a third-party one declares a matching `strutvane.compat`, and the folder and every file in it resolve inside the package. Anything else is ignored (`sv doctor` warns); the framework never scans `node_modules` itself. `--pretend` and `migrate:status` show each migration's package. |
 | `database/seeders/` | `sv db:seed` runs `database.seeder.ts`, which calls the other seeders in order (`sv make:model` registers each new model's seeder there, parents before children); `--class InvoiceSeeder` runs one. When `DatabaseSeeder` runs nothing while other seeder files exist, `db:seed` warns and names them. |
@@ -217,16 +217,44 @@ from a model with `policySchema(Invoice)` (typed per field, so `row.stage.eq('wo
 
 | Option (`createHttpApp`, `serve`, `config/app.ts`) | Default | Why |
 |---|---|---|
-| `trustProxy` | `false` | How many proxy hops may set `X-Forwarded-For`/`-Proto` and `X-Request-Id`. Clients can send these headers themselves, so they are ignored unless a proxy you control overwrites them. |
-| `publicUrl` | none | The URL users reach the app at. An `https://` URL makes the app send HSTS (and request URLs report `https`) even though TLS ends at the proxy. |
+| `trustProxy` | `false` | Which proxies may set `X-Forwarded-For`/`-Proto`/`-Host` and `X-Request-Id`: a hop count (`true` = one) or, safer, their addresses or CIDR ranges (`['10.0.0.0/8']`; `'*'` is refused). Clients can send these headers themselves, so they are ignored unless a proxy you control overwrites them. |
+| `publicUrl` | none | The URL users reach the app at. An `https://` URL makes request URLs report `https` even though TLS ends at the proxy. HSTS is sent over HTTPS in `APP_ENV=production` only, so a local `https://` dev server never pins your browser. |
 
 `http.onRequest` handlers receive `clientAddress`: the TCP peer (from `serve`, or `@hono/node-server`'s `c.env.incoming`), or the trusted `X-Forwarded-For` hop. It is `undefined` when unknown, and controls keyed by address must then fail closed. `serve` also aborts `request.signal` when the client disconnects, cancels the response body, honours backpressure, and never streams `HEAD` bodies. Every response carries a `Permissions-Policy` that disables camera, microphone, geolocation, payment and similar features.
+
+## The application core (v2)
+
+An app built Laravel's way has `bootstrap/app.ts`, routes files and `node strut`:
+
+```ts
+// bootstrap/app.ts
+import { dirname } from 'node:path'
+import { Application } from '@strutvane/framework'
+import web from '../routes/web.ts'
+
+export default Application.configure({ basePath: dirname(import.meta.dirname) })
+  .withRouting({ web, health: '/up' })
+  .withMiddleware((m) => m.validateCsrfTokens({ except: ['webhooks/*'] }))
+  .withCommands([sendReportsCommand])
+  .create()
+```
+
+- **Exports.** `@strutvane/framework` exports `Application`, `Route`/`defineRoutes`, the `route()`, `config()`, `app()`, `now()` and `redirect()` helpers, middleware and protections (`csrf`, `auth`, `can`, `throttle`, `signed`, `idempotent`), `FormRequest`, `ResourceController`, the exception handler, the security kit (`Keyring`, `Encrypter`, `UrlSigner`, `HttpClient`), maintenance mode, the cache manager and the session store. `route` is callable (`route('posts.show', { post })`) and still carries the deprecated v1 `route.get/post/…` builders.
+- **Facades** live on `@strutvane/framework/facades` (`Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`; `Mail`, `Queue`, `Bus`, `Notification` and `Hash` say "coming in 0.3"). They resolve from the current app's container, so tests can swap them, and the `Route` facade never shadows the `Route` builder.
+- **Serving.** `node strut start` (and `dev`) boots `bootstrap/app.ts` before the port opens (`startApplication()`); a broken route or a weak key never starts serving. The Node adapter hands the app the socket peer and `waitUntil`, so deferred work runs after the response and a graceful stop waits for it.
+- **Commands.** `node strut list` (`help` is an alias) shows the app commands: `optimize`, `config:cache`, `route:cache`, `event:cache` (and their `:clear`), `event:list`, `route:list [--security]`, `cache:clear`, `cache:forget`, `key:rotate`, `env:encrypt`/`env:decrypt`, `down`/`up`, `session:flush`, `security:check [--audit]`, `make:command`, `make:rule`, `make:observer`, plus the commands the app registers with `withCommands()`. A `BootError` is reported with its hint and exit code 3.
+
+### Upgrading to 0.2: lowercase error codes
+
+Every code is lowercase `snake_case` from 0.2 (CONSISTENCY #68, #123): HTTP problem codes (`NOT_FOUND` → `not_found`, `VALIDATION_FAILED` → `validation_failed`), CLI `--json` error codes (`PROJECT_NOT_FOUND` → `project_not_found`), devkit, container and model-DSL codes. Each new name is the old one in lower case; `LEGACY_ERROR_CODES` (from `@strutvane/framework/core`) is the full table. Through the 0.2 line the old names keep working: `new StrutvaneError('NOT_FOUND')` carries `not_found`, the error registry finds an old name, and an app's own uppercase code is still accepted. Each prints one `DeprecationWarning` (code `STRUTVANE_UPPERCASE_ERROR_CODE`); 0.3 removes them. Clients that compare `problem.code` must switch to the lowercase names, and catalog keys become `errors.<new code>.title`.
+
+Validation issues also carry `field`, the dotted path (`items.0.title`), next to `path` (CONSISTENCY #69).
 
 ## What's deferred
 
 | Item | Status |
 |---|---|
-| Queue, cache, mail | Not implemented. Integration-map tokens are reserved for a later release. |
+| Queue, mail; database and Redis cache stores | Not implemented (coming in 0.3). The cache has `memory` and `file` stores today. |
 | MySQL | `driver: 'mysql'` is accepted in config and throws `NotImplementedError`. |
 | Azure Entra ID (passwordless) Postgres | `auth: { kind: 'azure-entra' }` is part of the config shape and throws `NotImplementedError` for now. |
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |

@@ -83,7 +83,7 @@ describe('Problem', () => {
       type: 'https://strutvane.dev/errors/validation',
       title: 'Validation failed',
       status: 422,
-      code: 'VALIDATION_FAILED',
+      code: 'validation_failed',
       fieldErrors: { amount: ['Must be at least 0'] },
       retryAfterSeconds: 30,
     }

@@ -61,8 +61,8 @@ describe('incremental compilation', () => {
     expect(result.output).toBeUndefined()
     expect(result.diagnostics.map((d) => [d.code, d.file])).toEqual(
       [
-        ['UNKNOWN_MODEL', 'app/resources/customer.resource.ts'],
-        ['UNKNOWN_MODEL', 'app/policies/customer.policy.ts'],
+        ['unknown_model', 'app/resources/customer.resource.ts'],
+        ['unknown_model', 'app/policies/customer.policy.ts'],
       ].sort((a, b) => ((a[1] ?? '') < (b[1] ?? '') ? -1 : 1)),
     )
   })

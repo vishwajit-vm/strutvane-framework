@@ -33,22 +33,22 @@ describe('a project file that cannot be loaded', () => {
     const root = await brokenProject({ [file]: content })
     const error = await loadProject(root, { dotenv: false }).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ProjectLoadError)
-    expect((error as ProjectLoadError).code).toBe('PROJECT_INVALID')
+    expect((error as ProjectLoadError).code).toBe('project_invalid')
     expect((error as Error).message).toContain(file)
     const failure = toFailure(error)
-    expect(failure).toMatchObject({ code: 'PROJECT_INVALID', exitCode: EXIT.VALIDATION })
+    expect(failure).toMatchObject({ code: 'project_invalid', exitCode: EXIT.VALIDATION })
     expect(failure.unexpected).toBe(false)
     expect(renderMessages(failure).message).toContain(file)
   })
 })
 
 describe('boot failures in the CLI', () => {
-  it('a provider failing to boot (database down at startup) is BOOT_FAILED, not a bug report', () => {
+  it('a provider failing to boot (database down at startup) is boot_failed, not a bug report', () => {
     const failure = toFailure(
       new ProviderError('@strutvane/framework', 'boot', new Error('connect ECONNREFUSED')),
     )
     expect(failure).toMatchObject({
-      code: 'BOOT_FAILED',
+      code: 'boot_failed',
       exitCode: EXIT.FAILURE,
       unexpected: false,
     })
@@ -57,10 +57,10 @@ describe('boot failures in the CLI', () => {
     expect(hint).toMatch(/running/)
   })
 
-  it('a boot that never finishes is BOOT_TIMEOUT', () => {
+  it('a boot that never finishes is boot_timeout', () => {
     const failure = toFailure(new BootTimeoutError(30_000))
     expect(failure).toMatchObject({
-      code: 'BOOT_TIMEOUT',
+      code: 'boot_timeout',
       exitCode: EXIT.FAILURE,
       unexpected: false,
     })

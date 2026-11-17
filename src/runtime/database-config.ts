@@ -6,7 +6,7 @@
  *   `{ default: 'postgres', connection: { url } }` (what `create-strutvane` writes);
  * - a framework {@link DatabaseConfig} under `connection` (`{ connection: { driver: 'pglite' } }`).
  *
- * Relative SQLite files resolve against the project root, so `sv migrate` and `sv dev` open the
+ * Relative SQLite files resolve against the project root, so `node strut migrate` and `node strut dev` open the
  * same file whatever the working directory.
  *
  * @module

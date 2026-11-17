@@ -1,5 +1,5 @@
 /**
- * `sv add <package>` and `sv remove <package>` (docs/09 §2).
+ * `node strut add <package>` and `node strut remove <package>` (docs/09 §2).
  *
  * `add` installs the package with the project's package manager (if needed), then runs its
  * installer through devkit: every file, `.env` entry, dependency and provider registration is
@@ -54,7 +54,7 @@ import { isStrutvanePackage } from './about.ts'
 /** Validate and expand a package argument (`auth` → `@strutvane/auth`). */
 export function packageArgument(input: string): string {
   const name = expandPackageName(input.trim())
-  if (!isValidPackageName(name)) throw usageError('INVALID_PACKAGE_NAME', { name: input })
+  if (!isValidPackageName(name)) throw usageError('invalid_package_name', { name: input })
   return name
 }
 
@@ -66,7 +66,7 @@ export function installSpec(name: string, cliVersion: string): string {
   return isStrutvanePackage(name) ? channelSpec(name, cliVersion) : name
 }
 
-/** Run the package manager; a non-zero exit is a `COMMAND_FAILED` error. */
+/** Run the package manager; a non-zero exit is a `command_failed` error. */
 async function runPackageManager(
   ctx: CommandContext,
   project: Project,
@@ -81,7 +81,7 @@ async function runPackageManager(
     stdio: ctx.globals.json ? 'pipe' : 'inherit',
   })
   if (result.code !== 0) {
-    throw new CliError('COMMAND_FAILED', {
+    throw new CliError('command_failed', {
       exitCode: EXIT.FAILURE,
       params: { command: `${command} ${args.join(' ')}`, code: result.code },
     })
@@ -96,7 +96,7 @@ async function loadInstaller(
 ): Promise<DevkitInstaller | undefined> {
   const pkg = readInstalledPackage(project.root, name)
   if (pkg === undefined) {
-    throw new CliError('PACKAGE_NOT_INSTALLED', { exitCode: EXIT.FAILURE, params: { name } })
+    throw new CliError('package_not_installed', { exitCode: EXIT.FAILURE, params: { name } })
   }
   assertCompatible(pkg, ctx.version)
   const path = resolveContribution(pkg, 'installer')
@@ -108,7 +108,7 @@ async function loadInstaller(
     typeof (installer as { install?: unknown }).install !== 'function' ||
     typeof (installer as { name?: unknown }).name !== 'string'
   ) {
-    throw new CliError('INVALID_CONTRIBUTION', {
+    throw new CliError('invalid_contribution', {
       exitCode: EXIT.FAILURE,
       params: { name, key: 'installer', detail: 'expected an object with a name and install()' },
     })
@@ -141,12 +141,12 @@ export const addCommand: AnyCommand = defineCommand({
   name: 'add',
   description: 'Install a package and run its installer (config, env, routes, migrations…)',
   details:
-    'Flags the CLI does not know are passed to the installer, e.g. `sv add auth --methods email`.',
+    'Flags the CLI does not know are passed to the installer, e.g. `node strut add auth --methods email`.',
   args: {
     package: { required: true, description: 'auth, ui, @strutvane/files, strutvane-plugin-x…' },
   },
   allowUnknownFlags: true,
-  examples: ['sv add auth', 'sv add auth --methods email,google --dry-run --diff'],
+  examples: ['node strut add auth', 'node strut add auth --methods email,google --dry-run --diff'],
   async run(ctx) {
     const project = ctx.requireProject()
     const name = packageArgument(ctx.args.package)
@@ -196,12 +196,12 @@ export const removeCommand: AnyCommand = defineCommand({
     },
   },
   allowUnknownFlags: true,
-  examples: ['sv remove auth --dry-run', 'sv remove auth --keep-data'],
+  examples: ['node strut remove auth --dry-run', 'node strut remove auth --keep-data'],
   async run(ctx) {
     const project = ctx.requireProject()
     const name = packageArgument(ctx.args.package)
     if (readInstalledPackage(project.root, name) === undefined) {
-      throw new CliError('PACKAGE_NOT_INSTALLED', { exitCode: EXIT.FAILURE, params: { name } })
+      throw new CliError('package_not_installed', { exitCode: EXIT.FAILURE, params: { name } })
     }
     const installer = await loadInstaller(ctx, project, name)
     let result: InstallResult | undefined

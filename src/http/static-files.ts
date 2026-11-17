@@ -1,6 +1,6 @@
 /**
- * Serving a built single-page UI (`dist/web`, the output of `sv build`) from the same origin as
- * the API, so `sv start` gives one URL for both (docs/05 §1: "UI on :3000").
+ * Serving a built single-page UI (`dist/web`, the output of `node strut build`) from the same origin as
+ * the API, so `node strut start` gives one URL for both (docs/05 §1: "UI on :3000").
  *
  * - Only `GET`/`HEAD`. Paths are URL-decoded per segment and must stay inside `root`: `..`,
  *   backslashes, NUL bytes, encoded slashes and dot-files are refused (404, never a hint), and on

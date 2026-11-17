@@ -134,7 +134,7 @@ describe('add', () => {
   test('a value no quoting style can carry unchanged is refused, never written corrupted', () => {
     for (const value of [`it's "both"`, `it's a\\b`, 'nul\0byte', 'bell\x07', 'del\x7f']) {
       expect(() => formatEnvValue(value)).toThrowError(
-        expect.objectContaining({ code: 'INVALID_ENV_VALUE' }),
+        expect.objectContaining({ code: 'invalid_env_value' }),
       )
     }
   })
@@ -176,14 +176,14 @@ describe('add', () => {
   })
 
   test.each([
-    [[{ key: 'lower_case', value: 'x' }], 'INVALID_ENV_KEY'],
-    [[{ key: '1ABC', value: 'x' }], 'INVALID_ENV_KEY'],
-    [[{ key: 'A-B', value: 'x' }], 'INVALID_ENV_KEY'],
-    [[{ key: 'DUP' }, { key: 'DUP' }], 'INVALID_ENV_KEY'],
-    [[{ key: 'MULTI', value: 'a\nINJECTED=1' }], 'INVALID_ENV_VALUE'],
-    [[{ key: 'CR', value: 'a\rb' }], 'INVALID_ENV_VALUE'],
-    [[{ key: 'S', secret: true, value: 'hard-coded' }], 'INVALID_ENV_VALUE'],
-    [[{ key: 'C', comment: 'line\nINJECTED=1' }], 'INVALID_ENV_VALUE'],
+    [[{ key: 'lower_case', value: 'x' }], 'invalid_env_key'],
+    [[{ key: '1ABC', value: 'x' }], 'invalid_env_key'],
+    [[{ key: 'A-B', value: 'x' }], 'invalid_env_key'],
+    [[{ key: 'DUP' }, { key: 'DUP' }], 'invalid_env_key'],
+    [[{ key: 'MULTI', value: 'a\nINJECTED=1' }], 'invalid_env_value'],
+    [[{ key: 'CR', value: 'a\rb' }], 'invalid_env_value'],
+    [[{ key: 'S', secret: true, value: 'hard-coded' }], 'invalid_env_value'],
+    [[{ key: 'C', comment: 'line\nINJECTED=1' }], 'invalid_env_value'],
   ])('rejects invalid input %j before staging anything', async (vars, code) => {
     const error = await rejectionOf(createEnvEditor(fs).add('S', vars))
     expect((error as DevkitError).code).toBe(code)
@@ -193,7 +193,7 @@ describe('add', () => {
   test('rejects empty or multi-line section titles', async () => {
     for (const section of ['', '  ', 'A\nB']) {
       const error = await rejectionOf(createEnvEditor(fs).add(section, [{ key: 'A' }]))
-      expect((error as DevkitError).code).toBe('INVALID_ENV_KEY')
+      expect((error as DevkitError).code).toBe('invalid_env_key')
     }
   })
 

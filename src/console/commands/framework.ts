@@ -4,7 +4,7 @@
  * The CLI never depends on the framework (product packages connect only through contracts and
  * runtime contribution). Instead, the framework contributes `migrate`, `db:seed`, … through its
  * `strutvane.commands` module, and those replace these placeholders automatically. The
- * placeholders exist so `sv help` lists the commands and so running one without the framework
+ * placeholders exist so `node strut help` lists the commands and so running one without the framework
  * explains how to get it instead of saying "unknown command".
  *
  * The destructive ones carry `destructive: true`, so the runner's production guard applies to
@@ -53,13 +53,13 @@ export function frameworkPlaceholder(
     destructive,
     allowUnknownFlags: true,
     details: destructive
-      ? `Provided by ${FRAMEWORK_PACKAGE}; available once it is installed (sv add framework).
+      ? `Provided by ${FRAMEWORK_PACKAGE}; available once it is installed (node strut add framework).
 Destructive: type the full name; unless APP_ENV is local, test, testing or development it needs --force --i-understand.`
-      : `Provided by ${FRAMEWORK_PACKAGE}; available once it is installed (sv add framework).`,
+      : `Provided by ${FRAMEWORK_PACKAGE}; available once it is installed (node strut add framework).`,
     run(ctx) {
       const project = ctx.requireProject()
       const installed = readInstalledPackage(project.root, FRAMEWORK_PACKAGE) !== undefined
-      throw new CliError(installed ? 'FRAMEWORK_COMMAND_MISSING' : 'FRAMEWORK_REQUIRED', {
+      throw new CliError(installed ? 'framework_command_missing' : 'framework_required', {
         exitCode: EXIT.FAILURE,
         params: { command: name },
       })

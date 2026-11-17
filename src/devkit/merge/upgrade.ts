@@ -1,5 +1,5 @@
 /**
- * `sv upgrade` for ejected files: plan → preview → apply (transactional) → recover.
+ * `node strut upgrade` for ejected files: plan → preview → apply (transactional) → recover.
  *
  * For every file the new template version produces, the planner decides one action:
  *

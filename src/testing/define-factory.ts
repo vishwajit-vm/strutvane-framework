@@ -1,5 +1,5 @@
 /**
- * `defineFactory()`: the factory files `sv make:factory` / `sv make:model` generate
+ * `defineFactory()`: the factory files `node strut make:factory` / `node strut make:model` generate
  * (`database/factories/<name>.factory.ts`), used by tests and seeders.
  *
  * ```ts

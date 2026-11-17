@@ -1,5 +1,5 @@
 /**
- * `sv registry:build` and `sv registry:watch`: the typed registry compiler (ADR-0010).
+ * `node strut registry:build` and `node strut registry:watch`: the typed registry compiler (ADR-0010).
  *
  * The compiler reads convention files statically (never runs app code) and writes the
  * deterministic `.strutvane/registry.gen.ts`. On any error nothing is written (keep last good).
@@ -72,7 +72,7 @@ export const registryBuildCommand: AnyCommand = defineCommand({
       description: 'Fail (exit 6) if the registry is out of date; write nothing',
     },
   },
-  examples: ['sv registry:build', 'sv registry:build --check'],
+  examples: ['node strut registry:build', 'node strut registry:build --check'],
   run(ctx) {
     const root = ctx.requireProject().root
     const compiler = new RegistryCompiler(root)
@@ -82,7 +82,7 @@ export const registryBuildCommand: AnyCommand = defineCommand({
     printDiagnostics(ctx.out, result.diagnostics)
     const summary = compileSummary(result)
     if (result.output === undefined) {
-      throw new CliError('REGISTRY_ERRORS', {
+      throw new CliError('registry_errors', {
         exitCode: EXIT.VALIDATION,
         params: { count: errorCount(result) },
         data: summary,
@@ -91,7 +91,7 @@ export const registryBuildCommand: AnyCommand = defineCommand({
     if (check) {
       const stale = !compiler.isCurrent(result)
       if (stale && ctx.flags.check === true) {
-        throw new CliError('REGISTRY_STALE', {
+        throw new CliError('registry_stale', {
           exitCode: EXIT.PENDING,
           params: { path: OUTPUT_FILE },
           data: { ...summary, stale },
@@ -122,12 +122,12 @@ export const registryWatchCommand: AnyCommand = defineCommand({
       description: 'Quiet period before a rebuild',
     },
   },
-  examples: ['sv registry:watch'],
+  examples: ['node strut registry:watch'],
   async run(ctx) {
     const root = ctx.requireProject().root
     const debounceMs = Number(ctx.flags.debounce)
     if (!Number.isFinite(debounceMs) || debounceMs < 0 || debounceMs > 10_000) {
-      throw new CliError('INVALID_FLAG_VALUE', {
+      throw new CliError('invalid_flag_value', {
         exitCode: EXIT.USAGE,
         params: { detail: '--debounce must be between 0 and 10000 ms.', command: ctx.command },
       })

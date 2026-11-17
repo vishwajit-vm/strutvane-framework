@@ -1,5 +1,5 @@
 /**
- * `sv add` / `sv remove` with a fixture installer package, and `sv upgrade` on a fixture ejected
+ * `node strut add` / `node strut remove` with a fixture installer package, and `node strut upgrade` on a fixture ejected
  * file. The package manager is a fake spawner that "installs" by writing into node_modules.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -145,13 +145,13 @@ describe('add', () => {
     expect(r.json().data).toMatchObject({ installedPackage: false, installer: null })
   })
 
-  test('package manager failure: COMMAND_FAILED (exit 1)', async () => {
+  test('package manager failure: command_failed (exit 1)', async () => {
     const r = await cli(['add', 'demo', '--json'], {
       cwd: makeProject(),
       spawn: fakeSpawner(() => ({ code: 1 })),
     })
     expect(r.code).toBe(1)
-    expect(r.json().error).toMatchObject({ code: 'COMMAND_FAILED' })
+    expect(r.json().error).toMatchObject({ code: 'command_failed' })
     expect(r.json().error?.message).toContain('npm install @strutvane/demo')
   })
 
@@ -176,7 +176,7 @@ describe('add', () => {
     ]) {
       const r = await cli(['add', bad, '--json'], { cwd: makeProject(), spawn })
       expect(r.code, bad).toBe(2)
-      expect(r.json().error?.code).toBe('INVALID_PACKAGE_NAME')
+      expect(r.json().error?.code).toBe('invalid_package_name')
     }
     expect(spawn.calls).toEqual([])
     expect(packageArgument('auth')).toBe('@strutvane/auth')
@@ -219,7 +219,7 @@ describe('add', () => {
     addDependencies(root, { 'strutvane-plugin-nocompat': '1.0.0' })
     const r = await cli(['add', 'strutvane-plugin-nocompat', '--json'], { cwd: root })
     expect(r.code).toBe(7)
-    expect(r.json().error?.code).toBe('MISSING_COMPAT')
+    expect(r.json().error?.code).toBe('missing_compat')
     expect(r.json().error?.hint).toContain('strutvane')
     expect((globalThis as { __ranNoCompat?: boolean }).__ranNoCompat).toBeUndefined()
   })
@@ -229,7 +229,7 @@ describe('add', () => {
     installDemo(root, { compat: '^5.0.0' })
     const r = await cli(['add', 'demo', '--json'], { cwd: root, version: '0.1.0' })
     expect(r.code).toBe(7)
-    expect(r.json().error?.code).toBe('INCOMPATIBLE_PACKAGE')
+    expect(r.json().error?.code).toBe('incompatible_package')
     expect(existsSync(join(root, 'config/demo.ts'))).toBe(false)
   })
 
@@ -240,11 +240,11 @@ describe('add', () => {
     installFakePackage(root, '@strutvane/evil', { strutvane: { installer: '../../../evil.mjs' } })
     const r = await cli(['add', 'evil', '--json'], { cwd: root })
     expect(r.code).toBe(1)
-    expect(r.json().error?.code).toBe('UNSAFE_CONTRIBUTION')
+    expect(r.json().error?.code).toBe('unsafe_contribution')
     const abs = makeProject()
     installFakePackage(abs, '@strutvane/abs', { strutvane: { installer: '/etc/passwd' } })
     expect((await cli(['add', 'abs', '--json'], { cwd: abs })).json().error?.code).toBe(
-      'UNSAFE_CONTRIBUTION',
+      'unsafe_contribution',
     )
   })
 
@@ -258,11 +258,11 @@ describe('add', () => {
     })
     for (const name of ['a', 'b', 'c']) {
       const r = await cli(['add', name, '--json'], { cwd: root })
-      expect(r.json().error?.code, name).toBe('INVALID_CONTRIBUTION')
+      expect(r.json().error?.code, name).toBe('invalid_contribution')
     }
   })
 
-  test('an installer that throws: nothing is written, INSTALLER_FAILED (exit 1)', async () => {
+  test('an installer that throws: nothing is written, installer_failed (exit 1)', async () => {
     const root = makeProject()
     installFakePackage(root, '@strutvane/bad', {
       strutvane: { installer: './i.mjs' },
@@ -274,7 +274,7 @@ describe('add', () => {
     const before = snapshotTree(root)
     const r = await cli(['add', 'bad', '--json'], { cwd: root })
     expect(r.code).toBe(1)
-    expect(r.json().error?.code).toBe('INSTALLER_FAILED')
+    expect(r.json().error?.code).toBe('installer_failed')
     expect(snapshotTree(root)).toEqual(before)
   })
 })
@@ -309,10 +309,10 @@ describe('remove', () => {
     expect(spawn.calls).toEqual([])
   })
 
-  test('not installed: PACKAGE_NOT_INSTALLED; no installer: only the dependency is removed', async () => {
+  test('not installed: package_not_installed; no installer: only the dependency is removed', async () => {
     expect(
       (await cli(['remove', 'ghost', '--json'], { cwd: makeProject() })).json().error?.code,
-    ).toBe('PACKAGE_NOT_INSTALLED')
+    ).toBe('package_not_installed')
     const root = makeProject()
     installFakePackage(root, '@strutvane/plain')
     const spawn = fakeSpawner()
@@ -383,11 +383,11 @@ describe('upgrade', () => {
     write(root, PATH, BASE.replace('return greeting', 'return greeting.trim()'))
     const r = await cli(['upgrade', '--json'], { cwd: root })
     expect(r.code).toBe(4)
-    expect(r.json().error).toMatchObject({ code: 'MERGE_CONFLICTS' })
+    expect(r.json().error).toMatchObject({ code: 'merge_conflicts' })
     expect(read(root, PATH)).toContain('<<<<<<<')
   })
 
-  test('runs the project typecheck afterwards; a failure is TYPECHECK_FAILED (exit 1)', async () => {
+  test('runs the project typecheck afterwards; a failure is typecheck_failed (exit 1)', async () => {
     const root = await ejectedProject(NEXT)
     write(root, 'node_modules/typescript/bin/tsc', '// fake tsc')
     const ok = fakeSpawner(() => ({ code: 0 }))
@@ -405,7 +405,7 @@ describe('upgrade', () => {
       spawn: fakeSpawner(() => ({ code: 2 })),
     })
     expect(bad.code).toBe(1)
-    expect(bad.json().error?.code).toBe('TYPECHECK_FAILED')
+    expect(bad.json().error?.code).toBe('typecheck_failed')
     const skipped = await ejectedProject(NEXT)
     write(skipped, 'node_modules/typescript/bin/tsc', '// fake tsc')
     const spawn = fakeSpawner()
@@ -440,7 +440,7 @@ describe('upgrade', () => {
       cwd: root,
       spawn: fakeSpawner(() => ({ code: 1 })),
     })
-    expect(failing.json().error?.code).toBe('COMMAND_FAILED')
+    expect(failing.json().error?.code).toBe('command_failed')
   })
 
   test('validates --to and --channel (exit 2)', async () => {
@@ -462,7 +462,7 @@ describe('upgrade', () => {
       files: { 't.mjs': 'export const templates = [{ path: 1 }]' },
     })
     const r = await cli(['upgrade', '--json'], { cwd: root })
-    expect(r.json().error).toMatchObject({ code: 'INVALID_CONTRIBUTION' })
+    expect(r.json().error).toMatchObject({ code: 'invalid_contribution' })
   })
 
   test('an owned file the user deleted is not recreated', async () => {

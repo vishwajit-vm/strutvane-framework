@@ -5,6 +5,7 @@
  */
 import type { AnyCommand } from '../framework/command.ts'
 import { aboutCommand } from './about.ts'
+import { APP_COMMANDS } from './app/index.ts'
 import { doctorCommand } from './doctor.ts'
 import { envCheckCommand, keyGenerateCommand } from './env.ts'
 import { frameworkPlaceholders } from './framework.ts'
@@ -43,5 +44,6 @@ export const BUILTIN_COMMANDS: readonly AnyCommand[] = [
   addCommand,
   removeCommand,
   upgradeCommand,
+  ...APP_COMMANDS,
   ...frameworkPlaceholders,
 ]

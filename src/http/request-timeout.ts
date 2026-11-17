@@ -4,7 +4,7 @@
  * Without it, one handler, hook or middleware that never settles (a dependency that stopped
  * answering, a lost promise) holds the client and its socket for as long as the process lives;
  * enough of them exhaust sockets and memory. After the limit the client gets a 503
- * `SERVICE_UNAVAILABLE` problem (it may retry), and the late outcome of the abandoned work is
+ * `service_unavailable` problem (it may retry), and the late outcome of the abandoned work is
  * swallowed, so it can never surface as an unhandled rejection.
  *
  * It bounds the time to the response *headers*: a streamed body (a download, server-sent events,
@@ -44,7 +44,7 @@ export function requestTimeout(ms: number): MiddlewareHandler {
         work,
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new StrutvaneError('SERVICE_UNAVAILABLE', { status: 503 })),
+            () => reject(new StrutvaneError('service_unavailable', { status: 503 })),
             ms,
           )
         }),

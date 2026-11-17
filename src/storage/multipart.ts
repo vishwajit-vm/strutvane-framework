@@ -4,7 +4,7 @@
  * Files are written straight to a temp folder as they arrive, hashed and measured on the fly,
  * and their first bytes are sniffed for the real type. The moment any limit is crossed the
  * request is abandoned: reading stops, every temp file is deleted, and a problem is thrown
- * (`FILE_TOO_LARGE` / `TOO_MANY_FILES` 413, `UPLOAD_INCOMPLETE` 400, `PAYLOAD_TOO_LARGE` 413).
+ * (`file_too_large` / `too_many_files` 413, `upload_incomplete` 400, `payload_too_large` 413).
  * Temp files are also deleted when the caller is done (`cleanup()`), whatever happened.
  *
  * @module
@@ -68,12 +68,12 @@ export async function parseMultipart(
 ): Promise<MultipartResult> {
   const type = request.headers.get('content-type') ?? ''
   if (!/^multipart\/form-data\s*;/i.test(type)) {
-    throw new StrutvaneError('UNSUPPORTED_MEDIA_TYPE', {
+    throw new StrutvaneError('unsupported_media_type', {
       status: 415,
       params: { expected: 'multipart/form-data' },
     })
   }
-  if (!request.body) throw new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400 })
+  if (!request.body) throw new StrutvaneError('upload_incomplete', { status: 400 })
   const maxFileSize = limits.maxFileSize ?? 25 * MB
   const maxFiles = limits.maxFiles ?? 10
   const maxTotal = limits.maxTotalSize ?? 100 * MB
@@ -102,7 +102,7 @@ export async function parseMultipart(
     })
   } catch (error) {
     await cleanup()
-    throw new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })
+    throw new StrutvaneError('upload_incomplete', { status: 400, cause: error })
   }
 
   const source = Readable.fromWeb(
@@ -117,13 +117,13 @@ export async function parseMultipart(
   const done = new Promise<void>((resolveDone, rejectDone) => {
     let idle: ReturnType<typeof setTimeout> | undefined
     const deadline = setTimeout(
-      () => fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 408 })),
+      () => fail(new StrutvaneError('upload_incomplete', { status: 408 })),
       limits.totalTimeoutMs ?? 120_000,
     )
     const resetIdle = (): void => {
       clearTimeout(idle)
       idle = setTimeout(
-        () => fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 408 })),
+        () => fail(new StrutvaneError('upload_incomplete', { status: 408 })),
         limits.idleTimeoutMs ?? 30_000,
       )
     }
@@ -154,7 +154,7 @@ export async function parseMultipart(
       // A disk error, or a write racing `fail()` destroying the stream, must reject the upload,
       // never surface as an uncaught exception.
       out.on('error', (error) =>
-        fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })),
+        fail(new StrutvaneError('upload_incomplete', { status: 400, cause: error })),
       )
       writers.add(out)
       closed.push(new Promise<void>((r) => out.once('close', () => r())))
@@ -170,7 +170,7 @@ export async function parseMultipart(
             size += chunk.length
             total += chunk.length
             if (total > maxTotal) {
-              fail(new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 }))
+              fail(new StrutvaneError('payload_too_large', { status: 413 }))
               return
             }
             hash.update(chunk)
@@ -185,11 +185,11 @@ export async function parseMultipart(
           })
           stream.on('limit', () =>
             fail(
-              new StrutvaneError('FILE_TOO_LARGE', { status: 413, params: { max: maxFileSize } }),
+              new StrutvaneError('file_too_large', { status: 413, params: { max: maxFileSize } }),
             ),
           )
           stream.on('error', (error) =>
-            fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })),
+            fail(new StrutvaneError('upload_incomplete', { status: 400, cause: error })),
           )
           stream.on('end', () => {
             if (failure !== undefined || out.destroyed) {
@@ -232,12 +232,12 @@ export async function parseMultipart(
       fields[name] = list
     })
     parser.on('filesLimit', () =>
-      fail(new StrutvaneError('TOO_MANY_FILES', { status: 413, params: { max: maxFiles } })),
+      fail(new StrutvaneError('too_many_files', { status: 413, params: { max: maxFiles } })),
     )
-    parser.on('fieldsLimit', () => fail(new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 })))
-    parser.on('partsLimit', () => fail(new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 })))
+    parser.on('fieldsLimit', () => fail(new StrutvaneError('payload_too_large', { status: 413 })))
+    parser.on('partsLimit', () => fail(new StrutvaneError('payload_too_large', { status: 413 })))
     parser.on('error', (error) =>
-      fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })),
+      fail(new StrutvaneError('upload_incomplete', { status: 400, cause: error })),
     )
     parser.on('close', () => {
       clearTimeout(idle)
@@ -247,9 +247,9 @@ export async function parseMultipart(
       }, fail)
     })
     source.on('error', (error) =>
-      fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400, cause: error })),
+      fail(new StrutvaneError('upload_incomplete', { status: 400, cause: error })),
     )
-    source.on('aborted', () => fail(new StrutvaneError('UPLOAD_INCOMPLETE', { status: 400 })))
+    source.on('aborted', () => fail(new StrutvaneError('upload_incomplete', { status: 400 })))
     // Any received byte counts as progress (not just part boundaries), so a large field or a
     // file header arriving slowly is not mistaken for a stall, and a stall is caught anywhere.
     source.on('data', resetIdle)

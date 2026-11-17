@@ -113,7 +113,7 @@ describe('boot validation: malformed settings stop the boot with the key named',
     expect(error.message).not.toContain('%%not-valid%%')
     const failure = toFailure(error)
     expect(failure).toMatchObject({
-      code: 'ENV_INVALID',
+      code: 'env_invalid',
       exitCode: EXIT.VALIDATION,
       unexpected: false,
     })

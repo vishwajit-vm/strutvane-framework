@@ -44,7 +44,7 @@ describe('request timeout', () => {
     const { value: res, ms } = await timed(app.request('GET', '/api/v1/stuck'))
     expect(res.status).toBe(503)
     expect(res.headers.get('content-type')).toMatch(/application\/problem\+json/)
-    expect((res.body as { code: string }).code).toBe('SERVICE_UNAVAILABLE')
+    expect((res.body as { code: string }).code).toBe('service_unavailable')
     expect(res.headers.get('x-request-id')).toBeTruthy()
     expect(ms).toBeLessThan(5_000)
   })

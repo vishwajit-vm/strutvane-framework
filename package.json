@@ -67,6 +67,10 @@
       "types": "./dist/console/index.d.mts",
       "default": "./dist/console/index.mjs"
     },
+    "./facades": {
+      "types": "./dist/facades/index.d.mts",
+      "default": "./dist/facades/index.mjs"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

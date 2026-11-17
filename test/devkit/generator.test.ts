@@ -89,7 +89,7 @@ describe('runGenerator', () => {
     const error = await rejectionOf(
       runGenerator(modelGenerator, { name: 'Invoice' }, { projectRoot }),
     )
-    expect((error as DevkitError).code).toBe('FILE_EXISTS')
+    expect((error as DevkitError).code).toBe('file_exists')
     expect(await readFile(projectRoot, 'app/models/invoice.model.ts')).toBe('mine\n')
 
     const forced = defineGenerator({
@@ -111,7 +111,7 @@ describe('runGenerator', () => {
       ],
     })
     const error = await rejectionOf(runGenerator(dup, {}, { projectRoot }))
-    expect((error as DevkitError).code).toBe('INVALID_GENERATOR')
+    expect((error as DevkitError).code).toBe('invalid_generator')
     expect(await snapshot(projectRoot)).toEqual({})
   })
 
@@ -122,7 +122,7 @@ describe('runGenerator', () => {
       files: ({ name }) => [{ path: `app/${name}.ts`, content: 'x' }],
     })
     const error = await rejectionOf(runGenerator(evil, { name: '../../escape' }, { projectRoot }))
-    expect((error as DevkitError).code).toBe('PATH_OUTSIDE_PROJECT')
+    expect((error as DevkitError).code).toBe('path_outside_project')
   })
 
   test('a commit failure rolls back every generated file', async () => {
@@ -135,7 +135,7 @@ describe('runGenerator', () => {
       ],
     })
     const error = await rejectionOf(runGenerator(two, {}, { projectRoot, io: faultyIo(2) }))
-    expect((error as DevkitError).code).toBe('TRANSACTION_ABORTED')
+    expect((error as DevkitError).code).toBe('transaction_aborted')
     expect(await snapshot(projectRoot)).toEqual({})
   })
 })
@@ -186,7 +186,7 @@ describe('defineGenerator', () => {
     ],
   ])('rejects %s', (_, value) => {
     expect(() => defineGenerator(value as unknown as Generator<unknown>)).toThrow(
-      expect.objectContaining({ code: 'INVALID_GENERATOR' }),
+      expect.objectContaining({ code: 'invalid_generator' }),
     )
   })
 })

@@ -5,7 +5,7 @@
  */
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
-import { type RunningServer, serve } from '../../src/runtime/serve.ts'
+import { type GraceTimer, type RunningServer, serve } from '../../src/runtime/serve.ts'
 
 let server: RunningServer | undefined
 afterEach(async () => {
@@ -103,29 +103,49 @@ describe('serve: close() drains in-flight requests', () => {
   })
 
   it('a request that outlives the grace period is cut off, so close() always finishes', async () => {
-    let signal: AbortSignal | undefined
-    let arrived!: () => void
-    const started = new Promise<void>((resolve) => {
+    // A manual grace timer: the deadline passes exactly when the test fires it, so the outcome never
+    // depends on how busy the machine is (this test was flaky under load with a real 200 ms timer).
+    let expire: (() => void) | undefined
+    let graceMs: number | undefined
+    const timer: GraceTimer = (callback, ms) => {
+      expire = callback
+      graceMs = ms
+      return () => {
+        expire = undefined
+      }
+    }
+    let arrived!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
       arrived = resolve
     })
     server = await serve(
       (request) => {
-        signal = request.signal
-        arrived()
+        arrived(request.signal)
         return new Promise<Response>(() => undefined) // never answers
       },
-      { port: 0 },
+      { port: 0, timer },
     )
     const stuck = attempt(`${server.url}/stuck`)
-    await started
-    const closing = Date.now()
-    await server.close({ graceMs: 200 })
+    const signal = await started
+    const aborted = new Promise<void>((resolve) =>
+      signal.addEventListener('abort', () => resolve(), { once: true }),
+    )
+    let closed = false
+    const closing = server.close({ graceMs: 200 }).then(() => {
+      closed = true
+    })
     server = undefined
-    expect(Date.now() - closing).toBeLessThan(5_000)
+    // Within the grace period the request is still alive and close() still waiting.
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve))
+    expect(graceMs).toBe(200)
+    expect(closed).toBe(false)
+    expect(signal.aborted).toBe(false)
+    // The deadline passes: the connection is cut, close() finishes, the handler learns it.
+    expire?.()
+    await closing
     expect(await stuck).toMatch(/^failed/)
-    // The handler learns the client is gone, so it can stop its work.
-    for (let i = 0; i < 50 && !signal?.aborted; i++) await sleep(20)
-    expect(signal?.aborted).toBe(true)
+    await aborted
+    expect(signal.aborted).toBe(true)
   })
 
   it('close() is idempotent: concurrent and repeated calls share one shutdown', async () => {

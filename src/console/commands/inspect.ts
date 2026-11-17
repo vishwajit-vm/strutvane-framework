@@ -1,5 +1,5 @@
 /**
- * `sv routes`, `sv models` and `sv permissions`: read the registry (docs/09 §5).
+ * `node strut routes`, `node strut models` and `node strut permissions`: read the registry (docs/09 §5).
  *
  * The registry is compiled in memory from source (never by importing the app), so these commands
  * work without a database, without env variables and even while the generated file is stale.
@@ -25,7 +25,7 @@ import type { Registry } from '../registry/registry.ts'
 /** The default API prefix for automatic routes. */
 export const API_PREFIX = '/api/v1'
 
-/** One row of `sv routes`. */
+/** One row of `node strut routes`. */
 export interface RouteRow {
   readonly method: string
   readonly path: string
@@ -45,7 +45,7 @@ function compile(ctx: CommandContext): { registry: Registry; root: string } {
     if (d.severity === 'warning') ctx.out.warn(formatDiagnostic(d))
   if (result.registry === undefined) {
     const errors = result.diagnostics.filter((d) => d.severity === 'error')
-    throw new CliError('REGISTRY_ERRORS', {
+    throw new CliError('registry_errors', {
       exitCode: EXIT.VALIDATION,
       params: { count: errors.length },
       issues: errors.map((d) => ({ path: [d.file], code: d.code, message: formatDiagnostic(d) })),
@@ -144,7 +144,11 @@ export const routesCommand: AnyCommand = defineCommand({
     path: { type: 'string', valueName: '<text>', description: 'Only paths containing this text' },
     model: { type: 'string', valueName: '<Model>', description: "Only this model's routes" },
   },
-  examples: ['sv routes', 'sv routes --model Invoice --method POST', 'sv routes --json'],
+  examples: [
+    'node strut routes',
+    'node strut routes --model Invoice --method POST',
+    'node strut routes --json',
+  ],
   run(ctx) {
     const { registry, root } = compile(ctx)
     const method = ctx.flags.method?.toUpperCase()
@@ -174,7 +178,7 @@ export const modelsCommand: AnyCommand = defineCommand({
   flags: {
     model: { type: 'string', valueName: '<Model>', description: 'Only this model' },
   },
-  examples: ['sv models', 'sv models --model Invoice --json'],
+  examples: ['node strut models', 'node strut models --model Invoice --json'],
   run(ctx) {
     const { registry } = compile(ctx)
     const models = registry.models
@@ -221,7 +225,7 @@ export const permissionsCommand: AnyCommand = defineCommand({
   flags: {
     model: { type: 'string', valueName: '<Model>', description: "Only this model's permissions" },
   },
-  examples: ['sv permissions', 'sv permissions --json'],
+  examples: ['node strut permissions', 'node strut permissions --json'],
   run(ctx) {
     const { registry } = compile(ctx)
     const prefix = ctx.flags.model === undefined ? undefined : `${names(ctx.flags.model).camel}.`

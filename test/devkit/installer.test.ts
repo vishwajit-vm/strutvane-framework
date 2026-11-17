@@ -136,7 +136,7 @@ describe('runInstaller', () => {
     expect(logger.warn).toHaveBeenCalledOnce()
   })
 
-  test('an installer that throws halfway changes nothing (INSTALLER_FAILED)', async () => {
+  test('an installer that throws halfway changes nothing (installer_failed)', async () => {
     const before = await snapshot(projectRoot)
     const broken = defineInstaller({
       name: 'broken',
@@ -147,7 +147,7 @@ describe('runInstaller', () => {
       },
     })
     const error = await rejectionOf(runInstaller(broken, { projectRoot }))
-    expect((error as DevkitError).code).toBe('INSTALLER_FAILED')
+    expect((error as DevkitError).code).toBe('installer_failed')
     expect((error as Error).message).toMatch(/nothing was changed.*boom/)
     expect(await snapshot(projectRoot)).toEqual(before)
   })
@@ -160,20 +160,20 @@ describe('runInstaller', () => {
       },
     })
     const error = await rejectionOf(runInstaller(local, { projectRoot }))
-    expect((error as DevkitError).code).toBe('LOCAL_DEPENDENCY_SPEC')
+    expect((error as DevkitError).code).toBe('local_dependency_spec')
   })
 
   test('an I/O failure during commit rolls everything back', async () => {
     const before = await snapshot(projectRoot)
     const error = await rejectionOf(runInstaller(sampleInstaller, { projectRoot, io: faultyIo(3) }))
-    expect((error as DevkitError).code).toBe('TRANSACTION_ABORTED')
+    expect((error as DevkitError).code).toBe('transaction_aborted')
     expect(await snapshot(projectRoot)).toEqual(before)
   })
 
   test('uninstall without an uninstall hook is refused', async () => {
     const noUninstall = defineInstaller({ name: 'one-way', async install() {} })
     const error = await rejectionOf(runInstaller(noUninstall, { projectRoot, mode: 'uninstall' }))
-    expect((error as DevkitError).code).toBe('UNINSTALL_NOT_SUPPORTED')
+    expect((error as DevkitError).code).toBe('uninstall_not_supported')
   })
 
   test('the context exposes the project root and dry-run flag', async () => {
@@ -205,7 +205,7 @@ describe('defineInstaller', () => {
     ['non-string enhances', { name: 'x', install: async () => {}, enhances: [1] }],
   ])('rejects %s', (_, value) => {
     expect(() => defineInstaller(value as unknown as DevkitInstaller)).toThrow(
-      expect.objectContaining({ code: 'INVALID_INSTALLER' }),
+      expect.objectContaining({ code: 'invalid_installer' }),
     )
   })
 })

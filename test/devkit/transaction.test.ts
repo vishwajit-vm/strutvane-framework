@@ -62,11 +62,11 @@ describe('commitTransaction', () => {
         { io: nodeIo, projectRoot },
       ),
     )
-    expect((dup as DevkitError).code).toBe('INVALID_PATH')
+    expect((dup as DevkitError).code).toBe('invalid_path')
     const outside = await rejectionOf(
       commitTransaction([{ path: '../evil.txt', content: 'x' }], { io: nodeIo, projectRoot }),
     )
-    expect((outside as DevkitError).code).toBe('PATH_OUTSIDE_PROJECT')
+    expect((outside as DevkitError).code).toBe('path_outside_project')
     expect(await snapshot(projectRoot)).toEqual(before)
   })
 
@@ -117,7 +117,7 @@ describe('crash recovery', () => {
     const refused = await rejectionOf(
       commitTransaction([{ path: 'x.txt', content: 'x' }], { io: nodeIo, projectRoot }),
     )
-    expect((refused as DevkitError).code).toBe('INTERRUPTED_TRANSACTION')
+    expect((refused as DevkitError).code).toBe('interrupted_transaction')
 
     expect(await recoverTransactions({ io: nodeIo, projectRoot })).toBe(1)
     expect(await snapshot(projectRoot)).toEqual(before)
@@ -145,7 +145,7 @@ describe('crash recovery', () => {
   test('an unreadable journal is reported, never guessed at', async () => {
     await nodeIo.writeText(join(stagingDir(projectRoot), 'tx1', 'journal.json'), '{"version":2}')
     const error = await rejectionOf(recoverTransactions({ io: nodeIo, projectRoot }))
-    expect((error as DevkitError).code).toBe('INTERRUPTED_TRANSACTION')
+    expect((error as DevkitError).code).toBe('interrupted_transaction')
     expect((error as Error).message).toMatch(/unreadable/)
   })
 
@@ -155,7 +155,7 @@ describe('crash recovery', () => {
       JSON.stringify({ version: 1, entries: [{ index: 0, path: '../x', hadOriginal: false }] }),
     )
     const error = await rejectionOf(recoverTransactions({ io: nodeIo, projectRoot }))
-    expect((error as DevkitError).code).toBe('PATH_OUTSIDE_PROJECT')
+    expect((error as DevkitError).code).toBe('path_outside_project')
   })
 
   test('a missing backup during recovery is an error, not silent data loss', async () => {

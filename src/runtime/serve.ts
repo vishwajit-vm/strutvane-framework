@@ -14,21 +14,23 @@
  *
  * - **A dev UI on the same port.** `prepare(server)` runs before listening (Vite attaches its HMR
  *   websocket to the server there), and `fallback` gets the Node request and response for
- *   requests the app marked as unanswered UI requests (`sv dev` passes Vite's middleware).
+ *   requests the app marked as unanswered UI requests (`node strut dev` passes Vite's middleware).
  *
- * The handler receives a second argument, {@link ServeBindings}, with the Node request and the
- * resolved client address; Hono exposes it as `c.env` (compatible with `@hono/node-server`).
+ * The handler receives a second argument, {@link ServeBindings}, with the Node request, the socket
+ * peer (`ip`), the resolved client address and `waitUntil`; Hono exposes it as `c.env`
+ * (compatible with `@hono/node-server`). An `Application` takes the same two:
+ * `serve((request, b) => app.handle(request, b), options)`.
  *
  * @module
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { type AddressInfo, createServer as createNetServer } from 'node:net'
 import {
-  clientAddressOf,
-  forwardedProtocol,
+  type ForwardedRequest,
+  forwardedClient,
   parsePublicUrl,
+  resolveTrustProxy,
   type TrustProxy,
-  trustedHops,
 } from '../http/proxy.ts'
 import { UI_FALLTHROUGH_HEADER } from '../http/ui-paths.ts'
 
@@ -41,6 +43,14 @@ export interface ServeBindings {
    * set. `undefined` when it cannot be determined safely; consumers must then fail closed.
    */
   readonly clientAddress: string | undefined
+  /** The TCP peer address, never from headers (`Application.handle`'s `ip`). */
+  readonly ip: string | undefined
+  /**
+   * Run work after the response is sent (deferred tasks, terminable middleware) without delaying
+   * it. The server keeps track of it: `close()` waits for it within the grace period, and a
+   * failure goes to `onError` instead of becoming an unhandled rejection.
+   */
+  readonly waitUntil: (work: Promise<void>) => void
 }
 
 /** A Web request handler. */
@@ -91,9 +101,11 @@ export interface ServeOptions {
    */
   readonly publicUrl?: string
   /**
-   * Proxy hops in front of the app whose `X-Forwarded-For` / `X-Forwarded-Proto` may be believed.
-   * Default `false`: those headers are ignored, because any client can send them. Set it only
-   * when a proxy you control always overwrites them.
+   * The proxies in front of the app whose `X-Forwarded-For` / `X-Forwarded-Proto` may be
+   * believed: a hop count (`true` = one) or the proxies' addresses or CIDR ranges
+   * (`['10.0.0.0/8']`, the safer form). Default `false`: those headers are ignored, because any
+   * client can send them. Set it only when a proxy you control always overwrites them. A bad
+   * entry (`'*'`, a malformed range) throws when `serve` is called.
    */
   readonly trustProxy?: TrustProxy
   /**
@@ -104,11 +116,34 @@ export interface ServeOptions {
   readonly prepare?: (server: Server) => void | Promise<void>
   /**
    * A Connect-style Node handler for requests the app marked as UI requests it did not answer
-   * (`createHttpApp({ uiFallthrough: true })`; `sv dev` passes Vite's middleware). It owns the
+   * (`createHttpApp({ uiFallthrough: true })`; `node strut dev` passes Vite's middleware). It owns the
    * response, or calls `next()` and the app's own 404 problem is sent. `next(error)` is reported
    * to `onError` and answered with a bare 500.
    */
   readonly fallback?: NodeFallback
+  /**
+   * The timer behind the close grace period. Default: a real (ref'd) `setTimeout`. Tests pass
+   * a manual one, so "the grace period expired" happens exactly when they say, not when a busy
+   * machine gets round to it.
+   */
+  readonly timer?: GraceTimer
+}
+
+/**
+ * Schedules `callback` after `ms` and returns a function that cancels it.
+ *
+ * @example
+ * const timer: GraceTimer = (callback, ms) => {
+ *   const handle = setTimeout(callback, ms)
+ *   return () => clearTimeout(handle)
+ * }
+ */
+export type GraceTimer = (callback: () => void, ms: number) => () => void
+
+/** The default {@link GraceTimer}: ref'd on purpose, so the deadline fires even on an idle loop. */
+const realTimer: GraceTimer = (callback, ms) => {
+  const handle = setTimeout(callback, ms)
+  return () => clearTimeout(handle)
 }
 
 /** A Connect-style Node request handler (`vite.middlewares`). */
@@ -272,10 +307,10 @@ async function send(
 /** Serve `handler` until `close()` is called. */
 export function serve(handler: FetchHandler, options: ServeOptions): Promise<RunningServer> {
   const hostname = options.hostname ?? '127.0.0.1'
-  const hops = trustedHops(options.trustProxy)
+  const proxies = resolveTrustProxy(options.trustProxy)
   const publicUrl = parsePublicUrl(options.publicUrl)
   const bindHost = hostname.includes(':') ? `[${hostname}]` : hostname
-  const inFlight = new InFlight()
+  const inFlight = new InFlight(options.timer ?? realTimer)
   const server = createServer((req, res) => {
     inFlight.add(res)
     // Fires when the client disconnects before the response finished (or the server closes).
@@ -285,23 +320,17 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
     })
     // A write racing a disconnect errors the response; treat it as the disconnect it is.
     res.on('error', () => controller.abort())
-    const forwardedFor = req.headers['x-forwarded-for']
-    const forwardedProto = req.headers['x-forwarded-proto']
-    const protocol = forwardedProtocol(
-      Array.isArray(forwardedProto) ? forwardedProto.join(',') : forwardedProto,
-      hops,
-      'http',
-    )
+    const peer = req.socket.remoteAddress
+    const bindOrigin = `http://${bindHost}:${String(req.socket.localPort)}`
+    const client = forwardedClient(peer, nodeView(req, bindOrigin), proxies)
     const origin = publicUrl
       ? publicUrl.origin
-      : `${protocol}://${bindHost}:${String(req.socket.localPort)}`
+      : `${client.secure ? 'https' : 'http'}://${bindHost}:${String(req.socket.localPort)}`
     const bindings: ServeBindings = {
       incoming: req,
-      clientAddress: clientAddressOf(
-        req.socket.remoteAddress,
-        Array.isArray(forwardedFor) ? forwardedFor.join(',') : forwardedFor,
-        hops,
-      ),
+      clientAddress: client.ip,
+      ip: peer,
+      waitUntil: (work) => inFlight.track(work, options.onError),
     }
     const method = req.method ?? 'GET'
     const body = method !== 'GET' && method !== 'HEAD' ? requestBody(req) : undefined
@@ -328,14 +357,57 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
     .then(() => listen(server, options.port, hostname, bindHost, options.onError, inFlight))
 }
 
+/** The Node request as {@link forwardedClient} reads it (no `Request` is built for this). */
+function nodeView(req: IncomingMessage, bindOrigin: string): ForwardedRequest {
+  return {
+    url: `${bindOrigin}/`,
+    headers: {
+      get(name) {
+        const value = req.headers[name.toLowerCase()]
+        return value === undefined ? null : Array.isArray(value) ? value.join(', ') : value
+      },
+    },
+  }
+}
+
 /**
- * The responses still being produced, so `close()` can wait for them instead of resetting their
- * connections (which is what `closeAllConnections()` alone does to every in-flight request).
+ * The responses still being produced and the work handed to `waitUntil`, so `close()` can wait
+ * for them instead of resetting their connections (which is what `closeAllConnections()` alone
+ * does to every in-flight request).
  */
 class InFlight {
   readonly #open = new Set<ServerResponse>()
+  readonly #work = new Set<Promise<void>>()
   #draining = false
   #idle: (() => void) | undefined
+  readonly #timer: GraceTimer
+
+  constructor(timer: GraceTimer) {
+    this.#timer = timer
+  }
+
+  /** Keep `work` until it settles; a failure is reported, never an unhandled rejection. */
+  track(work: Promise<void>, onError: ((error: unknown) => void) | undefined): void {
+    const settled = work.then(
+      () => undefined,
+      (error: unknown) => {
+        try {
+          onError?.(error)
+        } catch {
+          // A failing reporter must not turn finished work into an unhandled rejection.
+        }
+      },
+    )
+    this.#work.add(settled)
+    void settled.then(() => {
+      this.#work.delete(settled)
+      this.#checkIdle()
+    })
+  }
+
+  #checkIdle(): void {
+    if (this.#open.size === 0 && this.#work.size === 0) this.#idle?.()
+  }
 
   add(res: ServerResponse): void {
     // A request that arrives on a kept-alive connection during a drain is still answered, but
@@ -344,7 +416,7 @@ class InFlight {
     this.#open.add(res)
     res.once('close', () => {
       this.#open.delete(res)
-      if (this.#open.size === 0) this.#idle?.()
+      this.#checkIdle()
     })
   }
 
@@ -352,15 +424,15 @@ class InFlight {
   drain(graceMs: number): Promise<void> {
     this.#draining = true
     for (const res of this.#open) if (!res.headersSent) res.shouldKeepAlive = false
-    if (this.#open.size === 0) return Promise.resolve()
+    if (this.#open.size === 0 && this.#work.size === 0) return Promise.resolve()
     return new Promise((resolve) => {
-      // Ref'd on purpose: the deadline must fire even if nothing else keeps the loop alive.
-      const timer = setTimeout(done, graceMs)
-      function done(): void {
-        clearTimeout(timer)
+      let cancel: (() => void) | undefined
+      const done = (): void => {
+        cancel?.()
         resolve()
       }
       this.#idle = done
+      cancel = this.#timer(done, graceMs)
     })
   }
 }
@@ -399,12 +471,12 @@ function handOver(
 }
 
 /** Why the server could not bind, as a stable code (the CLI maps these to its config exit code). */
-export type ListenErrorCode = 'PORT_IN_USE' | 'PORT_ACCESS_DENIED' | 'ADDRESS_NOT_AVAILABLE'
+export type ListenErrorCode = 'port_in_use' | 'port_access_denied' | 'address_not_available'
 
 const LISTEN_ERROR_CODES: Readonly<Record<string, ListenErrorCode>> = {
-  EADDRINUSE: 'PORT_IN_USE',
-  EACCES: 'PORT_ACCESS_DENIED',
-  EADDRNOTAVAIL: 'ADDRESS_NOT_AVAILABLE',
+  EADDRINUSE: 'port_in_use',
+  EACCES: 'port_access_denied',
+  EADDRNOTAVAIL: 'address_not_available',
 }
 
 /**
@@ -422,14 +494,14 @@ export class ServerListenError extends Error {
   constructor(code: ListenErrorCode, host: string, port: number, cause?: unknown) {
     const where = `${host.includes(':') ? `[${host}]` : host}:${port}`
     const what =
-      code === 'PORT_IN_USE'
+      code === 'port_in_use'
         ? `Port ${port} is already in use (${where}).`
-        : code === 'PORT_ACCESS_DENIED'
+        : code === 'port_access_denied'
           ? `Not allowed to listen on ${where}.`
           : `Cannot listen on ${where}: this machine has no such address.`
     super(
       `${what} Choose another port with APP_PORT in .env or --port <number>` +
-        `${code === 'ADDRESS_NOT_AVAILABLE' ? ', or another interface with --host' : ''}.`,
+        `${code === 'address_not_available' ? ', or another interface with --host' : ''}.`,
       cause === undefined ? undefined : { cause },
     )
     this.code = code
@@ -452,7 +524,7 @@ export function toListenError(error: unknown, host: string, port: number): unkno
 
 /**
  * Fail fast with a {@link ServerListenError} when `host:port` cannot be bound right now (bind,
- * then release it). `sv dev` checks this before it starts the watched child process, because a
+ * then release it). `node strut dev` checks this before it starts the watched child process, because a
  * child that fails to listen leaves Node's watch mode waiting for file changes instead of exiting.
  * Port 0 (any free port) always passes.
  */

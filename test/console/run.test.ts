@@ -38,7 +38,7 @@ function expectEnvelope(doc: Record<string, unknown>): void {
 }
 
 describe('help and version', () => {
-  test('`sv` and `sv help` list every built-in command', async () => {
+  test('`sv` and `node strut help` list every built-in command', async () => {
     const root = makeProject()
     for (const argv of [[], ['help'], ['--help']]) {
       const r = await cli(argv, { cwd: root })
@@ -49,7 +49,7 @@ describe('help and version', () => {
     }
   })
 
-  test('`sv help <command>` and `sv <command> --help`, also via the space alias', async () => {
+  test('`node strut help <command>` and `node strut <command> --help`, also via the space alias', async () => {
     const root = makeProject()
     for (const argv of [
       ['help', 'make:model'],
@@ -58,7 +58,7 @@ describe('help and version', () => {
     ]) {
       const r = await cli(argv, { cwd: root })
       expect(r.code, argv.join(' ')).toBe(0)
-      expect(r.stdout).toContain('Usage: sv make:model <name> [fields...] [flags]')
+      expect(r.stdout).toContain('Usage: node strut make:model <name> [fields...] [flags]')
       expect(r.stdout).toContain('--soft-deletes')
     }
   })
@@ -73,7 +73,7 @@ describe('help and version', () => {
     expect((one.json().data as { name: string }).name).toBe('routes')
   })
 
-  test('namespace help: `sv make` and `sv help make`', async () => {
+  test('namespace help: `node strut make` and `node strut help make`', async () => {
     const root = makeProject()
     for (const argv of [['make'], ['help', 'make']]) {
       const r = await cli(argv, { cwd: root })
@@ -97,8 +97,8 @@ describe('resolution errors and exit codes', () => {
     const r = await cli(['mak:modle'], { cwd: makeProject() })
     expect(r.code).toBe(EXIT.USAGE)
     expect(r.stderr).toContain('Unknown command "mak:modle"')
-    expect(r.stderr).toContain('Did you mean `sv make:model`?')
-    expect(r.stderr).toContain('hint: Run `sv help`')
+    expect(r.stderr).toContain('Did you mean `node strut make:model`?')
+    expect(r.stderr).toContain('hint: Run `node strut help`')
   })
 
   test('unknown command in --json: the error envelope on stdout, nothing on stderr', async () => {
@@ -111,7 +111,7 @@ describe('resolution errors and exit codes', () => {
       ok: false,
       command: null,
       exitCode: 2,
-      error: { code: 'UNKNOWN_COMMAND' },
+      error: { code: 'unknown_command' },
     })
     expect((await cli(['help', 'nope'], { cwd: makeProject() })).code).toBe(2)
   })
@@ -119,20 +119,20 @@ describe('resolution errors and exit codes', () => {
   test('ambiguous prefix: exit 2', async () => {
     const r = await cli(['make:m', '--json'], { cwd: makeProject() })
     expect(r.code).toBe(2)
-    expect(r.json().error?.code).toBe('AMBIGUOUS_COMMAND')
+    expect(r.json().error?.code).toBe('ambiguous_command')
   })
 
   test('unknown flag and missing argument: exit 2', async () => {
     const root = makeProject()
     expect((await cli(['about', '--bogus'], { cwd: root })).code).toBe(2)
     const missing = await cli(['make:model', '--json'], { cwd: root })
-    expect(missing.json().error).toMatchObject({ code: 'MISSING_ARGUMENT' })
+    expect(missing.json().error).toMatchObject({ code: 'missing_argument' })
     expect(missing.json().command).toBe('make:model')
   })
 
   test('--cwd that does not exist: exit 2', async () => {
     const r = await cli(['about', '--cwd', 'missing-dir', '--json'], { cwd: tempDir() })
-    expect(r.json().error?.code).toBe('CWD_NOT_FOUND')
+    expect(r.json().error?.code).toBe('cwd_not_found')
   })
 
   test('--cwd runs as if in another directory', async () => {
@@ -141,10 +141,10 @@ describe('resolution errors and exit codes', () => {
     expect((r.json().data as { project: { root: string } }).project.root).toBe(root)
   })
 
-  test('project commands outside a project: PROJECT_NOT_FOUND (exit 2)', async () => {
+  test('project commands outside a project: project_not_found (exit 2)', async () => {
     const r = await cli(['routes', '--json'], { cwd: tempDir() })
     expect(r.code).toBe(2)
-    expect(r.json().error?.code).toBe('PROJECT_NOT_FOUND')
+    expect(r.json().error?.code).toBe('project_not_found')
     // The hint names every rule, ownership included (a root-owned folder in a container).
     expect(r.json().error?.hint).toMatch(/owned by the user running the command/)
   })
@@ -153,7 +153,7 @@ describe('resolution errors and exit codes', () => {
     const root = makeProject({ 'package.json': '{ not json' })
     const r = await cli(['about', '--json'], { cwd: root })
     expect(r.code).toBe(3)
-    expect(r.json().error?.code).toBe('INVALID_PACKAGE_JSON')
+    expect(r.json().error?.code).toBe('invalid_package_json')
   })
 
   test('unexpected errors: exit 1, stack only with --verbose', async () => {
@@ -228,7 +228,7 @@ describe('resolution errors and exit codes', () => {
       description: 'b',
       requiresProject: false,
       run() {
-        throw new CliError('VALIDATION_FAILED', {
+        throw new CliError('validation_failed', {
           exitCode: EXIT.VALIDATION,
           issues: [
             { path: ['a', 0], message: 'is wrong' },
@@ -256,10 +256,10 @@ describe('prompting rules', () => {
     },
   })
 
-  test('not a TTY: never prompts; a question without default fails with INPUT_REQUIRED (exit 2)', async () => {
+  test('not a TTY: never prompts; a question without default fails with input_required (exit 2)', async () => {
     const r = await cli(['asks', '--json'], { cwd: tempDir(), builtins: [asks] })
     expect(r.code).toBe(2)
-    expect(r.json().error?.code).toBe('INPUT_REQUIRED')
+    expect(r.json().error?.code).toBe('input_required')
   })
 
   test('--yes accepts', async () => {
@@ -346,7 +346,7 @@ export default [
     expect(exact.json().data).toBe('plugin make:mod')
     // An abbreviation that fits both is ambiguous, never silently the built-in.
     const short = await cli(['make:mo', '--json'], { cwd: root })
-    expect(short.json().error?.code).toBe('AMBIGUOUS_COMMAND')
+    expect(short.json().error?.code).toBe('ambiguous_command')
     // Exact built-in names still take the fast path.
     expect((await cli(['about', '--json'], { cwd: root })).code).toBe(0)
   })
@@ -361,7 +361,7 @@ export default [
     })
     const r = await cli(['old:thing', '--json'], { cwd: root, version: '0.1.0' })
     expect(r.code).toBe(EXIT.INCOMPATIBLE)
-    expect(r.json().error).toMatchObject({ code: 'INCOMPATIBLE_PLUGINS' })
+    expect(r.json().error).toMatchObject({ code: 'incompatible_plugins' })
     expect(r.json().error?.message).toContain('@acme/strutvane-plugin-old (needs ^9.0.0)')
   })
 
@@ -413,7 +413,7 @@ export default [{
     const json = await cli(['envy:run', '--json'], { cwd: root })
     expect(json.code).toBe(EXIT.VALIDATION)
     expect(json.json().error).toMatchObject({
-      code: 'ENV_INVALID',
+      code: 'env_invalid',
       issues: [
         { path: ['APP_KEY'], message: 'Required' },
         { path: ['DATABASE_URL'], message: 'Invalid URL' },
@@ -430,24 +430,24 @@ export default [{
     })
     expect((await cli(['help'], { cwd: root })).code).toBe(0)
     expect((await cli(['nope', '--json'], { cwd: root })).json().error?.code).toBe(
-      'UNKNOWN_COMMAND',
+      'unknown_command',
     )
   })
 })
 
 describe('framework placeholders and delegation', () => {
-  test('without the framework: FRAMEWORK_REQUIRED with an install hint', async () => {
+  test('without the framework: framework_required with an install hint', async () => {
     const r = await cli(['migrate'], { cwd: makeProject() })
     expect(r.code).toBe(1)
     expect(r.stderr).toContain('provided by @strutvane/framework')
-    expect(r.stderr).toContain('sv add framework')
+    expect(r.stderr).toContain('node strut add framework')
   })
 
-  test('framework installed but not providing the command: FRAMEWORK_COMMAND_MISSING', async () => {
+  test('framework installed but not providing the command: framework_command_missing', async () => {
     const root = makeProject()
     installFakePackage(root, '@strutvane/framework')
     const r = await cli(['db:seed', '--json'], { cwd: root })
-    expect(r.json().error?.code).toBe('FRAMEWORK_COMMAND_MISSING')
+    expect(r.json().error?.code).toBe('framework_command_missing')
   })
 
   test('the fake framework module replaces placeholders and receives flags', async () => {
@@ -476,7 +476,7 @@ export const commands = [
       'migrate:status',
     )
     const prefixed = await cli(['mi:fr', '--json'], { cwd: root, env })
-    expect(prefixed.json().error?.code).toBe('UNKNOWN_COMMAND')
+    expect(prefixed.json().error?.code).toBe('unknown_command')
     expect(prefixed.json().error?.issues?.[0]?.message).toBe('migrate:fresh')
     expect((await cli(['migrate', 'fr', '--json'], { cwd: root, env })).code).toBe(EXIT.USAGE)
     expect((await cli(['migrate:fresh', '--json'], { cwd: root, env })).json().data).toEqual({
@@ -500,7 +500,7 @@ export const commands = [
     })
     const refused = await cli(['migrate:fresh', '--json'], { cwd: root })
     expect(refused.code).toBe(2)
-    expect(refused.json().error?.code).toBe('PRODUCTION_GUARD')
+    expect(refused.json().error?.code).toBe('production_guard')
     expect((await cli(['migrate:fresh', '--force', '--json'], { cwd: root })).code).toBe(2)
     const ok = await cli(['migrate:fresh', '--force', '--i-understand', '--json'], { cwd: root })
     expect(ok.json().data).toBe('dropped')
@@ -568,7 +568,7 @@ export const commands = [
     const root = guardedProject(files)
     const refused = await cli(['db:wipe', ...extra, '--json'], { cwd: root, env })
     expect(refused.code).toBe(EXIT.USAGE)
-    expect(refused.json().error?.code).toBe('PRODUCTION_GUARD')
+    expect(refused.json().error?.code).toBe('production_guard')
     expect((await cli(['db:wipe', ...extra, '--force', '--json'], { cwd: root, env })).code).toBe(
       EXIT.USAGE,
     )
@@ -622,7 +622,7 @@ export const commands = [
     })
     expect(shell.json().data).toMatchObject({ db: 'postgres://shell' })
     const bad = await cli(['db:wipe', '--env', '../x', '--json'], { cwd: root })
-    expect(bad.json().error?.code).toBe('INVALID_ARGUMENT')
+    expect(bad.json().error?.code).toBe('invalid_argument')
   })
 
   test('the guard message names the resolved value and its source, without control characters', async () => {
@@ -670,7 +670,7 @@ export const commands = [
     expect(ok.json().data).toBe('ran')
     // Destructive built-ins also need their exact name.
     expect((await cli(['danger:z', '--json'], { cwd: dir, builtins })).json().error?.code).toBe(
-      'UNKNOWN_COMMAND',
+      'unknown_command',
     )
   })
 })

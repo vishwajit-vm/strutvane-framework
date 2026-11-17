@@ -62,7 +62,7 @@ describe('add', () => {
   ])('refuses the local-only spec %s', async (spec) => {
     await writeFiles(projectRoot, { 'package.json': pkg({}) })
     const error = await rejectionOf(createDepsEditor(fs).add({ x: spec }))
-    expect((error as DevkitError).code).toBe('LOCAL_DEPENDENCY_SPEC')
+    expect((error as DevkitError).code).toBe('local_dependency_spec')
   })
 
   test.each([
@@ -73,7 +73,7 @@ describe('add', () => {
   ])('rejects invalid names or versions %j', async (deps) => {
     await writeFiles(projectRoot, { 'package.json': pkg({}) })
     const error = await rejectionOf(createDepsEditor(fs).add(deps))
-    expect((error as DevkitError).code).toBe('INVALID_PACKAGE_JSON')
+    expect((error as DevkitError).code).toBe('invalid_package_json')
   })
 
   test.each([
@@ -83,7 +83,7 @@ describe('add', () => {
   ])('rejects a broken package.json (%s)', async (content, message) => {
     await writeFiles(projectRoot, { 'package.json': content })
     const error = await rejectionOf(createDepsEditor(fs).add({ a: '1.0.0' }))
-    expect((error as DevkitError).code).toBe('INVALID_PACKAGE_JSON')
+    expect((error as DevkitError).code).toBe('invalid_package_json')
     expect((error as Error).message).toMatch(message)
   })
 
@@ -97,7 +97,7 @@ describe('add', () => {
 
   test('reads a missing package.json as an error, not a new file', async () => {
     const error = await rejectionOf(createDepsEditor(fs).add({ a: '1.0.0' }))
-    expect((error as DevkitError).code).toBe('FILE_NOT_FOUND')
+    expect((error as DevkitError).code).toBe('file_not_found')
   })
 })
 

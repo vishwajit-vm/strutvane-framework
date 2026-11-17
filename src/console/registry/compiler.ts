@@ -154,7 +154,7 @@ function stripBom(text: string): string {
 export class UnsafeOutputPathError extends Error {
   override readonly name = 'UnsafeOutputPathError'
   /** Mapped to exit code 3 by the CLI runner. */
-  readonly code = 'UNSAFE_OUTPUT_PATH'
+  readonly code = 'unsafe_output_path'
 }
 
 /**

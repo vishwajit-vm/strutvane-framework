@@ -62,7 +62,7 @@ describe('multipart hardening', () => {
         idleTimeoutMs: 1000,
         totalTimeoutMs: 200,
       }),
-    ).rejects.toMatchObject({ code: 'UPLOAD_INCOMPLETE', status: 408 })
+    ).rejects.toMatchObject({ code: 'upload_incomplete', status: 408 })
     expect(await readdir(temp)).toEqual([])
   })
 

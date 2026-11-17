@@ -25,7 +25,7 @@
  * @module
  */
 import { createHash } from 'node:crypto'
-import type { Context, MiddlewareHandler } from 'hono'
+import type { MiddlewareHandler } from 'hono'
 import { StrutvaneError, type Token, token } from '../core/index.ts'
 import type { HttpEnv } from './resource-routes.ts'
 import { routerPath } from './router-path.ts'
@@ -161,6 +161,113 @@ export interface IdempotencyMiddlewareOptions {
 }
 
 /**
+ * One request asking to run under an `Idempotency-Key`.
+ *
+ * @example
+ * const claim: IdempotencyClaim = { scope: callerScope(actor, tenantId, ip), key, method: 'POST', path: '/api/payments', search: '', request }
+ */
+export interface IdempotencyClaim {
+  /** Who the key belongs to ({@link callerScope}): keys never cross users or tenants. */
+  readonly scope: string
+  /** The `Idempotency-Key` header value. */
+  readonly key: string
+  readonly method: string
+  /** The path as the router serves it. */
+  readonly path: string
+  /** The query string (with its `?`), part of the fingerprint. */
+  readonly search: string
+  /** The request whose body is fingerprinted (read from a clone). */
+  readonly request: Request
+}
+
+/**
+ * What {@link startIdempotent} decided: run the action (then call {@link finishIdempotent}), or
+ * answer with the stored response.
+ *
+ * @example
+ * if (start.kind === 'replay') return start.response
+ */
+export type IdempotencyStart =
+  | { readonly kind: 'run'; readonly storeKey: string }
+  | { readonly kind: 'replay'; readonly response: Response }
+
+/**
+ * Who a key belongs to: the actor (and tenant), else the client address.
+ *
+ * @example
+ * callerScope({ type: 'user', id: '7' }, 'acme', '203.0.113.7') // 'actor:user:7\nacme'
+ */
+export function callerScope(
+  actor: { readonly type: string; readonly id: string | number } | null,
+  tenantId: string | undefined,
+  clientAddress: string | undefined,
+): string {
+  const tenant = tenantId ?? ''
+  if (actor !== null) return `actor:${actor.type}:${String(actor.id)}\n${tenant}`
+  return `anonymous:${clientAddress ?? 'unknown'}\n${tenant}`
+}
+
+/**
+ * Claim a key, the shared first half of both idempotency middlewares. Throws the client-facing
+ * errors: 400 `idempotency_key_invalid`, 409 `idempotency_in_progress` (with `Retry-After`),
+ * 422 `idempotency_key_reused`.
+ *
+ * @example
+ * const start = await startIdempotent(store, claim, clock.now())
+ */
+export async function startIdempotent(
+  store: IdempotencyStore,
+  claim: IdempotencyClaim,
+  now: number,
+): Promise<IdempotencyStart> {
+  if (!KEY.test(claim.key)) throw new StrutvaneError('idempotency_key_invalid', { status: 400 })
+  const storeKey = sha256(`${claim.scope}\n${claim.key}`)
+  const fingerprint = sha256(
+    `${claim.method}\n${claim.path}${claim.search}\n${await bodyDigest(claim.request)}`,
+  )
+  const outcome = await store.begin(storeKey, fingerprint, now)
+  if (outcome.kind === 'in_progress')
+    throw new StrutvaneError('idempotency_in_progress', {
+      status: 409,
+      headers: { 'Retry-After': '1' },
+    })
+  if (outcome.kind === 'mismatch')
+    throw new StrutvaneError('idempotency_key_reused', { status: 422 })
+  if (outcome.kind === 'replay') return { kind: 'replay', response: replay(outcome.response) }
+  return { kind: 'run', storeKey }
+}
+
+/**
+ * Settle a claimed key, the shared second half: store the response for replay, or release the
+ * key (`undefined` = the action threw; a 5xx or a body over 1 MiB) so a retry runs for real.
+ *
+ * @example
+ * await finishIdempotent(store, start.storeKey, response, clock.now())
+ */
+export async function finishIdempotent(
+  store: IdempotencyStore,
+  storeKey: string,
+  response: Response | undefined,
+  now: number,
+): Promise<void> {
+  // A thrown error or a 5xx means "it may not have happened": let the client retry for real.
+  if (response === undefined || response.status >= 500) {
+    await store.release(storeKey)
+    return
+  }
+  const body = await readLimited(response.clone().body, MAX_STORED_BYTES)
+  if (body === undefined) {
+    await store.release(storeKey)
+    return
+  }
+  const headers = REPLAYED_HEADERS.flatMap((name) => {
+    const value = response.headers.get(name)
+    return value === null ? [] : [[name, value] as const]
+  })
+  await store.complete(storeKey, { status: response.status, headers, body }, now)
+}
+
+/**
  * The middleware. Registered after the request hooks (it needs the actor and tenant to scope
  * keys) and after the body limit (the body it fingerprints is already bounded).
  *
@@ -173,62 +280,36 @@ export function idempotency(options: IdempotencyMiddlewareOptions): MiddlewareHa
     if (key === undefined || !METHODS.has(c.req.method)) return next()
     const path = routerPath(c.req.raw)
     if (options.reads.some((pattern) => pattern.test(path))) return next()
-    if (!KEY.test(key)) throw new StrutvaneError('idempotency_key_invalid', { status: 400 })
-    const storeKey = sha256(`${callerScope(c)}\n${key}`)
-    const fingerprint = sha256(
-      `${c.req.method}\n${path}${new URL(c.req.url).search}\n${await bodyDigest(c.req.raw)}`,
-    )
+    const s = c.get('sv')
     const now = options.now()
-    const outcome = await options.store.begin(storeKey, fingerprint, now)
-    if (outcome.kind === 'in_progress')
-      throw new StrutvaneError('idempotency_in_progress', {
-        status: 409,
-        headers: { 'Retry-After': '1' },
-      })
-    if (outcome.kind === 'mismatch')
-      throw new StrutvaneError('idempotency_key_reused', { status: 422 })
-    if (outcome.kind === 'replay') return replay(outcome.response)
+    const start = await startIdempotent(
+      options.store,
+      {
+        scope: callerScope(s.actor, s.tenantId, s.clientAddress),
+        key,
+        method: c.req.method,
+        path,
+        search: new URL(c.req.url).search,
+        request: c.req.raw,
+      },
+      now,
+    )
+    if (start.kind === 'replay') return start.response
     try {
       await next()
     } catch (error) {
-      await options.store.release(storeKey)
+      await options.store.release(start.storeKey)
       throw error
     }
-    await remember(options, storeKey, c, now)
+    // Hono turned a thrown error into the response (c.error): it may not have happened.
+    await finishIdempotent(
+      options.store,
+      start.storeKey,
+      c.error === undefined ? c.res : undefined,
+      now,
+    )
     return undefined
   }
-}
-
-/** Who the key belongs to: the actor (and tenant), else the client address. */
-function callerScope(c: Context<HttpEnv>): string {
-  const s = c.get('sv')
-  const tenant = s.tenantId ?? ''
-  if (s.actor !== null) return `actor:${s.actor.type}:${s.actor.id}\n${tenant}`
-  return `anonymous:${s.clientAddress ?? 'unknown'}\n${tenant}`
-}
-
-async function remember(
-  options: IdempotencyMiddlewareOptions,
-  storeKey: string,
-  c: Context<HttpEnv>,
-  now: number,
-): Promise<void> {
-  // A 5xx (Hono turned a thrown error into the response) means "it may not have happened":
-  // let the client retry for real.
-  if (c.error !== undefined || c.res.status >= 500) {
-    await options.store.release(storeKey)
-    return
-  }
-  const body = await readLimited(c.res.clone().body, MAX_STORED_BYTES)
-  if (body === undefined) {
-    await options.store.release(storeKey)
-    return
-  }
-  const headers = REPLAYED_HEADERS.flatMap((name) => {
-    const value = c.res.headers.get(name)
-    return value === null ? [] : [[name, value] as const]
-  })
-  await options.store.complete(storeKey, { status: c.res.status, headers, body }, now)
 }
 
 function replay(stored: StoredResponse): Response {
@@ -267,7 +348,9 @@ async function readLimited(
     if (done) break
     size += value.byteLength
     if (size > limit) {
-      await reader.cancel().catch(() => undefined)
+      // Not awaited: cancelling one branch of a cloned (tee'd) body settles only once the other
+      // branch is cancelled too, so awaiting it here would hang the request.
+      void reader.cancel().catch(() => undefined)
       return undefined
     }
     chunks.push(value)

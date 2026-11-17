@@ -1,8 +1,8 @@
 /**
- * `sv doctor`: diagnose the environment and the project (docs/09 §2).
+ * `node strut doctor`: diagnose the environment and the project (docs/09 §2).
  *
  * Each check is a small function returning `ok`, `warn` or `fail` with a hint. Failures exit 3
- * (needs attention), warnings do not, so `sv doctor` can gate CI. Database, migration and RLS
+ * (needs attention), warnings do not, so `node strut doctor` can gate CI. Database, migration and RLS
  * checks belong to `@strutvane/framework` and `@strutvane/auth`, which can contribute their own
  * diagnostics commands; the CLI checks what it can see statically.
  *
@@ -168,7 +168,7 @@ function checkPackages(project: Project): DoctorCheck[] {
       warn(
         'release-train',
         `Strutvane packages are on different release trains (${detail})`,
-        'Run `sv upgrade` to align them.',
+        'Run `node strut upgrade` to align them.',
       ),
     )
   }
@@ -188,7 +188,7 @@ function checkEnvFiles(project: Project): DoctorCheck[] {
       fail(
         'env',
         '.env is missing',
-        'Copy .env.example to .env and fill it in, then run sv key:generate.',
+        'Copy .env.example to .env and fill it in, then run node strut key:generate.',
       ),
     )
   } else {
@@ -199,7 +199,7 @@ function checkEnvFiles(project: Project): DoctorCheck[] {
         : fail(
             'env',
             `${errors.length} env problem(s): ${errors.map((e) => e.key).join(', ')}`,
-            'Run `sv env:check` for details.',
+            'Run `node strut env:check` for details.',
           ),
     )
   }
@@ -231,7 +231,7 @@ function checkRegistry(project: Project): DoctorCheck[] {
       fail(
         'registry',
         `The registry has ${errors.length} error(s)`,
-        'Run `sv registry:build` to see them.',
+        'Run `node strut registry:build` to see them.',
       ),
     ]
   }
@@ -240,7 +240,11 @@ function checkRegistry(project: Project): DoctorCheck[] {
     : undefined
   if (current === undefined) {
     return [
-      warn('registry', '.strutvane/registry.gen.ts has not been built', 'Run `sv registry:build`.'),
+      warn(
+        'registry',
+        '.strutvane/registry.gen.ts has not been built',
+        'Run `node strut registry:build`.',
+      ),
     ]
   }
   if (!verifyContentHash(current)) {
@@ -248,13 +252,17 @@ function checkRegistry(project: Project): DoctorCheck[] {
       warn(
         'registry',
         '.strutvane/registry.gen.ts was edited by hand',
-        'Run `sv registry:build` to regenerate it.',
+        'Run `node strut registry:build` to regenerate it.',
       ),
     ]
   }
   if (current !== result.output) {
     return [
-      warn('registry', '.strutvane/registry.gen.ts is out of date', 'Run `sv registry:build`.'),
+      warn(
+        'registry',
+        '.strutvane/registry.gen.ts is out of date',
+        'Run `node strut registry:build`.',
+      ),
     ]
   }
   return [ok('registry', 'The registry is up to date')]
@@ -268,7 +276,7 @@ async function checkOwnedFiles(project: Project): Promise<DoctorCheck[]> {
       fail(
         'lock',
         '.strutvane/lock.json is unreadable',
-        'Restore it from git; `sv upgrade` needs it to merge owned files.',
+        'Restore it from git; `node strut upgrade` needs it to merge owned files.',
       ),
     ]
   }
@@ -307,7 +315,7 @@ async function checkPlugins(project: Project, version: string): Promise<DoctorCh
         fail(
           'plugins',
           `${p.name}@${p.version} requires Strutvane ${p.range} (CLI is ${version})`,
-          'Install matching versions, or run `sv upgrade`.',
+          'Install matching versions, or run `node strut upgrade`.',
         ),
       )
     } else if (p.kind === 'invalid-command') {
@@ -339,7 +347,7 @@ function checkPackageMigrations(project: Project, version: string): DoctorCheck[
     warn(
       'migrations',
       `${name} ships database migrations that are ignored: it is not enabled in strutvane.config.ts`,
-      'Register its provider in strutvane.config.ts (`sv add` does this) if you trust it; otherwise remove the dependency.',
+      'Register its provider in strutvane.config.ts (`node strut add` does this) if you trust it; otherwise remove the dependency.',
     ),
   )
   if (scan.dirs.length > 0)
@@ -356,7 +364,7 @@ export const doctorCommand: AnyCommand = defineCommand({
   flags: {
     global: { type: 'boolean', description: 'Only check the environment (no project needed)' },
   },
-  examples: ['sv doctor', 'sv doctor --json', 'sv doctor --global'],
+  examples: ['node strut doctor', 'node strut doctor --json', 'node strut doctor --global'],
   async run(ctx) {
     const checks: DoctorCheck[] = [checkNode(process.versions.node)]
     const project = ctx.flags.global === true ? undefined : ctx.requireProject()
@@ -390,7 +398,7 @@ export const doctorCommand: AnyCommand = defineCommand({
       warnings: checks.filter((c) => c.status === 'warn').length,
     }
     if (failed.length > 0) {
-      throw new CliError('DOCTOR_FAILED', {
+      throw new CliError('doctor_failed', {
         exitCode: EXIT.VALIDATION,
         params: { count: failed.length },
         data,

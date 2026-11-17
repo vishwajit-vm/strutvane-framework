@@ -6,9 +6,30 @@
  *
  * Built on its own kernel and contracts (`/core`, `/contracts`).
  *
+ * The application core (Laravel's flow) is exported here too: `Application.configure()` for
+ * `bootstrap/app.ts`, `Route` and `defineRoutes` for routes files, the `route()`/`config()`/`app()`
+ * helpers, middleware and protections, form requests, the exception handler, the security kit,
+ * maintenance mode, the cache and the session store. Facades live on their own subpath,
+ * `@strutvane/framework/facades`, because the `Route` facade would shadow the `Route` builder.
+ *
  * @packageDocumentation
  */
 
+export { type CacheManager, CacheManagerToken, type CacheStore } from './cache/contract.ts'
+export {
+  FILE_CACHE_FOLDER,
+  FileCacheStore,
+  type FileCacheStoreOptions,
+} from './cache/file-store.ts'
+// Application core (v2): bootstrap/app.ts, routes, middleware, exceptions, security, stores
+export {
+  type CacheConfig,
+  type CacheDriver,
+  type CacheManagerOptions,
+  type CacheStoreConfig,
+  createCacheManager,
+  StoreCacheManager,
+} from './cache/store.ts'
 // Data access and queries
 export {
   createRepository,
@@ -44,6 +65,68 @@ export {
 } from './database/drivers.ts'
 // Database
 export type { Database, Dialect, Row, TransactionOptions } from './database/types.ts'
+export {
+  type ErrorClass,
+  ExceptionHandler,
+  ExceptionHandlerToken,
+  type ExceptionRenderCallback,
+  type ExceptionReporter,
+  ExceptionsConfig,
+  report,
+} from './exceptions/index.ts'
+export {
+  Application,
+  ApplicationBuilder,
+  type BindableModel,
+  type RequestInfo,
+  type RoutingOptions,
+} from './foundation/application.ts'
+export { BootError, isBootError } from './foundation/boot-error.ts'
+export {
+  ConfigError,
+  type ConfigFiles,
+  ConfigRepository,
+  ConfigRepositoryToken,
+  defineConfig,
+} from './foundation/config.ts'
+export { APP_ENVIRONMENTS, Env } from './foundation/env.ts'
+export { app, config, now, redirect } from './foundation/helpers.ts'
+export { loadApplication } from './foundation/load.ts'
+export { type NavigationItem, NavigationRegistry } from './foundation/navigation.ts'
+export { type AnyProvider, ServiceProvider } from './foundation/provider.ts'
+export type {
+  AuthUser,
+  ConfigRegistry,
+  RouteRegistry,
+  UserRegistry,
+} from './foundation/registry.ts'
+export { defer, type HttpContext } from './http/app/context.ts'
+export { ResponseError } from './http/app/errors.ts'
+export { MaintenanceCheckToken } from './http/app/kernel.ts'
+export {
+  type Middleware,
+  type MiddlewareClass,
+  MiddlewareConfig,
+  type Next,
+} from './http/app/middleware.ts'
+export {
+  auth,
+  can,
+  csrf,
+  csrf_field,
+  csrf_meta,
+  idempotent,
+  signed,
+  throttle,
+  withAuth,
+  withCan,
+  withCsrf,
+  withIdempotency,
+  withSigned,
+  withThrottle,
+} from './http/app/protections.ts'
+export { Controller, ResourceController } from './http/app/resource-controller.ts'
+export type { ResourceModel } from './http/app/resource-model.ts'
 // HTTP, OpenAPI and manifest
 export {
   createHttpApp,
@@ -91,13 +174,12 @@ export {
   type ResourceAfterCommitPayload,
   type ResourceOnWritePayload,
 } from './http/resource-routes.ts'
-export {
-  type RouteContext,
-  type RouteDefinition,
-  type RouteHandler,
-  type RouteMethod,
-  type RouteOptions,
-  route,
+export type {
+  RouteContext,
+  RouteDefinition,
+  RouteHandler,
+  RouteMethod,
+  RouteOptions,
 } from './http/route.ts'
 export { PERMISSIONS_POLICY, securityHeaders } from './http/security.ts'
 export {
@@ -114,7 +196,25 @@ export {
   type TrustedHosts,
   UNTRUSTED_HOST_CODE,
 } from './http/trusted-hosts.ts'
-export { FRAMEWORK_ERRORS, FRAMEWORK_MESSAGES_EN, withFrameworkMessages } from './messages.ts'
+export {
+  checkMaintenance,
+  maintenanceRedirect,
+} from './maintenance/maintenance.ts'
+export {
+  clearMaintenance,
+  type MaintenanceState,
+  readMaintenance,
+  writeMaintenance,
+} from './maintenance/state.ts'
+export {
+  APPLICATION_ERRORS,
+  APPLICATION_MESSAGES_EN,
+  applicationMessages,
+  FRAMEWORK_ERRORS,
+  FRAMEWORK_MESSAGES_EN,
+  registerApplicationErrors,
+  withFrameworkMessages,
+} from './messages.ts'
 export {
   answersResolver,
   checksumOf,
@@ -217,6 +317,18 @@ export {
   queryFields,
 } from './query/fields.ts'
 export { CursorError, SortError } from './query/sort.ts'
+export {
+  defineRoutes,
+  Route,
+  type RouteEntry,
+  RouteList,
+  type Router,
+  type RoutesCallback,
+  type RoutesSource,
+} from './routing/route.ts'
+// The callable route() URL helper; it keeps the v1 route.get/post/… builders (deprecated).
+export { type RouteHelper, route } from './routing/route-helper.ts'
+export { UrlGenerator, UrlGeneratorToken, url } from './routing/url.ts'
 export { firstAppEnv, normaliseAppEnv } from './runtime/app-env.ts'
 export {
   type ApiConfig,
@@ -253,7 +365,15 @@ export {
   type ServeOptions,
   serve,
 } from './runtime/serve.ts'
-export { type StartedServer, type StartServerOptions, startServer } from './runtime/server.ts'
+export {
+  type StartApplicationOptions,
+  type StartedApplication,
+  type StartedServer,
+  type StartServerOptions,
+  startApplication,
+  startProject,
+  startServer,
+} from './runtime/server.ts'
 // Schema and migrations
 export {
   compilePg,
@@ -262,6 +382,16 @@ export {
   type Naming,
   shortenIdentifier,
 } from './schema/compile.ts'
+export { DecryptError } from './security/aead.ts'
+export { decrypt, Encrypter, EncrypterToken, encrypt } from './security/encrypter.ts'
+export { HttpClient, HttpClientToken } from './security/http.ts'
+export { HttpClientError, safeFetch } from './security/http-client.ts'
+export { Keyring, KeyringToken, keyProblem } from './security/keyring.ts'
+export { Redirector, safeRedirectTarget } from './security/redirect.ts'
+export { type ResolvedSecurity, SecurityToken } from './security/settings.ts'
+export { UrlSigner, UrlSignerToken } from './security/signer.ts'
+export { type SessionStore, SessionStoreToken } from './session/contract.ts'
+export { FileSessionStore, SESSION_FOLDER } from './session/file-store.ts'
 export { FileNotFoundError } from './storage/body.ts'
 export { assertSafeKey, sanitizeFileName, UnsafeKeyError } from './storage/keys.ts'
 export { createLocalDisk, type LocalDiskOptions } from './storage/local-disk.ts'
@@ -289,3 +419,4 @@ export {
   ProjectModelsToken,
   StorageManagerToken,
 } from './tokens.ts'
+export { FormRequest } from './validation/form-request.ts'

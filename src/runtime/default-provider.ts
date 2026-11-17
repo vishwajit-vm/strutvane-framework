@@ -2,7 +2,7 @@
  * The zero-option framework provider (`@strutvane/framework/provider`), the one
  * `strutvane.config.ts` registers. It reads everything from the app:
  * - the connection from `config/database.ts` (see {@link databaseConfigFrom});
- * - the models from {@link ProjectModelsToken}, bound by the project runtime (`sv dev`/`start`);
+ * - the models from {@link ProjectModelsToken}, bound by the project runtime (`node strut dev`/`start`);
  * - the storage disks from `config/filesystems.ts` (see {@link storageFromConfig}), signing
  *   temporary links with `APP_KEY` and serving them at `/storage/<disk>/…`.
  *

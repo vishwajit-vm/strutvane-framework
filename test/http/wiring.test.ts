@@ -139,8 +139,8 @@ describe('messages and errors', () => {
     expect(m.format('validation.invalid_page_size', { max: 100 }, { locale: 'fr-CA' })).toBe(
       'Page size must be between 1 and 100.',
     )
-    expect(m.has('errors.RECORD_IN_USE.title')).toBe(true)
-    expect(m.resolve('errors.RECORD_IN_USE.title')).toBe('Record in use')
+    expect(m.has('errors.record_in_use.title')).toBe(true)
+    expect(m.resolve('errors.record_in_use.title')).toBe('Record in use')
     expect(m.format('nothing.here')).toBe('nothing.here')
     expect(m.locales()).toEqual(expect.arrayContaining(['en', 'fr']))
     expect(m.missingKeys('fr')).toEqual(app.missingKeys('fr'))
@@ -187,7 +187,7 @@ describe('permission resolution', () => {
       basePath: '/api/v2/',
     })
     expect((await local.request('/openapi.json')).status).toBe(404)
-    expect((await local.request('/api/v2/customers')).status).toBe(403) // TENANT_REQUIRED: no tenant resolved
+    expect((await local.request('/api/v2/customers')).status).toBe(403) // tenant_required: no tenant resolved
     expect(local.openApiDocument().paths?.['/api/v2/customers']).toBeDefined()
     await app.shutdown()
   })
@@ -506,7 +506,7 @@ describe('resource hooks, events and global hooks', () => {
         body: { email: 'evil@x.test' },
       })
       expect(refused.status).toBe(403)
-      expect(refused.body.code).toBe('FORBIDDEN')
+      expect(refused.body.code).toBe('forbidden')
       // The refused write never reached the database.
       const after = await client.request<Record<string, string>>('GET', `/api/v1/customers/${id}`)
       expect(after.body['email']).toBe('a@a.test')
@@ -550,7 +550,7 @@ describe('resource hooks, events and global hooks', () => {
       )
       const res = await client.request<{ code: string }>('GET', '/api/v1/customers')
       expect(res.status).toBe(422)
-      expect(res.body.code).toBe('VALIDATION_FAILED')
+      expect(res.body.code).toBe('validation_failed')
     } finally {
       await t.close()
     }

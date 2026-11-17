@@ -140,7 +140,7 @@ describe('custom routes use the app (data, permissions, storage)', () => {
       // An upload aborted by the multipart parser: the client gets the 413 problem, not a reset.
       const tooBigFile = await postForm(`${base}/api/v1/upload`, big)
       expect(tooBigFile.status).toBe(413)
-      expect((tooBigFile.json as { code: string }).code).toBe('FILE_TOO_LARGE')
+      expect((tooBigFile.json as { code: string }).code).toBe('file_too_large')
       await healthy(base)
       // Far over a limit, the server answers 413 and stops reading after a bounded discard, so a
       // client still uploading may see the connection close instead. It must never crash.

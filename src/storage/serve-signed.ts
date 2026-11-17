@@ -43,7 +43,7 @@ export async function serveSignedFile(
   options: SignedFileOptions,
 ): Promise<Response> {
   if (request.method !== 'GET' && request.method !== 'HEAD')
-    throw new StrutvaneError('METHOD_NOT_ALLOWED', { status: 405 })
+    throw new StrutvaneError('method_not_allowed', { status: 405 })
   const url = new URL(request.url)
   const prefix = `${signedFilePrefix(options)}/`
   if (!url.pathname.startsWith(prefix)) throw new NotFoundError()

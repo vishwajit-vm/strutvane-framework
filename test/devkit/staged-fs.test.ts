@@ -30,7 +30,7 @@ describe('createStagedFs', () => {
   test('refuses to replace a different existing file unless overwrite is set', async () => {
     const fs = createStagedFs(projectRoot)
     const error = await rejectionOf(fs.write('existing.ts', 'export const a = 2\n'))
-    expect((error as DevkitError).code).toBe('FILE_EXISTS')
+    expect((error as DevkitError).code).toBe('file_exists')
     await fs.write('existing.ts', 'export const a = 2\n', { overwrite: true })
     expect(await fs.changes()).toMatchObject([{ path: 'existing.ts', kind: 'update' }])
   })
@@ -46,7 +46,7 @@ describe('createStagedFs', () => {
     const fs = createStagedFs(projectRoot)
     await fs.write('win.ts', 'a\nb\nc\n', { overwrite: true })
     expect(await fs.read('win.ts')).toBe('a\r\nb\r\nc\r\n')
-    await fs.write('win.ts', 'a\nb\nc\n') // same content once re-encoded: no-op, no FILE_EXISTS
+    await fs.write('win.ts', 'a\nb\nc\n') // same content once re-encoded: no-op, no file_exists
     expect(await fs.read('win.ts')).toBe('a\r\nb\r\nc\r\n')
     await fs.write('win.ts', 'lf\n', { overwrite: true, preserveLineEndings: false })
     expect(await fs.read('win.ts')).toBe('lf\n')
@@ -57,7 +57,7 @@ describe('createStagedFs', () => {
     await fs.remove('existing.ts')
     await fs.remove('never-existed.ts')
     expect(await fs.exists('existing.ts')).toBe(false)
-    expect(((await rejectionOf(fs.read('existing.ts'))) as DevkitError).code).toBe('FILE_NOT_FOUND')
+    expect(((await rejectionOf(fs.read('existing.ts'))) as DevkitError).code).toBe('file_not_found')
     expect(await fs.changes()).toMatchObject([{ path: 'existing.ts', kind: 'delete' }])
     await fs.commit()
     expect(await readFile(projectRoot, 'existing.ts')).toBeUndefined()
@@ -110,7 +110,7 @@ describe('createStagedFs', () => {
     try {
       await symlink(outside, join(projectRoot, 'link'), 'junction')
       const error = await rejectionOf(fs.write('link/pwned.ts', 'x'))
-      expect((error as DevkitError).code).toBe('PATH_OUTSIDE_PROJECT')
+      expect((error as DevkitError).code).toBe('path_outside_project')
       expect(await snapshot(outside)).toEqual({})
     } finally {
       await cleanOutside()
@@ -123,7 +123,7 @@ describe('createStagedFs', () => {
     await fs.write('b.ts', 'b\n')
     const before = await snapshot(projectRoot)
     expect((await rejectionOf(fs.commit())) as DevkitError).toMatchObject({
-      code: 'TRANSACTION_ABORTED',
+      code: 'transaction_aborted',
     })
     expect(await snapshot(projectRoot)).toEqual(before)
   })

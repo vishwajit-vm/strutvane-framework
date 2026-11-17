@@ -15,6 +15,7 @@ describe('ValidationIssue / Problem.issues (RFC-0003)', () => {
   test('issues carry a path, a stable code, params and a rendered message', () => {
     const issue: ValidationIssue = {
       path: ['lines', 2, 'amount'],
+      field: 'lines.2.amount',
       code: 'too_small',
       params: { min: 0 },
       message: 'Amount must be at least 0.',
@@ -23,8 +24,11 @@ describe('ValidationIssue / Problem.issues (RFC-0003)', () => {
       type: 'https://strutvane.dev/errors/validation',
       title: 'Validation failed',
       status: 422,
-      code: 'VALIDATION_FAILED',
-      issues: [issue, { path: [], code: 'date_order', message: 'End must be after start.' }],
+      code: 'validation_failed',
+      issues: [
+        issue,
+        { path: [], field: '', code: 'date_order', message: 'End must be after start.' },
+      ],
     }
     expectTypeOf(problem.issues).toEqualTypeOf<readonly ValidationIssue[] | undefined>()
   })
@@ -32,6 +36,7 @@ describe('ValidationIssue / Problem.issues (RFC-0003)', () => {
   test('issue params are primitives only (no objects, which could carry secrets or break i18n)', () => {
     const bad: ValidationIssue = {
       path: ['x'],
+      field: 'x',
       code: 'c',
       message: 'm',
       // @ts-expect-error params values must be string | number | boolean
@@ -42,6 +47,13 @@ describe('ValidationIssue / Problem.issues (RFC-0003)', () => {
 
   test('paths are readonly', () => {
     expectTypeOf<ValidationIssue['path']>().toEqualTypeOf<readonly (string | number)[]>()
+  })
+
+  test('every issue carries its dotted field (CONSISTENCY #69); leaving it out does not compile', () => {
+    expectTypeOf<ValidationIssue['field']>().toEqualTypeOf<string>()
+    // @ts-expect-error field is required: clients rely on it to place the message
+    const missing: ValidationIssue = { path: ['title'], code: 'required', message: 'Required.' }
+    void missing
   })
 })
 

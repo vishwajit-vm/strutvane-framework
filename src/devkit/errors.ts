@@ -8,23 +8,23 @@
 
 /** Stable error codes. Never rename one: CLIs and docs refer to them. */
 export type DevkitErrorCode =
-  | 'PATH_OUTSIDE_PROJECT'
-  | 'INVALID_PATH'
-  | 'FILE_EXISTS'
-  | 'FILE_NOT_FOUND'
-  | 'INVALID_ENV_KEY'
-  | 'INVALID_ENV_VALUE'
-  | 'INVALID_PACKAGE_JSON'
-  | 'LOCAL_DEPENDENCY_SPEC'
-  | 'CONFIG_NOT_FOUND'
-  | 'CONFIG_SHAPE_UNRECOGNISED'
-  | 'INVALID_INSTALLER'
-  | 'INSTALLER_FAILED'
-  | 'UNINSTALL_NOT_SUPPORTED'
-  | 'INVALID_GENERATOR'
-  | 'GENERATOR_INPUT_INVALID'
-  | 'TRANSACTION_ABORTED'
-  | 'INTERRUPTED_TRANSACTION'
+  | 'path_outside_project'
+  | 'invalid_path'
+  | 'file_exists'
+  | 'file_not_found'
+  | 'invalid_env_key'
+  | 'invalid_env_value'
+  | 'invalid_package_json'
+  | 'local_dependency_spec'
+  | 'config_not_found'
+  | 'config_shape_unrecognised'
+  | 'invalid_installer'
+  | 'installer_failed'
+  | 'uninstall_not_supported'
+  | 'invalid_generator'
+  | 'generator_input_invalid'
+  | 'transaction_aborted'
+  | 'interrupted_transaction'
 
 /** Base class of all devkit errors. */
 export class DevkitError extends Error {
@@ -46,7 +46,7 @@ export class TransactionAbortedError extends DevkitError {
   readonly rolledBack: boolean
 
   constructor(message: string, rolledBack: boolean, options?: { readonly cause?: unknown }) {
-    super('TRANSACTION_ABORTED', message, options)
+    super('transaction_aborted', message, options)
     this.name = 'TransactionAbortedError'
     this.rolledBack = rolledBack
   }
@@ -66,7 +66,7 @@ export class GeneratorInputError extends DevkitError {
     const summary = issues
       .map((i) => `${i.path.length > 0 ? i.path.join('.') : '(input)'}: ${i.message}`)
       .join('; ')
-    super('GENERATOR_INPUT_INVALID', `invalid input for generator "${generator}": ${summary}`)
+    super('generator_input_invalid', `invalid input for generator "${generator}": ${summary}`)
     this.name = 'GeneratorInputError'
     this.issues = issues
   }

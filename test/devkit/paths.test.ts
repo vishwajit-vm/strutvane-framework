@@ -39,8 +39,8 @@ describe('normaliseRelativePath', () => {
     '/etc/passwd',
     'C:/Windows/system32',
     'c:relative-to-drive',
-  ])('rejects escape %s with PATH_OUTSIDE_PROJECT', (input) => {
-    expect(codeOf(() => normaliseRelativePath(input))).toBe('PATH_OUTSIDE_PROJECT')
+  ])('rejects escape %s with path_outside_project', (input) => {
+    expect(codeOf(() => normaliseRelativePath(input))).toBe('path_outside_project')
   })
 
   test.each([
@@ -52,12 +52,12 @@ describe('normaliseRelativePath', () => {
     ['app/\u0000evil.ts', 'NUL byte'],
     ['app/new\nline.ts', 'newline'],
     ['app/\u007f.ts', 'DEL'],
-  ])('rejects %j (%s) with INVALID_PATH', (input) => {
-    expect(codeOf(() => normaliseRelativePath(input))).toBe('INVALID_PATH')
+  ])('rejects %j (%s) with invalid_path', (input) => {
+    expect(codeOf(() => normaliseRelativePath(input))).toBe('invalid_path')
   })
 
   test('rejects non-strings at runtime (untyped callers)', () => {
-    expect(codeOf(() => normaliseRelativePath(42 as unknown as string))).toBe('INVALID_PATH')
+    expect(codeOf(() => normaliseRelativePath(42 as unknown as string))).toBe('invalid_path')
   })
 })
 
@@ -75,7 +75,7 @@ describe('resolveInsideProject', () => {
   })
 
   test('rejects traversal before touching the disk', () => {
-    expect(codeOf(() => resolveInsideProject(root, '../outside.ts'))).toBe('PATH_OUTSIDE_PROJECT')
+    expect(codeOf(() => resolveInsideProject(root, '../outside.ts'))).toBe('path_outside_project')
   })
 
   test('rejects writing through a symlinked/junctioned directory that points outside', async () => {
@@ -84,10 +84,10 @@ describe('resolveInsideProject', () => {
       // A junction needs no privileges on Windows and behaves like a directory symlink elsewhere.
       await symlink(outside, join(root, 'escape'), 'junction')
       expect(codeOf(() => resolveInsideProject(root, 'escape/pwned.ts'))).toBe(
-        'PATH_OUTSIDE_PROJECT',
+        'path_outside_project',
       )
       expect(codeOf(() => resolveInsideProject(root, 'escape/deeper/still/pwned.ts'))).toBe(
-        'PATH_OUTSIDE_PROJECT',
+        'path_outside_project',
       )
     } finally {
       await cleanOutside()
@@ -144,8 +144,8 @@ describe('protected locations', () => {
     '.strutvane/base/.git/config',
     '.strutvane/base/node_modules/x.js',
     '.strutvane/base/.strutvane/staging/x',
-  ])('refuses %s with INVALID_PATH', (input) => {
-    expect(codeOf(() => normaliseRelativePath(input))).toBe('INVALID_PATH')
+  ])('refuses %s with invalid_path', (input) => {
+    expect(codeOf(() => normaliseRelativePath(input))).toBe('invalid_path')
   })
 
   test.each([
@@ -179,45 +179,45 @@ describe('protected locations', () => {
 
     test('a link inside the project cannot reach .git or node_modules', async (ctx) => {
       if (!(await trySymlink(join(root, '.git'), join(root, 'docs'), 'junction'))) ctx.skip()
-      expect(codeOf(() => resolveInsideProject(root, 'docs/config'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'docs/config'))).toBe('invalid_path')
       expect(codeOf(() => resolveInsideProject(root, 'docs/hooks/post-checkout'))).toBe(
-        'INVALID_PATH',
+        'invalid_path',
       )
       if (!(await trySymlink(join(root, 'node_modules'), join(root, 'vendor'), 'junction')))
         ctx.skip()
-      expect(codeOf(() => resolveInsideProject(root, 'vendor/pkg/index.js'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'vendor/pkg/index.js'))).toBe('invalid_path')
     })
 
     test('a link to a protected file is refused', async (ctx) => {
       if (!(await trySymlink(join(root, '.git', 'config'), join(root, 'settings.ini'), 'file')))
         ctx.skip()
-      expect(codeOf(() => resolveInsideProject(root, 'settings.ini'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'settings.ini'))).toBe('invalid_path')
     })
 
     test('a dangling link to a protected file that does not exist yet is refused', async (ctx) => {
       // Writing through this link would create .git/config, so the check must follow it.
       if (!(await trySymlink(join(root, '.git', 'new-hook'), join(root, 'notes.txt'), 'file')))
         ctx.skip()
-      expect(codeOf(() => resolveInsideProject(root, 'notes.txt'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'notes.txt'))).toBe('invalid_path')
     })
 
     test('a link to an existing protected file is refused', async (ctx) => {
       await writeFile(join(root, '.git', 'config'), '[core]\n')
       if (!(await trySymlink(join(root, '.git', 'config'), join(root, 'cfg'), 'file'))) ctx.skip()
-      expect(codeOf(() => resolveInsideProject(root, 'cfg'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'cfg'))).toBe('invalid_path')
     })
 
     test('a relative dangling link that climbs into .git is refused', async (ctx) => {
       await mkdir(join(root, 'app'), { recursive: true })
       if (!(await trySymlink('../.git/hooks/pre-push', join(root, 'app', 'hook.sh'), 'file')))
         ctx.skip()
-      expect(codeOf(() => resolveInsideProject(root, 'app/hook.sh'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'app/hook.sh'))).toBe('invalid_path')
     })
 
     test('a link loop is refused instead of hanging', async (ctx) => {
       if (!(await trySymlink(join(root, 'loop-b'), join(root, 'loop-a'), 'file'))) ctx.skip()
       if (!(await trySymlink(join(root, 'loop-a'), join(root, 'loop-b'), 'file'))) ctx.skip()
-      expect(codeOf(() => resolveInsideProject(root, 'loop-a'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'loop-a'))).toBe('invalid_path')
     })
 
     test('a dangling link to an ordinary project file is still allowed', async (ctx) => {
@@ -235,7 +235,7 @@ describe('protected locations', () => {
         return ctx.skip() // 8.3 names are disabled on this volume
       }
       expect(short).toBeDefined()
-      expect(codeOf(() => resolveInsideProject(root, 'GIT~1/config'))).toBe('INVALID_PATH')
+      expect(codeOf(() => resolveInsideProject(root, 'GIT~1/config'))).toBe('invalid_path')
     })
   })
 })

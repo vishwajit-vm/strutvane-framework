@@ -160,7 +160,7 @@ describe('make:model', () => {
     await cli(['make:model', 'Tag', 'name:string'], { cwd: root })
     const conflict = await cli(['make:model', 'Tag', 'name:text', '--json'], { cwd: root })
     expect(conflict.code).toBe(4)
-    expect(conflict.json().error).toMatchObject({ code: 'FILE_EXISTS' })
+    expect(conflict.json().error).toMatchObject({ code: 'file_exists' })
     expect(read(root, 'app/models/tag.model.ts')).toContain('field.string()')
     const forced = await cli(['make:model', 'Tag', 'name:text', '--force', '--json'], { cwd: root })
     expect(forced.code, forced.stdout + forced.stderr).toBe(0)
@@ -182,7 +182,7 @@ describe('make:model', () => {
     })
     const r = await cli(['make:model', 'Tag', 'name:string', '--force', '--json'], { cwd: root })
     expect(r.code).toBe(4)
-    expect(r.json().error?.code).toBe('OWNED_FILE')
+    expect(r.json().error?.code).toBe('owned_file')
     expect(read(root, 'app/models/tag.model.ts')).toBe('// owned\n')
   })
 
@@ -222,7 +222,7 @@ describe('make:model', () => {
     const bad = await cli(['make:model', 'Item', '--seed', 'lots', '--json'], {
       cwd: makeProject(),
     })
-    expect(bad.json().error?.code).toBe('INVALID_FLAG_VALUE')
+    expect(bad.json().error?.code).toBe('invalid_flag_value')
   })
 
   test('feature test falls back to a plain test when the API is disabled', async () => {
@@ -237,7 +237,7 @@ describe('make:model', () => {
       { cwd: makeProject() },
     )
     expect(r.code).toBe(3)
-    expect(r.json().error).toMatchObject({ code: 'INVALID_FIELD' })
+    expect(r.json().error).toMatchObject({ code: 'invalid_field' })
     expect(r.json().error?.message).toContain('column 33')
     const human = await cli(['make:model', 'Invoice', 'x:strng'], { cwd: makeProject() })
     expect(human.stderr).toContain('Did you mean string')
@@ -251,7 +251,7 @@ describe('make:model', () => {
     for (const name of ['../evil', 'a/b', '1Up']) {
       const r = await cli(['make:model', name, '--json'], { cwd: makeProject() })
       expect(r.code, name).toBe(3)
-      expect(r.json().error?.code).toBe('INVALID_NAME')
+      expect(r.json().error?.code).toBe('invalid_name')
     }
   })
 
@@ -316,18 +316,18 @@ describe('other generators', () => {
       cwd: root,
     })
     expect(r.code).toBe(3)
-    expect(r.json().error?.code).toBe('GENERATOR_INPUT_INVALID')
+    expect(r.json().error?.code).toBe('generator_input_invalid')
     expect(
       (await cli(['make:resource', 'Invoice', '--actions', 'Bad-Action'], { cwd: root })).code,
     ).toBe(3)
   })
 
-  test('generators that build on a model require it (MODEL_NOT_FOUND, exit 3)', async () => {
+  test('generators that build on a model require it (model_not_found, exit 3)', async () => {
     const root = makeProject()
     for (const command of ['make:resource', 'make:policy', 'make:factory']) {
       const r = await cli([command, 'Ghost', '--json'], { cwd: root })
       expect(r.code, command).toBe(3)
-      expect(r.json().error?.code).toBe('MODEL_NOT_FOUND')
+      expect(r.json().error?.code).toBe('model_not_found')
     }
   })
 
@@ -457,7 +457,7 @@ describe('registry refresh after generation', () => {
     write(root, 'app/models/broken.model.ts', 'export default 42\n')
     const r = await cli(['make:model', 'Tag', 'name:string', '--json'], { cwd: root })
     expect(r.code).toBe(0)
-    expect(r.json().warnings.join('\n')).toContain('UNEXPECTED_DEFAULT_EXPORT')
+    expect(r.json().warnings.join('\n')).toContain('unexpected_default_export')
     expect(existsSync(join(root, '.strutvane/registry.gen.ts'))).toBe(false)
   })
 })

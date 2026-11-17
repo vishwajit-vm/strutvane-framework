@@ -1,16 +1,16 @@
 /**
- * Process entry for `sv dev`: `node --watch-path=… serve-main.mjs <root> <port> <host>`.
+ * Process entry for `node strut dev`: `node --watch-path=… serve-main.mjs <root> <port> <host>`.
  * Node restarts this process when project files change (Vite, mounted inside it, watches `web/`
  * itself and hot-reloads the UI without a restart).
  *
  * @module
  */
 import { ServerListenError } from './runtime/serve.ts'
-import { startServer, stopOnSignals } from './runtime/server.ts'
+import { startProject, stopOnSignals } from './runtime/server.ts'
 
 const [root = process.cwd(), port, hostname] = process.argv.slice(2)
 try {
-  const started = await startServer({
+  const started = await startProject({
     root,
     // The dev UI comes from the project's Vite (same port, HMR); a stale dist/web from an
     // earlier build must not shadow it.

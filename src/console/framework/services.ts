@@ -141,7 +141,7 @@ export function createNodeSpawner(
       const resolved = resolveWindowsCommand(command, env, options.cwd)
       if (resolved === undefined) {
         return Promise.reject(
-          new CliError('COMMAND_NOT_FOUND', { exitCode: EXIT.FAILURE, params: { command } }),
+          new CliError('command_not_found', { exitCode: EXIT.FAILURE, params: { command } }),
         )
       }
       program = resolved
@@ -150,13 +150,13 @@ export function createNodeSpawner(
     if (shell) {
       if (!SHELL_SAFE_PATH.test(program)) {
         return Promise.reject(
-          new CliError('UNSAFE_ARGUMENT', { exitCode: EXIT.USAGE, params: { value: program } }),
+          new CliError('unsafe_argument', { exitCode: EXIT.USAGE, params: { value: program } }),
         )
       }
       for (const value of args) {
         if (!SHELL_SAFE.test(value)) {
           return Promise.reject(
-            new CliError('UNSAFE_ARGUMENT', { exitCode: EXIT.USAGE, params: { value } }),
+            new CliError('unsafe_argument', { exitCode: EXIT.USAGE, params: { value } }),
           )
         }
       }

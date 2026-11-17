@@ -14,7 +14,7 @@
  * - `public: true` → anyone, including anonymous callers (an explicit opt-in);
  * - neither → any **authenticated** actor (anonymous callers get 401).
  *
- * The registry compiler (`sv registry:build`) reads these calls statically, so `path`, `name` and
+ * The registry compiler (`node strut registry:build`) reads these calls statically, so `path`, `name` and
  * `permission` must be string literals.
  *
  * @module
@@ -70,15 +70,15 @@ export interface RouteContext<Params = Readonly<Record<string, string>>> {
   readonly clientAddress?: string
   /**
    * The JSON request body. A body that is not `application/json` is a 415
-   * `UNSUPPORTED_MEDIA_TYPE` problem (so a cross-site form post can never reach the handler as
-   * JSON); malformed JSON is a 400 `MALFORMED_REQUEST` problem.
+   * `unsupported_media_type` problem (so a cross-site form post can never reach the handler as
+   * JSON); malformed JSON is a 400 `malformed_request` problem.
    */
   json<T = unknown>(): Promise<T>
   /** The booted application (container, config, logger): `app.make(Token)`. */
   readonly app: Application
   /**
    * `{ tenantId }` of this request. Pass it to repository calls: a tenant-scoped model refuses
-   * (TENANT_REQUIRED) to run without it, so forgetting it fails closed.
+   * (tenant_required) to run without it, so forgetting it fails closed.
    */
   readonly scope: Scope
   /**
@@ -124,7 +124,7 @@ export type RouteHandler<Params = Readonly<Record<string, string>>> = (
 
 /** Options for one route. */
 export interface RouteOptions<Params = Readonly<Record<string, string>>> {
-  /** Stable route name, e.g. `reports.revenue` (shown by `sv routes`). */
+  /** Stable route name, e.g. `reports.revenue` (shown by `node strut routes`). */
   readonly name?: string
   /** Permission required, e.g. `report.revenue`. */
   readonly permission?: string

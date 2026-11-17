@@ -28,11 +28,12 @@ import {
 import { isValidEnvName } from '../project/env-check.ts'
 import { packageMigrations } from '../project/package-migrations.ts'
 import {
+  type ContributedCommand,
   loadPluginCommands,
   mergeCommands,
   type PluginCommands,
 } from '../project/plugin-commands.ts'
-import { findProjectRoot, loadProject } from '../project/project.ts'
+import { findProjectRoot, isAppRoot, loadProject } from '../project/project.ts'
 import { CLI_PACKAGE, CLI_VERSION } from '../version.ts'
 import type { AnyCommand, CommandContext, Project } from './command.ts'
 import { CliError, type CliFailure, type CliIssue, toFailure, usageError } from './errors.ts'
@@ -94,6 +95,19 @@ export interface RunOptions {
    * default does nothing (in-process callers and tests keep their environment untouched).
    */
   readonly applyEnv?: (vars: ReadonlyMap<string, string>) => void
+  /**
+   * The console commands an application registered (`Application.configure().withCommands([…])`),
+   * for a project that is an app (`bootstrap/app.ts`). Loaded only when a command line is not an
+   * exact built-in, so `node strut migrate` never imports the app. Default: import
+   * `bootstrap/app.ts` and read `app.commands`.
+   */
+  readonly appCommands?: (root: string) => Promise<readonly AnyCommand[]>
+}
+
+/** The default {@link RunOptions.appCommands}: the app's own commands, without booting it. */
+async function loadAppCommands(root: string): Promise<readonly AnyCommand[]> {
+  const { loadApplication } = await import('../../foundation/load.ts')
+  return (await loadApplication(root)).commands
 }
 
 const processStreams: OutputStreams = {
@@ -145,12 +159,29 @@ async function execute(
   const base = options.cwd ?? process.cwd()
   const cwd = scan.cwd === undefined ? base : resolve(base, scan.cwd)
   if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
-    throw usageError('CWD_NOT_FOUND', { cwd })
+    throw usageError('cwd_not_found', { cwd })
   }
   const root = findProjectRoot(cwd)
   const project = root === undefined ? undefined : loadProject(root)
 
   let plugins: PluginCommands | undefined
+  let ownCommands: readonly ContributedCommand[] | undefined
+  // The app's own commands (withCommands). An app that can't even be imported must not take the
+  // CLI down: its commands are missing, with a warning saying why.
+  const appCommandsOf = async (projectRoot: string): Promise<readonly ContributedCommand[]> => {
+    if (ownCommands !== undefined) return ownCommands
+    ownCommands = []
+    if (!isAppRoot(projectRoot)) return ownCommands
+    try {
+      const commands = await (options.appCommands ?? loadAppCommands)(projectRoot)
+      ownCommands = commands.map((command) => ({ command, source: 'bootstrap/app.ts' }))
+    } catch (error) {
+      out.warn(
+        `The app's own commands were not loaded: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    return ownCommands
+  }
   const allCommands = async (): Promise<{
     commands: readonly AnyCommand[]
     sources: ReadonlyMap<string, string>
@@ -159,7 +190,8 @@ async function execute(
       project === undefined
         ? { commands: [], problems: [] }
         : await loadPluginCommands(project, version)
-    const merged = mergeCommands(options.builtins, plugins.commands)
+    const own = project === undefined ? [] : await appCommandsOf(project.root)
+    const merged = mergeCommands(options.builtins, [...plugins.commands, ...own])
     for (const collision of merged.collisions) out.warn(collision)
     return merged
   }
@@ -170,8 +202,9 @@ async function execute(
     return finish(state, streams, { version }, EXIT.OK)
   }
 
-  // `sv`, `sv help`, `sv help <command>`, `sv --help`
-  if (words.length === 0 || words[0] === 'help') {
+  // `node strut`, `node strut list`, `node strut help <command>`, `node strut --help`. `list` is
+  // the command and `help` its alias, as in Laravel (CONSISTENCY #13).
+  if (words.length === 0 || words[0] === 'list' || words[0] === 'help') {
     const target = words.slice(1)
     const { commands, sources } = await allCommands()
     if (target.length === 0) {
@@ -235,10 +268,10 @@ async function execute(
   const parsed = parseCommandLine(command, rest)
   const { globals } = parsed
   if (command.requiresProject !== false && project === undefined) {
-    throw usageError('PROJECT_NOT_FOUND', { cwd })
+    throw usageError('project_not_found', { cwd })
   }
   if (globals.env !== undefined && !isValidEnvName(globals.env)) {
-    throw usageError('INVALID_ARGUMENT', {
+    throw usageError('invalid_argument', {
       detail: `--env "${globals.env}" must be a plain name like "test".`,
     })
   }
@@ -283,7 +316,7 @@ async function execute(
     cwd,
     project,
     requireProject(): Project {
-      if (project === undefined) throw usageError('PROJECT_NOT_FOUND', { cwd })
+      if (project === undefined) throw usageError('project_not_found', { cwd })
       return project
     },
     out,
@@ -300,7 +333,7 @@ async function execute(
   return finish(state, streams, outcome.data, outcome.exitCode ?? EXIT.OK)
 }
 
-/** Metadata for `sv help <command> --json`. */
+/** Metadata for `node strut help <command> --json`. */
 function describe(command: AnyCommand, source: string | undefined): unknown {
   return {
     name: command.name,
@@ -319,7 +352,7 @@ function unresolved(
   plugins: PluginCommands | undefined,
 ): CliError {
   if (resolution.kind === 'ambiguous') {
-    return usageError('AMBIGUOUS_COMMAND', {
+    return usageError('ambiguous_command', {
       name: resolution.input,
       matches: resolution.matches.join(', '),
     })
@@ -327,7 +360,7 @@ function unresolved(
   const input = resolution.kind === 'unknown' ? resolution.input : ''
   const incompatible = (plugins?.problems ?? []).filter((p) => p.kind === 'incompatible')
   if (incompatible.length > 0) {
-    return new CliError('INCOMPATIBLE_PLUGINS', {
+    return new CliError('incompatible_plugins', {
       exitCode: EXIT.INCOMPATIBLE,
       params: {
         name: input,
@@ -342,10 +375,10 @@ function unresolved(
     })
   }
   const suggestions = resolution.kind === 'unknown' ? resolution.suggestions : []
-  return new CliError('UNKNOWN_COMMAND', {
+  return new CliError('unknown_command', {
     exitCode: EXIT.USAGE,
     params: { name: input },
-    issues: suggestions.map((s) => ({ path: [], code: 'SUGGESTION', message: s })),
+    issues: suggestions.map((s) => ({ path: [], code: 'suggestion', message: s })),
   })
 }
 
@@ -360,7 +393,7 @@ function guardProduction(command: string, appEnv: ResolvedAppEnv, confirmed: boo
     appEnv.value === undefined
       ? 'not set'
       : `"${printable(appEnv.value, 40)}" (from ${appEnv.source === 'process' ? 'the environment' : appEnv.source})`
-  throw usageError('PRODUCTION_GUARD', { command, env })
+  throw usageError('production_guard', { command, env })
 }
 
 function finish(state: RunState, streams: OutputStreams, data: unknown, exitCode: number): number {
@@ -392,7 +425,7 @@ export function renderMessages(failure: CliFailure): { message: string; hint?: s
 }
 
 function issueText(issue: CliIssue): string {
-  if (issue.code === 'SUGGESTION') return `Did you mean \`sv ${issue.message}\`?`
+  if (issue.code === 'suggestion') return `Did you mean \`node strut ${issue.message}\`?`
   const where = issue.path.length > 0 ? `${issue.path.join('.')}: ` : ''
   return `${where}${issue.message}`
 }
