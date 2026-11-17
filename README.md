@@ -217,16 +217,44 @@ from a model with `policySchema(Invoice)` (typed per field, so `row.stage.eq('wo
 
 | Option (`createHttpApp`, `serve`, `config/app.ts`) | Default | Why |
 |---|---|---|
-| `trustProxy` | `false` | How many proxy hops may set `X-Forwarded-For`/`-Proto` and `X-Request-Id`. Clients can send these headers themselves, so they are ignored unless a proxy you control overwrites them. |
-| `publicUrl` | none | The URL users reach the app at. An `https://` URL makes the app send HSTS (and request URLs report `https`) even though TLS ends at the proxy. |
+| `trustProxy` | `false` | Which proxies may set `X-Forwarded-For`/`-Proto`/`-Host` and `X-Request-Id`: a hop count (`true` = one) or, safer, their addresses or CIDR ranges (`['10.0.0.0/8']`; `'*'` is refused). Clients can send these headers themselves, so they are ignored unless a proxy you control overwrites them. |
+| `publicUrl` | none | The URL users reach the app at. An `https://` URL makes request URLs report `https` even though TLS ends at the proxy. HSTS is sent over HTTPS in `APP_ENV=production` only, so a local `https://` dev server never pins your browser. |
 
 `http.onRequest` handlers receive `clientAddress`: the TCP peer (from `serve`, or `@hono/node-server`'s `c.env.incoming`), or the trusted `X-Forwarded-For` hop. It is `undefined` when unknown, and controls keyed by address must then fail closed. `serve` also aborts `request.signal` when the client disconnects, cancels the response body, honours backpressure, and never streams `HEAD` bodies. Every response carries a `Permissions-Policy` that disables camera, microphone, geolocation, payment and similar features.
+
+## The application core (v2)
+
+An app built Laravel's way has `bootstrap/app.ts`, routes files and `node strut`:
+
+```ts
+// bootstrap/app.ts
+import { dirname } from 'node:path'
+import { Application } from '@strutvane/framework'
+import web from '../routes/web.ts'
+
+export default Application.configure({ basePath: dirname(import.meta.dirname) })
+  .withRouting({ web, health: '/up' })
+  .withMiddleware((m) => m.validateCsrfTokens({ except: ['webhooks/*'] }))
+  .withCommands([sendReportsCommand])
+  .create()
+```
+
+- **Exports.** `@strutvane/framework` exports `Application`, `Route`/`defineRoutes`, the `route()`, `config()`, `app()`, `now()` and `redirect()` helpers, middleware and protections (`csrf`, `auth`, `can`, `throttle`, `signed`, `idempotent`), `FormRequest`, `ResourceController`, the exception handler, the security kit (`Keyring`, `Encrypter`, `UrlSigner`, `HttpClient`), maintenance mode, the cache manager and the session store. `route` is callable (`route('posts.show', { post })`) and still carries the deprecated v1 `route.get/post/…` builders.
+- **Facades** live on `@strutvane/framework/facades` (`Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`; `Mail`, `Queue`, `Bus`, `Notification` and `Hash` say "coming in 0.3"). They resolve from the current app's container, so tests can swap them, and the `Route` facade never shadows the `Route` builder.
+- **Serving.** `node strut start` (and `dev`) boots `bootstrap/app.ts` before the port opens (`startApplication()`); a broken route or a weak key never starts serving. The Node adapter hands the app the socket peer and `waitUntil`, so deferred work runs after the response and a graceful stop waits for it.
+- **Commands.** `node strut list` (`help` is an alias) shows the app commands: `optimize`, `config:cache`, `route:cache`, `event:cache` (and their `:clear`), `event:list`, `route:list [--security]`, `cache:clear`, `cache:forget`, `key:rotate`, `env:encrypt`/`env:decrypt`, `down`/`up`, `session:flush`, `security:check [--audit]`, `make:command`, `make:rule`, `make:observer`, plus the commands the app registers with `withCommands()`. A `BootError` is reported with its hint and exit code 3.
+
+### Upgrading to 0.2: lowercase error codes
+
+Every code is lowercase `snake_case` from 0.2 (CONSISTENCY #68, #123): HTTP problem codes (`NOT_FOUND` → `not_found`, `VALIDATION_FAILED` → `validation_failed`), CLI `--json` error codes (`PROJECT_NOT_FOUND` → `project_not_found`), devkit, container and model-DSL codes. Each new name is the old one in lower case; `LEGACY_ERROR_CODES` (from `@strutvane/framework/core`) is the full table. Through the 0.2 line the old names keep working: `new StrutvaneError('NOT_FOUND')` carries `not_found`, the error registry finds an old name, and an app's own uppercase code is still accepted. Each prints one `DeprecationWarning` (code `STRUTVANE_UPPERCASE_ERROR_CODE`); 0.3 removes them. Clients that compare `problem.code` must switch to the lowercase names, and catalog keys become `errors.<new code>.title`.
+
+Validation issues also carry `field`, the dotted path (`items.0.title`), next to `path` (CONSISTENCY #69).
 
 ## What's deferred
 
 | Item | Status |
 |---|---|
-| Queue, cache, mail | Not implemented. Integration-map tokens are reserved for a later release. |
+| Queue, mail; database and Redis cache stores | Not implemented (coming in 0.3). The cache has `memory` and `file` stores today. |
 | MySQL | `driver: 'mysql'` is accepted in config and throws `NotImplementedError`. |
 | Azure Entra ID (passwordless) Postgres | `auth: { kind: 'azure-entra' }` is part of the config shape and throws `NotImplementedError` for now. |
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |
