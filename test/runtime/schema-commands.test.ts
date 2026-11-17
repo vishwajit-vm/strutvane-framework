@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, test } from 'vitest'
 import { type CommandContextLike, commands } from '../../src/commands.ts'
 import { Connection, sqliteDriver } from '../../src/database/index.ts'
-import { SqlFragment } from '../../src/database/sql/fragment.ts'
+import { trustedSql } from '../../src/database/sql/fragment.ts'
 import { isMigrationFirst } from '../../src/runtime/schema-commands.ts'
 
 const ENTRY = (name: string): string =>
@@ -140,7 +140,7 @@ async function count(root: string, table: string): Promise<number> {
   const connection = new Connection(sqliteDriver(join(root, 'database', 'database.sqlite')))
   try {
     const { rows } = await connection.run(
-      SqlFragment.trusted([{ kind: 'text', text: `SELECT COUNT(*) AS n FROM "${table}"` }]),
+      trustedSql([{ kind: 'text', text: `SELECT COUNT(*) AS n FROM "${table}"` }]),
     )
     return Number(rows[0]?.['n'])
   } finally {

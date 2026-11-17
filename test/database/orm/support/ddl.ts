@@ -11,7 +11,7 @@ import type {
   SchemaSnapshot,
   TableState,
 } from '../../../../src/database/schema/snapshot.ts'
-import { SqlFragment } from '../../../../src/database/sql/fragment.ts'
+import { trustedSql } from '../../../../src/database/sql/fragment.ts'
 import { type Dialect, isMysqlFamily } from '../../../../src/database/sql/grammar.ts'
 
 /**
@@ -108,7 +108,7 @@ export async function clearTables(connection: Connection): Promise<void> {
  * await execute(connection, 'SELECT 1')
  */
 export async function execute(connection: Connection, text: string): Promise<void> {
-  await connection.run(SqlFragment.trusted([{ kind: 'text', text }]))
+  await connection.run(trustedSql([{ kind: 'text', text }]))
 }
 
 function createTableSql(state: TableState, dialect: Dialect): string {

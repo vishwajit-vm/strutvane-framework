@@ -87,7 +87,8 @@ const MAX_IDENTIFIER_LENGTH = 63
  * assertIdentifier('Posts; drop table users', 'table') // throws INVALID_IDENTIFIER
  */
 export function assertIdentifier(name: string, what: 'table' | 'column' | 'index'): void {
-  if (IDENTIFIER.test(name) && name.length <= MAX_IDENTIFIER_LENGTH) return
+  // `__proto__` would become an object's prototype wherever names key a plain object.
+  if (IDENTIFIER.test(name) && name.length <= MAX_IDENTIFIER_LENGTH && name !== '__proto__') return
   throw new SchemaError(
     'invalid_identifier',
     `The ${what} name ${JSON.stringify(name)} can't be used.`,

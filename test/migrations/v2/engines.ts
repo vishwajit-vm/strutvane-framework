@@ -9,7 +9,7 @@ import { connectMysqlFamily, mysqlDriver } from '../../../src/database/db/mysql-
 import { pgDriver } from '../../../src/database/db/pg-driver.ts'
 import { pgliteDriver } from '../../../src/database/db/pglite-driver.ts'
 import { sqliteDriver } from '../../../src/database/db/sqlite-driver.ts'
-import { SqlFragment } from '../../../src/database/sql/fragment.ts'
+import { trustedSql } from '../../../src/database/sql/fragment.ts'
 import { serverDatabase, skipReason } from '../../helpers/server-database.ts'
 
 /** An open test database. */
@@ -116,7 +116,7 @@ export async function query(
   text: string,
 ): Promise<Record<string, unknown>[]> {
   const statement = isMysql(connection) ? text.replaceAll('"', '`') : text
-  const { rows } = await connection.run(SqlFragment.trusted([{ kind: 'text', text: statement }]))
+  const { rows } = await connection.run(trustedSql([{ kind: 'text', text: statement }]))
   return rows.map((row) => ({ ...row }))
 }
 

@@ -88,6 +88,8 @@ export type EagerTree = Map<string, EagerNode>
 
 const OPERATORS: ReadonlySet<string> = new Set(['=', '!=', '<>', '<', '<=', '>', '>='])
 const MAX_SEARCH_LENGTH = 200
+/** The most columns one request-style `sort()` may name (each adds an ORDER BY term). */
+const MAX_SORT_TERMS = 8
 
 /**
  * The filter operators resources.json advertises (spike 10), as the builder understands them.
@@ -351,6 +353,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * Post.query().whereContains('title', '100%')
    */
   whereContains(column: string, needle: string): this {
+    assertSearchText(needle)
     assertWellFormed(this.#model.table, column, needle)
     this.#where.push({
       kind: 'raw',
@@ -367,6 +370,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * Post.query().whereStartsWith('slug', 'how-to')
    */
   whereStartsWith(column: string, prefix: string): this {
+    assertSearchText(prefix)
     const grammar = this.#model.connection().grammar
     const ref = this.#requestColumn(column)
     assertWellFormed(this.#model.table, column, prefix)
@@ -397,11 +401,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   search(term: string, columns: readonly string[]): this {
     const trimmed = term.trim()
     if (trimmed === '' || columns.length === 0) return this
-    if (trimmed.length > MAX_SEARCH_LENGTH)
-      throw new OrmUsageError(
-        'search_too_long',
-        `Search text is limited to ${MAX_SEARCH_LENGTH} characters.`,
-      )
+    assertSearchText(trimmed)
     assertWellFormed(this.#model.table, 'search', trimmed)
     const nodes: WhereNode[] = columns.map((column) => ({
       kind: 'raw',
@@ -477,7 +477,10 @@ export class Builder<TClass extends AnyModelClass, TResult> {
    * Post.query().sort('-created_at,title')
    */
   sort(spec: string): this {
-    for (const part of spec.split(',')) {
+    const parts = spec.split(',')
+    if (parts.length > MAX_SORT_TERMS)
+      throw new OrmUsageError('sort_too_long', `A sort may name at most ${MAX_SORT_TERMS} columns.`)
+    for (const part of parts) {
       const trimmed = part.trim()
       if (trimmed === '') continue
       const descending = trimmed.startsWith('-')
@@ -1248,6 +1251,15 @@ function assertInSize(column: string, size: number): void {
 }
 
 /** Search and text filters bind the text as-is (not through a column cast): refuse a lone surrogate there too. */
+/** Request text matched with contains / starts-with / search: bounded, like every request input. */
+function assertSearchText(text: string): void {
+  if (text.length > MAX_SEARCH_LENGTH)
+    throw new OrmUsageError(
+      'search_too_long',
+      `Search text is limited to ${MAX_SEARCH_LENGTH} characters.`,
+    )
+}
+
 function assertWellFormed(table: string, column: string, text: string): void {
   if (!text.isWellFormed())
     throw new CastError(table, column, 'the text contains malformed Unicode (a lone surrogate)')

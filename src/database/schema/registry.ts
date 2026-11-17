@@ -122,7 +122,7 @@ export function registerSchema(next: SchemaSnapshot): void {
 export function tableInfo(table: string): TableInfo {
   const cached = infoCache.get(table)
   if (cached !== undefined) return cached
-  const state = snapshot?.tables[table]
+  const state = ownTable(table)
   if (state === undefined) {
     const hint =
       snapshot === undefined
@@ -145,7 +145,7 @@ export function tableInfo(table: string): TableInfo {
  * hasTable('post_tag') // true
  */
 export function hasTable(table: string): boolean {
-  return snapshot?.tables[table] !== undefined
+  return ownTable(table) !== undefined
 }
 
 /**
@@ -166,7 +166,7 @@ export function tableColumns(table: string): ReadonlySet<string> {
  * tableState('post_tag').global // true
  */
 export function tableState(table: string): TableState {
-  const state = snapshot?.tables[table]
+  const state = ownTable(table)
   if (state === undefined) {
     throw new OrmUsageError(
       'unknown_table',
@@ -184,6 +184,12 @@ export function tableState(table: string): TableState {
  */
 export function allTables(): string[] {
   return Object.keys(snapshot?.tables ?? {})
+}
+
+/** A table of the snapshot by name: own entries only (never `constructor` from the prototype). */
+function ownTable(table: string): TableState | undefined {
+  const tables = snapshot?.tables
+  return tables !== undefined && Object.hasOwn(tables, table) ? tables[table] : undefined
 }
 
 function deriveInfo(state: TableState): TableInfo {

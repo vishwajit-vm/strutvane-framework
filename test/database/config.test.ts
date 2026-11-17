@@ -13,7 +13,7 @@ import {
   describeDatabase,
   openDatabase,
 } from '../../src/database/config.ts'
-import { SqlFragment } from '../../src/database/sql/fragment.ts'
+import { trustedSql } from '../../src/database/sql/fragment.ts'
 import { serverDatabase, skipReason } from '../helpers/server-database.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'sv-db-config-'))
@@ -107,7 +107,7 @@ describe('databaseSettings', () => {
 })
 
 describe('openDatabase', () => {
-  const one = SqlFragment.trusted([{ kind: 'text', text: 'SELECT 1 AS one' }])
+  const one = trustedSql([{ kind: 'text', text: 'SELECT 1 AS one' }])
 
   test('SQLite in memory', async () => {
     const connection = await openDatabase(

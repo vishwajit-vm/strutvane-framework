@@ -26,7 +26,7 @@ import {
   pgliteDriver,
   sqliteDriver,
 } from '../../src/database/index.ts'
-import { SqlFragment, sql } from '../../src/database/sql/fragment.ts'
+import { type SqlFragment, sql, trustedSql } from '../../src/database/sql/fragment.ts'
 import { bindFilter } from '../../src/query/bind.ts'
 import { compileFilterSql } from '../../src/query/compile-sql.ts'
 import { evaluateFilter } from '../../src/query/evaluate.ts'
@@ -254,7 +254,7 @@ async function open(
   }
 }
 
-const trusted = (text: string): SqlFragment => SqlFragment.trusted([{ kind: 'text', text }])
+const trusted = (text: string): SqlFragment => trustedSql([{ kind: 'text', text }])
 
 describe.each(ENGINES)('policy SQL ↔ memory on $name', ({ name, skipped }) => {
   let connection: Connection

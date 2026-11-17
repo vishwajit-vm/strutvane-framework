@@ -30,22 +30,20 @@ export type SqlPart =
 export class SqlFragment {
   /** Marks real fragments, so a look-alike object can't sneak text in (`#brand in value`). */
   readonly #brand = true
-  /** The parts, in order. */
+  /** The parts, in order (frozen: nobody can push text into a fragment after it is made). */
   readonly parts: readonly SqlPart[]
 
-  private constructor(parts: readonly SqlPart[]) {
-    this.parts = parts
-  }
-
   /**
-   * Internal constructor for trusted text produced by the compiler. Not exported from the
-   * package entry point; app code uses the {@link sql} tag.
-   *
-   * @example
-   * SqlFragment.trusted([{ kind: 'text', text: 'SELECT 1' }])
+   * Only this module can make a fragment: the constructor wants a token that is never exported,
+   * so app code has no way to turn a string into SQL text, even by calling the class directly.
    */
-  static trusted(parts: readonly SqlPart[]): SqlFragment {
-    return new SqlFragment(parts)
+  constructor(token: symbol, parts: readonly SqlPart[]) {
+    if (token !== TRUSTED)
+      throw new OrmUsageError(
+        'raw_sql_not_template',
+        'SQL fragments are made with the sql tag (sql`...`), never constructed directly.',
+      )
+    this.parts = Object.freeze(parts.map((part) => Object.freeze({ ...part })))
   }
 
   /**
@@ -57,6 +55,20 @@ export class SqlFragment {
   static is(value: unknown): value is SqlFragment {
     return typeof value === 'object' && value !== null && #brand in value
   }
+}
+
+/** The constructor's key; never leaves this module. */
+const TRUSTED: unique symbol = Symbol('strutvane.sql.trusted')
+
+/**
+ * Internal: a fragment from SQL text the framework itself wrote (the compiler, the migration
+ * runner's generated DDL). Not exported from any package entry point; app code uses {@link sql}.
+ *
+ * @example
+ * trustedSql([{ kind: 'text', text: 'SELECT 1' }])
+ */
+export function trustedSql(parts: readonly SqlPart[]): SqlFragment {
+  return new SqlFragment(TRUSTED, parts)
 }
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/
@@ -88,7 +100,13 @@ export function assertIdentifier(name: string): void {
 function sqlTag(strings: TemplateStringsArray, ...values: readonly unknown[]): SqlFragment {
   // Template objects are frozen arrays with a frozen `.raw`; a hand-built array is not. This
   // stops `sql([userInput])` style calls from smuggling text in.
-  if (!Object.isFrozen(strings) || !Array.isArray(strings.raw)) {
+  const raw: unknown = Reflect.get(strings, 'raw')
+  if (
+    !Object.isFrozen(strings) ||
+    !Array.isArray(raw) ||
+    !Object.isFrozen(raw) ||
+    raw.length !== strings.length
+  ) {
     throw new OrmUsageError(
       'raw_sql_not_template',
       // biome-ignore lint/suspicious/noTemplateCurlyInString: the message shows the sql tag syntax
@@ -100,7 +118,7 @@ function sqlTag(strings: TemplateStringsArray, ...values: readonly unknown[]): S
     if (text !== '') parts.push({ kind: 'text', text })
     if (index < values.length) pushValue(parts, values[index])
   })
-  return SqlFragment.trusted(parts)
+  return trustedSql(parts)
 }
 
 function pushValue(parts: SqlPart[], value: unknown): void {
@@ -116,7 +134,7 @@ function pushValue(parts: SqlPart[], value: unknown): void {
  */
 function id(name: string): SqlFragment {
   assertIdentifier(name)
-  return SqlFragment.trusted([{ kind: 'identifier', name }])
+  return trustedSql([{ kind: 'identifier', name }])
 }
 
 /**
@@ -131,7 +149,7 @@ function join(fragments: readonly SqlFragment[], separator: string): SqlFragment
     if (index > 0) parts.push({ kind: 'text', text: separator })
     parts.push(...fragment.parts)
   })
-  return SqlFragment.trusted(parts)
+  return trustedSql(parts)
 }
 
 /**
@@ -141,13 +159,11 @@ function join(fragments: readonly SqlFragment[], separator: string): SqlFragment
  * @example
  * text('SELECT '), value(42), identifier('posts')
  */
-export const text = (value: string): SqlFragment =>
-  SqlFragment.trusted([{ kind: 'text', text: value }])
-export const value = (bound: unknown): SqlFragment =>
-  SqlFragment.trusted([{ kind: 'value', value: bound }])
+export const text = (value: string): SqlFragment => trustedSql([{ kind: 'text', text: value }])
+export const value = (bound: unknown): SqlFragment => trustedSql([{ kind: 'value', value: bound }])
 export const identifier = (name: string): SqlFragment => {
   assertIdentifier(name)
-  return SqlFragment.trusted([{ kind: 'identifier', name }])
+  return trustedSql([{ kind: 'identifier', name }])
 }
 
 /**

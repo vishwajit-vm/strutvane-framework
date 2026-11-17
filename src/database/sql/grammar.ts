@@ -14,7 +14,7 @@
  * | `OFFSET` without `LIMIT` | needs a huge `LIMIT` | needs a huge `LIMIT` | fine | needs `LIMIT -1` |
  * | unique violation | errno 1062 | errno 1062 | SQLSTATE 23505 | "UNIQUE constraint failed" |
  */
-import { concat, type SqlFragment, text, value } from './fragment.ts'
+import { assertIdentifier, concat, type SqlFragment, text, value } from './fragment.ts'
 
 /** The SQL engines Strutvane supports. MySQL is the default for new apps; MariaDB (XAMPP) is first-class. */
 export type Dialect = 'mysql' | 'mariadb' | 'postgres' | 'sqlite'
@@ -81,8 +81,11 @@ function renderWith(
   const params: unknown[] = []
   for (const part of fragment.parts) {
     if (part.kind === 'text') output += part.text
-    else if (part.kind === 'identifier') output += grammar.quote(part.name)
-    else {
+    else if (part.kind === 'identifier') {
+      // Checked again where it becomes text: no quoting function has to escape anything.
+      assertIdentifier(part.name)
+      output += grammar.quote(part.name)
+    } else {
       params.push(part.value)
       output += grammar.placeholder(params.length)
     }

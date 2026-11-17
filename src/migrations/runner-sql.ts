@@ -4,7 +4,7 @@
  * @module
  */
 import type { Connection } from '../database/db/connection.ts'
-import { SqlFragment, sql } from '../database/sql/fragment.ts'
+import { sql, trustedSql } from '../database/sql/fragment.ts'
 import type { Dialect } from '../schema/ddl/dialect.ts'
 import { MigrationError } from './migration-error.ts'
 
@@ -27,7 +27,7 @@ export function isMysqlFamily(dialect: Dialect): boolean {
  * await exec(connection, 'CREATE TABLE "tags" ("id" INTEGER PRIMARY KEY)')
  */
 export async function exec(connection: Connection, statement: string): Promise<void> {
-  await connection.run(SqlFragment.trusted([{ kind: 'text', text: statement }]))
+  await connection.run(trustedSql([{ kind: 'text', text: statement }]))
 }
 
 /**
