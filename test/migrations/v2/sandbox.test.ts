@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
 import { recordMigrations } from '../../../src/migrations/replay-worker.ts'
 import { migrationChecksum } from '../../../src/migrations/runner.ts'
-import { replayInSandbox, SandboxError } from '../../../src/migrations/sandbox.ts'
+import { fromChild, replayInSandbox, SandboxError } from '../../../src/migrations/sandbox.ts'
 import { canonicalSchema } from '../../../src/schema/replay.ts'
 import { BLOG_ROOT, replayApp, SCHEMA_ENTRY_URL } from '../../schema/helpers.ts'
 
@@ -196,6 +196,19 @@ export default migration({
     expect(error.code).toBe('replay_failed')
     expect(error.migration).toBe(NAME)
     expect(error.message).toMatch(/boom at the top/)
+  })
+
+  test('text from the child is made printable before it reaches the terminal', async () => {
+    // The migration's own source spells the escapes (\u001b\u2026), so its strings hold the real bytes.
+    const body = String.raw`throw Object.assign(new Error('boom\u001b]52;c;ZWNobyBwd25lZA==\u0007\u001b[2Kall good\u202e'), { hint: 'x\u001b[31m' })`
+    const error = await refusal(app({ [NAME]: withBody(body) }))
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting their absence
+    expect(error.message).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u202e]/)
+    expect(error.message).toContain('boom]52;c;ZWNobyBwd25lZA==[2Kall good')
+    expect(error.hint).toBe('x[31m')
+    // The worker names the file itself; whatever the error claims is overwritten.
+    expect(error.migration).toBe(NAME)
+    expect(fromChild('a\nb\tc\u0007')).toBe('a\nbc')
   })
 
   test('a schema mistake inside the sandbox keeps its hint and migration', async () => {

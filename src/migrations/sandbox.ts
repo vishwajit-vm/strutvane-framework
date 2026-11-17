@@ -150,11 +150,15 @@ export async function replayInSandbox(
   if (manifest.entries.length === 0) return replayRecorded([])
   const message = await runReplayWorker(manifest, options.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS)
   if (!message.ok) {
-    const migration = message.error.migration
+    // The child's words are the migration's words: printable text only, and the file name only
+    // when it is one of the migrations we sent.
+    const named = message.error.migration
+    const migration = named !== undefined && manifest.entries.includes(named) ? named : undefined
+    const hint = message.error.hint
     throw new SandboxError(
       'replay_failed',
-      `${migration === undefined ? 'Replaying the migrations' : migration} failed: ${message.error.message}`,
-      message.error.hint ?? 'Fix the migration and run the command again.',
+      `${migration === undefined ? 'Replaying the migrations' : migration} failed: ${fromChild(message.error.message)}`,
+      hint === undefined ? 'Fix the migration and run the command again.' : fromChild(hint),
       migration === undefined ? {} : { migration },
     )
   }
@@ -462,7 +466,7 @@ export function runReplayWorker(
         finish(() => resolvePromise(received))
         return
       }
-      const detail = stderr.trim().split('\n').slice(0, 6).join('\n')
+      const detail = fromChild(stderr.trim().split('\n').slice(0, 6).join('\n'))
       finish(() =>
         reject(
           new SandboxError(
@@ -474,6 +478,22 @@ export function runReplayWorker(
       )
     })
   })
+}
+
+const UNPRINTABLE =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point
+  /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
+
+/**
+ * Text that came from the child (a migration's error message, hint or output), made safe to print:
+ * no control characters except line breaks (so no ANSI or OSC sequences that rewrite the screen or
+ * the clipboard) and no bidirectional overrides.
+ *
+ * @example
+ * fromChild('boom\u001b]52;c;ZWNobw==\u0007') // 'boom]52;c;ZWNobw=='
+ */
+export function fromChild(text: string): string {
+  return text.replace(UNPRINTABLE, '')
 }
 
 function parseAnswer(text: string): WorkerMessage | undefined {
