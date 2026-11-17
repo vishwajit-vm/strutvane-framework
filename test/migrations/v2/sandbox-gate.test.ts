@@ -3,18 +3,20 @@
  * class of trick: every way to spell a path the gate and the child could read differently, every
  * way to make a migration CommonJS, and files that change how Node loads the folder.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
 import {
   approveMigrations,
   replayInSandbox,
   SandboxError,
 } from '../../../src/migrations/sandbox.ts'
+import { linkDirectory, linkFolder, removeLinks } from '../../helpers/linked-root.ts'
 
 const roots: string[] = []
 afterAll(() => {
+  removeLinks() // the links first, so removing a project never follows one
   for (const root of roots) rmSync(root, { recursive: true, force: true })
 })
 
@@ -124,9 +126,12 @@ describe('path tricks: the gate refuses every spelling it could resolve differen
     })
     const manifest = approveMigrations(folder)
     expect(manifest.entries).toEqual([NAME])
+    // Approved files are pinned by their real paths, inside the folder's real path (on macOS
+    // the temp folder `/var/…` is really `/private/var/…`).
+    expect(manifest.folder).toBe(realpathSync(folder))
     expect(
       Object.keys(manifest.approved)
-        .map((path) => path.slice(folder.length + 1))
+        .map((path) => relative(manifest.folder, path))
         .sort(),
     ).toEqual([NAME, join('helpers', 'evil.ts'), join('shared', 'z.ts')].sort())
     for (const hash of Object.values(manifest.approved)) expect(hash).toMatch(/^[0-9a-f]{64}$/)
@@ -192,5 +197,53 @@ describe('module format tricks: a migration is always an ES module', () => {
   test('a folder too deep to check is refused (fail closed)', () => {
     const deep = Array.from({ length: 20 }, (_, i) => `d${i}`).join('/')
     expect(refusal(app({ [`${deep}/x.txt`]: 'x' })).code).toBe('migration_forbidden_file')
+  })
+})
+
+// macOS reaches every temp project through a link (`/var` → `/private/var`); a link (a junction on
+// Windows) recreates that on every OS. A linked root must change nothing: the same files are
+// approved and replayed, and a link *inside* the folder that points outside is still refused.
+describe('a project reached through a linked root (every OS)', () => {
+  /** The migrations folder of `app(files)`, spelled through a link to the project root. */
+  function linkedApp(
+    files: Readonly<Record<string, string>>,
+  ): { readonly folder: string; readonly real: string } | { readonly skipped: string } {
+    const real = app(files)
+    const linked = linkFolder(dirname(dirname(real)))
+    if ('skipped' in linked) return linked
+    return { folder: join(linked.path, 'database', 'migrations'), real }
+  }
+
+  test('approves the same files, pinned under the real folder, and replays them', async ({
+    skip,
+  }) => {
+    const project = linkedApp({
+      'helpers/evil.ts': "import { Z } from '../shared/z.ts'\nexport const X = Z\n",
+      'shared/z.ts': 'export const Z = 1\n',
+      [NAME]: `${HEADER}import { X } from './helpers/evil.ts'\n${TAIL}`,
+    })
+    if ('skipped' in project) return skip(project.skipped)
+    const manifest = approveMigrations(project.folder)
+    expect(manifest.folder).toBe(realpathSync(project.real))
+    expect(manifest.entries).toEqual([NAME])
+    expect(
+      Object.keys(manifest.approved)
+        .map((path) => relative(manifest.folder, path))
+        .sort(),
+    ).toEqual([NAME, join('helpers', 'evil.ts'), join('shared', 'z.ts')].sort())
+    const replay = await replayInSandbox(project.folder)
+    expect(replay.state.tables.map((table) => table.name)).toEqual(['tags'])
+  })
+
+  test('a linked folder inside the migrations that points outside is still refused', ({ skip }) => {
+    const project = linkedApp({ [NAME]: `${HEADER}import { X } from './helpers/evil.ts'\n${TAIL}` })
+    if ('skipped' in project) return skip(project.skipped)
+    const outside = mkdtempSync(join(tmpdir(), 'sv-outside-'))
+    roots.push(outside)
+    writeFileSync(join(outside, 'evil.ts'), 'export const X = 1\n')
+    const refused = linkDirectory(outside, join(project.real, 'helpers'))
+    if (refused !== undefined) return skip(refused)
+    const error = refusal(project.folder)
+    expect(error.code).toBe('migration_outside_folder')
   })
 })

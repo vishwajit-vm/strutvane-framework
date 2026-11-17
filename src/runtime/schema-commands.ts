@@ -46,6 +46,7 @@ import { EMPTY_SCHEMA } from '../schema/columns.ts'
 import { buildArtifacts, writeArtifacts } from '../schema/generate/artifacts.ts'
 import type { Replay } from '../schema/replay.ts'
 import { schemaSnapshot } from '../schema/snapshot.ts'
+import { realRoot } from '../support/real-path.ts'
 import { firstAppEnv } from './app-env.ts'
 import { migrationLockTimeoutMs } from './migrations.ts'
 import { importDefault, loadDotEnv } from './project.ts'
@@ -120,9 +121,12 @@ function commandEnv(ctx: CommandContextLike): Readonly<Record<string, string | u
   return { ...process.env, ...(ctx.services?.env ?? {}) }
 }
 
-/** The project root, its `.env` loaded (existing variables win) and the CLI's APP_ENV. */
+/**
+ * The project root (its real path, resolved once: see `realRoot`), its `.env` loaded (existing
+ * variables win) and the CLI's APP_ENV.
+ */
 function project(ctx: CommandContextLike): { root: string; appEnv: string | undefined } {
-  const root = ctx.requireProject().root
+  const root = realRoot(ctx.requireProject().root)
   loadDotEnv(root)
   return {
     root,

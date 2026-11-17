@@ -4,7 +4,8 @@
  * and the `sv db:seed` warning for seeders nobody registered (the "Seeded DatabaseSeeder, 0 rows"
  * trap).
  */
-import { afterEach, describe, expect, test } from 'vitest'
+import { realpathSync } from 'node:fs'
+import { afterAll, afterEach, describe, expect, test } from 'vitest'
 import {
   type CommandContextLike,
   commands,
@@ -19,6 +20,7 @@ import { field } from '../../src/model/field.ts'
 import { migrationTarget } from '../../src/runtime/migrations.ts'
 import { loadProject } from '../../src/runtime/project.ts'
 import { createTestApp, defineFactory } from '../../src/testing/index.ts'
+import { linkFolder, removeLinks } from '../helpers/linked-root.ts'
 import { IMPORTS, makeProject, projectFiles } from './project-fixture.ts'
 
 const cleanups: (() => Promise<void>)[] = []
@@ -275,5 +277,31 @@ describe("factories: related('Model')", () => {
     const spread = (await reuse.createMany(t, 3)) as unknown as { owner: string }[]
     expect(await countCustomers()).toBe(3)
     expect(new Set(spread.map((i) => i.owner)).size).toBe(3)
+  })
+})
+
+// macOS reaches every temp project through a link (`/var` → `/private/var`); a link (a junction on
+// Windows) recreates that on every OS. The v1 commands must behave exactly as through the real path.
+describe('through a linked project root (every OS)', () => {
+  afterAll(removeLinks)
+
+  test('migrate and db:seed; the loaded root is the real path', async ({ skip }) => {
+    const files = projectFiles({
+      ...customerFiles,
+      'database/seeders/database.seeder.ts': REGISTERED_ORCHESTRATOR,
+    })
+    delete files['app/http/routes/api.ts']
+    const p = await makeProject(files)
+    cleanups.push(p.cleanup)
+    const linked = linkFolder(p.root)
+    if ('skipped' in linked) return skip(linked.skipped)
+    expect((await loadProject(linked.path)).root).toBe(realpathSync(p.root))
+    await run('migrate', linked.path)
+    expect(await run('db:seed', linked.path)).toEqual([
+      'ok Seeded DatabaseSeeder',
+      'ok Seeded CustomerSeeder',
+      'ok Seeded InvoiceSeeder',
+    ])
+    expect(await count(linked.path, 'SELECT COUNT(*) AS n FROM "invoices"')).toBe(7)
   })
 })

@@ -21,6 +21,7 @@ import type { Provider } from '../core/index.ts'
 import type { ResourceConfig } from '../http/resource.ts'
 import { isRouteDefinition, type RouteDefinition } from '../http/route.ts'
 import type { AnyModel } from '../model/define-model.ts'
+import { realRoot } from '../support/real-path.ts'
 import { normaliseAppEnv } from './app-env.ts'
 
 /** Thrown when a project file is missing or has the wrong shape. */
@@ -93,11 +94,15 @@ const isModel = (v: unknown): v is AnyModel =>
 const isResource = (v: unknown): v is ResourceConfig =>
   typeof v === 'object' && v !== null && 'model' in v && typeof v.model === 'object'
 
-/** Load a project. */
+/**
+ * Load a project. `root` is resolved to its real path first (see `realRoot`), so every file is
+ * imported under one spelling and `LoadedProject.root` matches the paths the checks compare.
+ */
 export async function loadProject(
-  root: string,
+  projectRoot: string,
   options: LoadProjectOptions = {},
 ): Promise<LoadedProject> {
+  const root = realRoot(projectRoot)
   const appEnv = normaliseAppEnv(options.appEnv)
   if (appEnv !== undefined) process.env['APP_ENV'] = appEnv
   else if (

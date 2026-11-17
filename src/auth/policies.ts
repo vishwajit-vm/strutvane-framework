@@ -20,6 +20,7 @@ import type { Resolver } from '../core/container.ts'
 import { type Token, token } from '../core/container.ts'
 import { BootError } from '../foundation/boot-error.ts'
 import { buildUnchecked, type Injectable } from '../foundation/inject.ts'
+import { realRoot } from '../support/real-path.ts'
 import { kebabCase } from '../support/str.ts'
 import type { Policy } from './gate.ts'
 
@@ -47,6 +48,10 @@ export interface PolicyTarget {
 /**
  * The file a model's policy is discovered in, or `undefined` when the name isn't a safe model
  * name or the file doesn't exist inside the policies folder.
+ *
+ * The result is the file's **real** path (symlinks followed): the path that was checked is the
+ * path that gets imported, however `basePath` is spelled (on macOS a temp project's `/var/…` is
+ * `/private/var/…`).
  *
  * @example
  * policyFile('/srv/blog', 'BlogPost') // '/srv/blog/app/policies/blog-post.policy.ts'
@@ -82,7 +87,9 @@ export class PolicyRegistry {
   readonly #discovered = new Map<string, Policy<unknown> | null>()
 
   constructor(basePath: string, resolver: Resolver) {
-    this.#basePath = basePath
+    // The real path, once: discovered files are real paths, and the boot error names them
+    // relative to this (a linked root would print `../../private/var/…` otherwise).
+    this.#basePath = realRoot(basePath)
     this.#resolver = resolver
   }
 

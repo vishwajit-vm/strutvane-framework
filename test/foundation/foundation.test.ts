@@ -3,7 +3,7 @@
  * core provider objects), boot failures, helpers and the current app, `loadApplication`, the
  * bootstrap caches (config, routes, events) and listener and policy discovery.
  */
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -41,9 +41,11 @@ import { Keyring } from '../../src/security/keyring.ts'
 import { testClient } from '../../src/testing/app-client.ts'
 import { blogConfig } from '../app/fixtures/blog/bootstrap/app.ts'
 import { APP_KEY, BLOG_BASE, MemoryLogger, NOW, testEnv } from '../app/helpers.ts'
+import { linkDirectory, linkFile, linkFolder, removeLinks } from '../helpers/linked-root.ts'
 
 const temporary: string[] = []
 afterEach(() => {
+  removeLinks() // the links first, so removing a project never follows one
   for (const folder of temporary.splice(0))
     rmSync(folder, { recursive: true, force: true, maxRetries: 5 })
 })
@@ -558,7 +560,10 @@ describe('policy discovery (CONSISTENCY #73)', () => {
       'A'.repeat(200),
     ])
       expect(policyFile(base, name), name).toBeUndefined()
-    expect(policyFile(base, 'Ok')).toBe(join(base, 'app', 'policies', 'ok.policy.mjs'))
+    // The real path (what was checked is what gets imported): on macOS `/var/…` is `/private/var/…`.
+    expect(policyFile(base, 'Ok')).toBe(
+      realpathSync(join(base, 'app', 'policies', 'ok.policy.mjs')),
+    )
     expect(policyFile(scratch(), 'Ok')).toBeUndefined()
     try {
       symlinkSync(
@@ -568,6 +573,47 @@ describe('policy discovery (CONSISTENCY #73)', () => {
     } catch {
       return // Symlinks need privileges on Windows; the containment check is covered above.
     }
+    expect(policyFile(base, 'Leak')).toBeUndefined()
+  })
+
+  // macOS reaches every temp app through a link (`/var` → `/private/var`); a link (a junction on
+  // Windows) recreates that on every OS.
+  it('works the same through a linked app root; links that point outside are still refused', async ({
+    skip,
+  }) => {
+    const real = scratch()
+    const policies = join(real, 'app', 'policies')
+    mkdirSync(policies, { recursive: true })
+    writeFileSync(
+      join(policies, 'blog-post.policy.mjs'),
+      'export default class BlogPostPolicy { viewAny() { return true } }\n',
+    )
+    writeFileSync(join(policies, 'empty.policy.mjs'), 'export const nothing = 1\n')
+    const linked = linkFolder(real)
+    if ('skipped' in linked) return skip(linked.skipped)
+    const base = linked.path
+    expect(policyFile(base, 'BlogPost')).toBe(realpathSync(join(policies, 'blog-post.policy.mjs')))
+    const { app } = quietApp(base)
+    await app.boot()
+    const registry = new PolicyRegistry(base, app.container)
+    expect(await (await registry.discover({ name: 'BlogPost' }))?.viewAny?.(null)).toBe(true)
+    // The boot error names the file inside the app, never as `../../private/var/…`.
+    await expect(registry.discover({ name: 'Empty' })).rejects.toMatchObject({
+      code: 'invalid_policy_file',
+      message: expect.stringMatching(/^app[\\/]policies[\\/]empty\.policy\.mjs exports no policy/),
+    })
+    const outside = scratch()
+    writeFileSync(join(outside, 'secrets.policy.mjs'), 'export default class {}\n')
+    // A directory link (a junction on Windows, no privilege needed) named like a policy.
+    const noDirectoryLink = linkDirectory(outside, join(policies, 'dir.policy.mjs'))
+    if (noDirectoryLink !== undefined) return skip(noDirectoryLink)
+    expect(policyFile(base, 'Dir')).toBeUndefined()
+    // A file symlink pointing outside (Windows needs Developer Mode or elevation for these).
+    const noFileLink = linkFile(
+      join(outside, 'secrets.policy.mjs'),
+      join(policies, 'leak.policy.mjs'),
+    )
+    if (noFileLink !== undefined) return skip(noFileLink)
     expect(policyFile(base, 'Leak')).toBeUndefined()
   })
 })

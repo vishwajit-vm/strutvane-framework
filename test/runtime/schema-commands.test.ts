@@ -13,6 +13,7 @@ import { type CommandContextLike, commands } from '../../src/commands.ts'
 import { Connection, sqliteDriver } from '../../src/database/index.ts'
 import { trustedSql } from '../../src/database/sql/fragment.ts'
 import { isMigrationFirst } from '../../src/runtime/schema-commands.ts'
+import { type LinkedFolder, linkFolder, removeLinks } from '../helpers/linked-root.ts'
 
 const ENTRY = (name: string): string =>
   JSON.stringify(
@@ -231,5 +232,47 @@ describe('migration-first commands', () => {
     const first = await run(root, 'sync')
     expect(first.lines.some((l) => l.includes('.strutvane/schema.json'))).toBe(true)
     expect((await run(root, 'sync')).lines).toContain('ok .strutvane/ is up to date.')
+  })
+})
+
+// The whole class behind a macOS-only failure: there `os.tmpdir()` is `/var/…`, a symlink to
+// `/private/var/…`, so a project reached through a link must behave exactly like one reached by
+// its real path. A link (a junction on Windows) recreates that on every OS.
+describe('through a linked project root (every OS)', () => {
+  afterAll(removeLinks)
+
+  /** The project reached through a link, or the reason the OS can't link (the test then skips). */
+  function linkedProject(): { readonly real: string; readonly linked: LinkedFolder } {
+    const real = project()
+    return { real, linked: linkFolder(real) }
+  }
+
+  test('migrate, migrate:status and rollback', async ({ skip }) => {
+    const { real, linked } = linkedProject()
+    if ('skipped' in linked) return skip(linked.skipped)
+    const migrated = await run(linked.path, 'migrate')
+    expect(migrated.lines).toContain('ok Migrated 2026_01_01_000000_create_users_table (batch 1)')
+    expect(migrated.lines.some((l) => l.startsWith('warn Schema drift'))).toBe(false)
+    expect(existsSync(join(real, '.strutvane', 'schema.json'))).toBe(true)
+    expect((await run(linked.path, 'migrate:status')).lines).toContain(
+      '2026_01_02_000000_create_posts_table | ran (batch 1)',
+    )
+    expect((await run(linked.path, 'migrate:rollback')).lines).toContain(
+      'ok Rolled back 2026_01_02_000000_create_posts_table',
+    )
+  })
+
+  test('migrate --seed and db:seed --class find and name every seeder', async ({ skip }) => {
+    const { real, linked } = linkedProject()
+    if ('skipped' in linked) return skip(linked.skipped)
+    const { result, lines } = await run(linked.path, 'migrate', { seed: true })
+    expect(lines.filter((l) => l === 'ok Seeded UserSeeder')).toHaveLength(1)
+    expect(result).toMatchObject({
+      data: { seeded: ['DatabaseSeeder', 'UserSeeder', 'PostSeeder'] },
+    })
+    expect(await count(real, 'posts')).toBe(6)
+    const seeded = await run(linked.path, 'db:seed', { class: 'UserSeeder' })
+    expect(seeded.lines).toContain('ok Seeded UserSeeder')
+    expect(await count(real, 'users')).toBe(6)
   })
 })
