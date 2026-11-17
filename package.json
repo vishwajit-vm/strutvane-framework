@@ -156,7 +156,7 @@
     "@libsql/client": "0.18.0",
     "@readme/openapi-parser": "10.0.0",
     "@types/busboy": "1.5.5",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.1.0",
     "fast-check": "4.10.2",
