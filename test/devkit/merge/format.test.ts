@@ -8,7 +8,7 @@
  */
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   createBiomeCliFormatter,
   type Formatter,
@@ -24,6 +24,10 @@ const HEADER =
 const BASE = `${HEADER}export const config = defineListConfig({ name: 'invoices', pageSize: 25, sortBy: 'createdAt', direction: 'desc', include: ['customer'] })\n`
 const THEIRS = BASE.replace('@1.0.0', '@1.1.0').replace('pageSize: 25', 'pageSize: 50')
 
+/** Per Biome call in these tests; a test makes up to three calls (see the note in `beforeEach`). */
+const FORMAT_TIMEOUT_MS = 90_000
+vi.setConfig({ testTimeout: 4 * FORMAT_TIMEOUT_MS })
+
 let projectRoot: string
 let cleanup: () => Promise<void>
 let biome: Formatter
@@ -36,7 +40,11 @@ beforeEach(async () => {
       javascript: { formatter: { quoteStyle: 'single', semicolons: 'asNeeded' } },
     }),
   })
-  biome = createBiomeCliFormatter({ cwd: projectRoot, biomeBin })
+  // These tests are about merging, not speed. The 15 s default is a product setting (a slow
+  // formatter falls back to the raw text); here a cold Biome binary on a loaded Windows machine
+  // (the first run after `npm ci`, while the scanner checks it) has taken over 15 s per call, which
+  // turned a fallback into a failed assertion. So: a generous limit, and room in the test timeout.
+  biome = createBiomeCliFormatter({ cwd: projectRoot, biomeBin, timeoutMs: FORMAT_TIMEOUT_MS })
 })
 afterEach(() => cleanup())
 
