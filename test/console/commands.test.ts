@@ -104,7 +104,7 @@ describe('env:check', () => {
     })
     const r = await cli(['env:check', '--json'], { cwd: root })
     expect(r.code).toBe(3)
-    expect(r.json().error?.code).toBe('ENV_PROBLEMS')
+    expect(r.json().error?.code).toBe('env_problems')
     expect(r.stdout).not.toContain('hunter2')
     const problems = (r.json().data as ReturnType<typeof checkEnv>).problems
     expect(problems.map((p) => [p.kind, p.key, p.severity])).toEqual([
@@ -188,10 +188,10 @@ describe('env:check', () => {
     expect(env?.message).toContain('.env:2')
   })
 
-  test('no .env.example: ENV_EXAMPLE_MISSING (exit 3)', async () => {
+  test('no .env.example: env_example_missing (exit 3)', async () => {
     const r = await cli(['env:check', '--json'], { cwd: makeProject({ '.env': 'A=1\n' }) })
     expect(r.code).toBe(3)
-    expect(r.json().error?.code).toBe('ENV_EXAMPLE_MISSING')
+    expect(r.json().error?.code).toBe('env_example_missing')
   })
 
   test('warnings only: success with a count', async () => {
@@ -228,7 +228,7 @@ describe('key:generate', () => {
     const root = makeProject({ '.env': 'APP_KEY=old\n' })
     const r = await cli(['key:generate', '--json'], { cwd: root })
     expect(r.code).toBe(4)
-    expect(r.json().error?.code).toBe('KEY_EXISTS')
+    expect(r.json().error?.code).toBe('key_exists')
     expect(read(root, '.env')).toBe('APP_KEY=old\n')
     const forced = await cli(['key:generate', '--force', '--json'], {
       cwd: root,
@@ -243,7 +243,7 @@ describe('key:generate', () => {
     for (const env of ['APP_ENV=production\n', 'APP_ENV= Production \n', '']) {
       const root = makeProject({ '.env': `${env}APP_KEY=old\n` })
       const r = await cli(['key:generate', '--force', '--json'], { cwd: root })
-      expect(r.json().error?.code, env).toBe('PRODUCTION_GUARD')
+      expect(r.json().error?.code, env).toBe('production_guard')
       expect(read(root, '.env')).toContain('APP_KEY=old')
       const ok = await cli(['key:generate', '--force', '--i-understand', '--json'], { cwd: root })
       expect(ok.code).toBe(0)
@@ -271,7 +271,7 @@ describe('key:generate', () => {
   test('every APP_KEY line is replaced; a non-empty duplicate counts as an existing key', async () => {
     const root = makeProject({ '.env': 'APP_KEY=real\nAPP_ENV=local\nexport APP_KEY=\n' })
     const r = await cli(['key:generate', '--json'], { cwd: root })
-    expect(r.json().error?.code).toBe('KEY_EXISTS')
+    expect(r.json().error?.code).toBe('key_exists')
     const forced = await cli(['key:generate', '--force', '--json'], { cwd: root })
     expect(forced.code).toBe(0)
     const lines = read(root, '.env').split('\n')
@@ -326,7 +326,7 @@ describe('doctor', () => {
     installFakePackage(root, '@strutvane/auth', { version: '0.2.0' })
     const r = await cli(['doctor', '--json'], { cwd: root })
     expect(r.code).toBe(3)
-    expect(r.json().error?.code).toBe('DOCTOR_FAILED')
+    expect(r.json().error?.code).toBe('doctor_failed')
     const checks = (r.json().data as { checks: { id: string; status: string; message: string }[] })
       .checks
     const status = Object.fromEntries(checks.map((c) => [c.id, c.status]))
@@ -524,7 +524,7 @@ describe('doctor', () => {
     expect(r.code).toBe(0)
     expect((r.json().data as { checks: unknown[] }).checks).toHaveLength(1)
     expect((await cli(['doctor', '--json'], { cwd: tempDir() })).json().error?.code).toBe(
-      'PROJECT_NOT_FOUND',
+      'project_not_found',
     )
   })
 
@@ -581,7 +581,7 @@ describe('registry:build / registry:watch', () => {
     const root = copyFixture()
     const stale = await cli(['registry:build', '--check', '--json'], { cwd: root })
     expect(stale.code).toBe(6)
-    expect(stale.json().error?.code).toBe('REGISTRY_STALE')
+    expect(stale.json().error?.code).toBe('registry_stale')
     expect(existsSync(join(root, '.strutvane/registry.gen.ts'))).toBe(false)
     const dry = await cli(['registry:build', '--dry-run'], { cwd: root })
     expect(dry.stdout).toContain('would be updated (dry run)')
@@ -599,10 +599,10 @@ describe('registry:build / registry:watch', () => {
     write(root, 'app/models/Customer2.model.ts', 'export default 5\n')
     const r = await cli(['registry:build', '--json'], { cwd: root })
     expect(r.code).toBe(3)
-    expect(r.json().error).toMatchObject({ code: 'REGISTRY_ERRORS' })
+    expect(r.json().error).toMatchObject({ code: 'registry_errors' })
     const human = await cli(['registry:build'], { cwd: root })
-    expect(human.stdout).toContain('DUPLICATE_MODEL')
-    expect(human.stderr).toContain('FILE_NAME_MISMATCH')
+    expect(human.stdout).toContain('duplicate_model')
+    expect(human.stderr).toContain('file_name_mismatch')
     expect(existsSync(join(root, '.strutvane/registry.gen.ts'))).toBe(false)
   })
 
@@ -745,7 +745,7 @@ describe('routes / models / permissions', () => {
     expect(r.code).toBe(3)
     expect(r.json().error?.issues?.[0]).toMatchObject({
       path: ['app/models/zzz.model.ts'],
-      code: 'UNEXPECTED_DEFAULT_EXPORT',
+      code: 'unexpected_default_export',
     })
   })
 })

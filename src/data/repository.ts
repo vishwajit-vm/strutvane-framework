@@ -5,7 +5,7 @@
  * Security properties (each has a test):
  * - **Tenant scope, twice.** For tenant models every statement carries `tenant_id = ?` *and*
  *   runs in a transaction with `set_config('app.tenant_id', …, true)`, so Postgres RLS enforces
- *   the same boundary (ADR-0007). A missing tenant fails closed with `TENANT_REQUIRED`.
+ *   the same boundary (ADR-0007). A missing tenant fails closed with `tenant_required`.
  * - **Tenant is never input.** `tenant_id` comes from the scope, never from the payload.
  * - **References are checked in scope.** A `belongsTo` value must name a visible row of the
  *   target in the same tenant. Foreign keys alone would accept another tenant's id (FK checks
@@ -127,7 +127,7 @@ export interface ListPage {
 /** Thrown when a tenant-scoped model is used without a tenant. */
 export class TenantRequiredError extends StrutvaneError {
   constructor() {
-    super('TENANT_REQUIRED', { status: 403 })
+    super('tenant_required', { status: 403 })
   }
 }
 
@@ -651,7 +651,7 @@ interface DriverError {
 
 /**
  * Translate constraint violations into RFC-0003 errors: unique → 422 `unique` on the field;
- * a foreign key blocking a delete → 409 `RECORD_IN_USE`.
+ * a foreign key blocking a delete → 409 `record_in_use`.
  */
 async function translateErrors<T>(model: ModelDefinition, fn: () => Promise<T>): Promise<T> {
   try {
@@ -668,11 +668,11 @@ async function translateErrors<T>(model: ModelDefinition, fn: () => Promise<T>):
         message,
       )
       if (key) throw new ValidationError([{ path: [key], code: 'unique' }], { cause: error })
-      throw new ConflictError('CONFLICT', undefined, { cause: error })
+      throw new ConflictError('conflict', undefined, { cause: error })
     }
     // 23503 foreign_key_violation, 23001 restrict_violation (ON DELETE RESTRICT)
     if (e.code === '23503' || e.code === '23001' || /FOREIGN KEY constraint failed/.test(message)) {
-      throw new ConflictError('RECORD_IN_USE', { resource: model.label }, { cause: error })
+      throw new ConflictError('record_in_use', { resource: model.label }, { cause: error })
     }
     throw error
   }

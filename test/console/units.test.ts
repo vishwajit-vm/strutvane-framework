@@ -31,7 +31,7 @@ describe('names', () => {
   test('invalid names are validation errors (exit 3)', () => {
     for (const bad of ['', '1abc', 'a b', '../x', 'a/b', 'é']) {
       expect(() => names(bad, 'Model name')).toThrow(
-        expect.objectContaining({ code: 'INVALID_NAME', exitCode: 3 }),
+        expect.objectContaining({ code: 'invalid_name', exitCode: 3 }),
       )
     }
   })

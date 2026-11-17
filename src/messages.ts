@@ -41,15 +41,15 @@ export const FRAMEWORK_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'validation.page_too_deep':
     'Page numbers can reach at most {max} records deep. Use the page cursor to go further.',
   'validation.total_not_allowed': 'A total count is not available for this list.',
-  'errors.TENANT_REQUIRED.title': 'Workspace required',
-  'errors.TENANT_REQUIRED.detail': 'Select a workspace (tenant) before doing this.',
-  'errors.RECORD_IN_USE.title': 'Record in use',
-  'errors.RECORD_IN_USE.detail': 'This {resource} is still referenced by other records.',
-  'errors.MALFORMED_REQUEST.title': 'Malformed request',
-  'errors.MALFORMED_REQUEST.detail': 'The request body could not be read.',
-  'errors.UNSUPPORTED_MEDIA_TYPE.title': 'Unsupported media type',
-  'errors.UNSUPPORTED_MEDIA_TYPE.detail': 'Send the request body as {expected}.',
-  'errors.METHOD_NOT_ALLOWED.title': 'Method not allowed',
+  'errors.tenant_required.title': 'Workspace required',
+  'errors.tenant_required.detail': 'Select a workspace (tenant) before doing this.',
+  'errors.record_in_use.title': 'Record in use',
+  'errors.record_in_use.detail': 'This {resource} is still referenced by other records.',
+  'errors.malformed_request.title': 'Malformed request',
+  'errors.malformed_request.detail': 'The request body could not be read.',
+  'errors.unsupported_media_type.title': 'Unsupported media type',
+  'errors.unsupported_media_type.detail': 'Send the request body as {expected}.',
+  'errors.method_not_allowed.title': 'Method not allowed',
   'errors.untrusted_host.title': 'Untrusted host',
   'errors.untrusted_host.detail': 'This server does not answer for the requested host name.',
   'errors.idempotency_key_invalid.title': 'Invalid idempotency key',
@@ -70,11 +70,11 @@ export const FRAMEWORK_MESSAGES_EN: MessageCatalog = defineMessages('en', {
 export const FRAMEWORK_ERRORS: readonly ErrorDefinition[] = Object.freeze(
   (
     [
-      ['TENANT_REQUIRED', 403, 'Workspace required'],
-      ['RECORD_IN_USE', 409, 'Record in use'],
-      ['MALFORMED_REQUEST', 400, 'Malformed request'],
-      ['UNSUPPORTED_MEDIA_TYPE', 415, 'Unsupported media type'],
-      ['METHOD_NOT_ALLOWED', 405, 'Method not allowed'],
+      ['tenant_required', 403, 'Workspace required'],
+      ['record_in_use', 409, 'Record in use'],
+      ['malformed_request', 400, 'Malformed request'],
+      ['unsupported_media_type', 415, 'Unsupported media type'],
+      ['method_not_allowed', 405, 'Method not allowed'],
       // 419 "Page expired", Laravel's status for a failed CSRF check (CONSISTENCY #30).
       ['csrf_token_mismatch', 419, 'Page expired'],
       // An unknown Host header (CONSISTENCY #20, Laravel/Symfony behaviour).

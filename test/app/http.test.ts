@@ -39,7 +39,7 @@ describe('index: visibility, pagination and list validation', () => {
       'Bob on policies',
     ])
     const bad = await client.getJson('/api/posts?sort=secret&page=0&filter[api_token]=x')
-    bad.assertProblem(422, 'VALIDATION_FAILED')
+    bad.assertProblem(422, 'validation_failed')
     expect((bad.json as { issues: { code: string }[] }).issues.map((issue) => issue.code)).toEqual([
       'invalid_integer',
       'sort_not_allowed',
@@ -61,20 +61,20 @@ describe('show and route model binding', () => {
     ;(await client.getJson('/api/posts/hello-world'))
       .assertStatus(200)
       .assertJsonPath('data.title', 'Hello World')
-    ;(await client.getJson('/api/posts/nope')).assertProblem(404, 'NOT_FOUND')
+    ;(await client.getJson('/api/posts/nope')).assertProblem(404, 'not_found')
   })
 
   it('binds authors by id and refuses non-numeric ids without a lookup', async () => {
     const { client } = await blogApp()
     ;(await client.getJson('/api/authors/2')).assertJsonPath('data.name', 'Alice Writer')
-    ;(await client.getJson('/api/authors/2abc')).assertProblem(404, 'NOT_FOUND')
+    ;(await client.getJson('/api/authors/2abc')).assertProblem(404, 'not_found')
   })
 
   it('answers a draft the user may not see exactly like a missing one (deny as 404)', async () => {
     const { client } = await blogApp()
     const hidden = await client.withHeaders(bearer(tokens.bob)).getJson('/api/posts/alice-draft')
     const missing = await client.withHeaders(bearer(tokens.bob)).getJson('/api/posts/no-such-post')
-    hidden.assertProblem(404, 'NOT_FOUND')
+    hidden.assertProblem(404, 'not_found')
     expect(hidden.path('title')).toBe(missing.path('title'))
     ;(
       await client.withHeaders(bearer(tokens.alice)).getJson('/api/posts/alice-draft')
@@ -96,11 +96,11 @@ describe('store: form requests, policies and problem+json', () => {
   it('needs a signed-in user (401 with WWW-Authenticate)', async () => {
     const { client } = await blogApp()
     const response = await client.postJson('/api/posts', { title: 'Hello' })
-    response.assertProblem(401, 'UNAUTHENTICATED')
+    response.assertProblem(401, 'unauthenticated')
     expect(response.headers.get('www-authenticate')).toBe('Bearer')
     ;(
       await client.withHeaders(bearer('wrong-token')).postJson('/api/posts', { title: 'Hello' })
-    ).assertProblem(401, 'UNAUTHENTICATED')
+    ).assertProblem(401, 'unauthenticated')
   })
 
   it('validates with the form request and reports every field issue with its path', async () => {
@@ -108,7 +108,7 @@ describe('store: form requests, policies and problem+json', () => {
     const response = await client
       .withHeaders(bearer(tokens.alice))
       .postJson('/api/posts', { title: 'Hi', status: 'archived', slug: 'Not A Slug' })
-    response.assertProblem(422, 'VALIDATION_FAILED')
+    response.assertProblem(422, 'validation_failed')
     const issues = (response.json as { issues: { path: string[]; message: string }[] }).issues
     expect(issues.map((issue) => issue.path.join('.')).sort()).toEqual(['slug', 'status', 'title'])
     expect(issues.find((issue) => issue.path[0] === 'title')?.message).toBe(
@@ -121,7 +121,7 @@ describe('store: form requests, policies and problem+json', () => {
     const response = await client
       .withHeaders(bearer(tokens.alice))
       .postJson('/api/posts', { title: 'Forged', author_id: 3 })
-    response.assertProblem(422, 'VALIDATION_FAILED')
+    response.assertProblem(422, 'validation_failed')
     expect(response.path('issues')).toEqual([
       expect.objectContaining({ path: ['author_id'], code: 'unknown_field' }),
     ])
@@ -156,14 +156,14 @@ describe('store: form requests, policies and problem+json', () => {
       await alice
         .withHeaders({ 'content-type': 'text/plain' })
         .send('POST', '/api/posts', 'title=x')
-    ).assertProblem(415, 'UNSUPPORTED_MEDIA_TYPE')
+    ).assertProblem(415, 'unsupported_media_type')
     ;(await alice.send('POST', '/api/posts', '{"title": ')).assertProblem(400, 'invalid_json')
     ;(await alice.postJson('/api/posts', { title: 'x'.repeat(1024 * 1024) })).assertProblem(
       413,
-      'PAYLOAD_TOO_LARGE',
+      'payload_too_large',
     )
     ;(await alice.postJson('/api/posts', ['not', 'an', 'object']))
-      .assertProblem(422, 'VALIDATION_FAILED')
+      .assertProblem(422, 'validation_failed')
       .assertJsonPath('issues.0.code', 'invalid_body')
   })
 
@@ -173,16 +173,16 @@ describe('store: form requests, policies and problem+json', () => {
       await client
         .withHeaders(bearer(tokens.alice))
         .postJson('/api/authors', { name: 'X', email: 'x@example.test' })
-    ).assertProblem(403, 'FORBIDDEN')
+    ).assertProblem(403, 'forbidden')
     const admin = client.withHeaders(bearer(tokens.admin))
     const escalation = await admin.postJson('/api/authors', {
       name: 'Eve',
       email: 'eve@example.test',
       is_admin: true,
     })
-    escalation.assertProblem(422, 'VALIDATION_FAILED').assertJsonPath('issues.0.path', ['is_admin'])
+    escalation.assertProblem(422, 'validation_failed').assertJsonPath('issues.0.path', ['is_admin'])
     const taken = await admin.postJson('/api/authors', { name: 'Eve', email: 'alice@example.test' })
-    taken.assertProblem(422, 'VALIDATION_FAILED').assertJsonPath('issues.0.code', 'taken')
+    taken.assertProblem(422, 'validation_failed').assertJsonPath('issues.0.code', 'taken')
     const missing = await admin.postJson('/api/authors', { email: 42 })
     expect(
       (missing.json as { issues: { message: string }[] }).issues.map((issue) => issue.message),
@@ -200,7 +200,7 @@ describe('update, destroy and custom actions: policies deny by default', () => {
       await client
         .withHeaders(bearer(tokens.bob))
         .patchJson('/api/posts/hello-world', { title: 'Hacked' })
-    ).assertProblem(403, 'FORBIDDEN')
+    ).assertProblem(403, 'forbidden')
     const alice = client.withHeaders(bearer(tokens.alice))
     ;(await alice.patchJson('/api/posts/hello-world', { title: 'Hello again' }))
       .assertStatus(200)
@@ -214,11 +214,11 @@ describe('update, destroy and custom actions: policies deny by default', () => {
     const { client } = await blogApp()
     ;(
       await client.withHeaders(bearer(tokens.alice)).deleteJson('/api/posts/hello-world')
-    ).assertProblem(403, 'FORBIDDEN')
+    ).assertProblem(403, 'forbidden')
     ;(
       await client.withHeaders(bearer(tokens.admin)).deleteJson('/api/posts/hello-world')
     ).assertStatus(204)
-    ;(await client.getJson('/api/posts/hello-world')).assertProblem(404, 'NOT_FOUND')
+    ;(await client.getJson('/api/posts/hello-world')).assertProblem(404, 'not_found')
     ;(await client.getJson('/api/posts')).assertJsonPath('meta.total', 2)
   })
 
@@ -226,7 +226,7 @@ describe('update, destroy and custom actions: policies deny by default', () => {
     const { client, logger } = await blogApp()
     ;(
       await client.withHeaders(bearer(tokens.bob)).postJson('/api/posts/alice-draft/publish', {})
-    ).assertProblem(404, 'NOT_FOUND')
+    ).assertProblem(404, 'not_found')
     const published = await client
       .withHeaders(bearer(tokens.alice))
       .postJson('/api/posts/alice-draft/publish', {})
@@ -243,10 +243,10 @@ describe('update, destroy and custom actions: policies deny by default', () => {
 
   it('injects constructor dependencies and guards groups with middleware', async () => {
     const { client } = await blogApp()
-    ;(await client.getJson('/api/admin/stats')).assertProblem(401, 'UNAUTHENTICATED')
+    ;(await client.getJson('/api/admin/stats')).assertProblem(401, 'unauthenticated')
     ;(await client.withHeaders(bearer(tokens.alice)).getJson('/api/admin/stats')).assertProblem(
       403,
-      'FORBIDDEN',
+      'forbidden',
     )
     ;(await client.withHeaders(bearer(tokens.admin)).getJson('/api/admin/stats'))
       .assertStatus(200)
@@ -271,9 +271,9 @@ describe('the HTTP edges', () => {
   it('answers 405 with Allow for a known path, problem 404 for an unknown API path', async () => {
     const { client } = await blogApp()
     const wrongMethod = await client.deleteJson('/api/posts')
-    wrongMethod.assertProblem(405, 'METHOD_NOT_ALLOWED')
+    wrongMethod.assertProblem(405, 'method_not_allowed')
     expect(wrongMethod.headers.get('allow')).toBe('GET, HEAD, POST')
-    ;(await client.getJson('/api/nothing-here')).assertProblem(404, 'NOT_FOUND')
+    ;(await client.getJson('/api/nothing-here')).assertProblem(404, 'not_found')
   })
 
   it('serves the web fallback for unknown pages, never for API paths or other methods', async () => {
@@ -281,15 +281,15 @@ describe('the HTTP edges', () => {
     const page = await client.get('/some/client/route')
     page.assertStatus(200)
     expect(page.text).toContain('<div id="root"></div>')
-    ;(await client.getJson('/api/unknown')).assertProblem(404, 'NOT_FOUND')
-    ;(await client.getJson('/_strutvane/unknown')).assertProblem(404, 'NOT_FOUND')
+    ;(await client.getJson('/api/unknown')).assertProblem(404, 'not_found')
+    ;(await client.getJson('/_strutvane/unknown')).assertProblem(404, 'not_found')
     // A path that exists for another method stays a 405, never the fallback.
     ;(
       await client.withHeaders(bearer(tokens.alice)).getJson('/api/posts/hello-world/publish')
-    ).assertProblem(405, 'METHOD_NOT_ALLOWED')
+    ).assertProblem(405, 'method_not_allowed')
     ;(
       await client.withHeaders(bearer(tokens.alice)).postJson('/some/client/route', {})
-    ).assertProblem(404, 'NOT_FOUND')
+    ).assertProblem(404, 'not_found')
   })
 
   it('throttles the api group by user then IP, with headers and Retry-After, and resets', async () => {
@@ -299,12 +299,12 @@ describe('the HTTP edges', () => {
     last.assertStatus(200)
     expect(last.headers.get('x-ratelimit-remaining')).toBe('0')
     const blocked = await client.getJson('/api/authors')
-    blocked.assertProblem(429, 'RATE_LIMITED')
+    blocked.assertProblem(429, 'rate_limited')
     expect(blocked.headers.get('retry-after')).toBe('60')
     // A signed-in user has their own bucket (auth runs before throttle).
     ;(await client.withHeaders(bearer(tokens.alice)).getJson('/api/admin/stats')).assertProblem(
       403,
-      'FORBIDDEN',
+      'forbidden',
     )
     // Another client address has its own bucket.
     ;(await client.fromIp('2001:db8:1:2::1').getJson('/api/authors')).assertStatus(200)

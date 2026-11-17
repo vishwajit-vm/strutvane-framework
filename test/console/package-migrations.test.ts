@@ -123,14 +123,14 @@ describe('which packages may contribute migrations', () => {
     })
     symlinkSync(join(root, 'evil'), join(dir, 'migrations'), 'junction')
     addDependencies(root, { '@strutvane/linked': VERSION })
-    expect(() => scan(root)).toThrow(expect.objectContaining({ code: 'UNSAFE_CONTRIBUTION' }))
+    expect(() => scan(root)).toThrow(expect.objectContaining({ code: 'unsafe_contribution' }))
     const r = await cli(['probe', '--json'], {
       cwd: root,
       builtins: [...BUILTIN_COMMANDS, probe],
       version: VERSION,
     })
     expect(r.code).toBe(1)
-    expect(r.json().error?.code).toBe('UNSAFE_CONTRIBUTION')
+    expect(r.json().error?.code).toBe('unsafe_contribution')
     const doctor = await cli(['doctor', '--json'], { cwd: root, version: VERSION })
     const checks = (doctor.json().data as { checks: { id: string; status: string }[] }).checks
     expect(checks.find((c) => c.id === 'migrations')?.status).toBe('fail')
@@ -143,7 +143,7 @@ describe('which packages may contribute migrations', () => {
       installFakePackage(root, '@strutvane/bad', { strutvane: { migrations: declared } })
       addDependencies(root, { '@strutvane/bad': VERSION })
       expect(() => scan(root), String(declared)).toThrow(
-        expect.objectContaining({ code: 'UNSAFE_CONTRIBUTION' }),
+        expect.objectContaining({ code: 'unsafe_contribution' }),
       )
     }
   })
@@ -155,14 +155,14 @@ describe('which packages may contribute migrations', () => {
       files: SQL,
     })
     addDependencies(root, { 'strutvane-plugin-crm': '1.0.0' })
-    expect(() => scan(root)).toThrow(expect.objectContaining({ code: 'MISSING_COMPAT' }))
+    expect(() => scan(root)).toThrow(expect.objectContaining({ code: 'missing_compat' }))
     const wrong = project(['strutvane-plugin-crm'])
     installFakePackage(wrong, 'strutvane-plugin-crm', {
       strutvane: { migrations: './migrations', compat: '^9.0.0' },
       files: SQL,
     })
     addDependencies(wrong, { 'strutvane-plugin-crm': '1.0.0' })
-    expect(() => scan(wrong)).toThrow(expect.objectContaining({ code: 'INCOMPATIBLE_PACKAGE' }))
+    expect(() => scan(wrong)).toThrow(expect.objectContaining({ code: 'incompatible_package' }))
     const good = project(['strutvane-plugin-crm'])
     installFakePackage(good, 'strutvane-plugin-crm', {
       strutvane: { migrations: './migrations', compat: '>=0.1.0-0' },

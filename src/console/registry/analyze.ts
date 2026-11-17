@@ -199,7 +199,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
   if (parseErrors.length > 0) {
     for (const error of parseErrors) {
       report(
-        'PARSE_ERROR',
+        'parse_error',
         error.labels[0]?.start ?? 0,
         error.message,
         'Fix the syntax error; the file could not be read.',
@@ -216,14 +216,14 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
       convention.define === undefined
         ? 'export default [ route.get(…) ]'
         : `export default ${convention.define}(…)`
-    report('MISSING_DEFAULT_EXPORT', 0, `No default export found.`, `Add \`${expected}\`.`)
+    report('missing_default_export', 0, `No default export found.`, `Add \`${expected}\`.`)
     return done([])
   }
   const declaration = child(exportDefault, 'declaration')
   const value = declaration === undefined ? undefined : unwrap(declaration)
   if (value === undefined) {
     report(
-      'UNEXPECTED_DEFAULT_EXPORT',
+      'unexpected_default_export',
       exportDefault.start,
       'The default export could not be read.',
     )
@@ -237,7 +237,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
   const expected = convention.define ?? ''
   if (value.type !== 'CallExpression') {
     report(
-      'UNEXPECTED_DEFAULT_EXPORT',
+      'unexpected_default_export',
       value.start,
       `The default export must be a call to ${expected}(…).`,
       `Write \`export default ${expected}(…)\`. Strutvane reads this call without running your code.`,
@@ -251,14 +251,14 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
   if (!fromFramework || binding === undefined) {
     if (calleeLocal !== undefined && DEFINE_FUNCTIONS.has(calleeLocal)) {
       report(
-        'NOT_IMPORTED_FROM_FRAMEWORK',
+        'not_imported_from_framework',
         value.start,
         `${calleeLocal} is not imported from @strutvane/framework.`,
         `Add \`import { ${calleeLocal} } from '@strutvane/framework'\`.`,
       )
     } else {
       report(
-        'UNEXPECTED_DEFAULT_EXPORT',
+        'unexpected_default_export',
         value.start,
         `The default export must be a call to ${expected}(…) from @strutvane/framework.`,
         `Write \`export default ${expected}(…)\`.`,
@@ -271,7 +271,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
       ? ` ${binding.imported} files belong in a different folder.`
       : ''
     report(
-      'UNEXPECTED_DEFAULT_EXPORT',
+      'unexpected_default_export',
       value.start,
       `Expected ${expected}(…) in ${convention.dir}, found ${binding.imported}(…).${right}`,
       `Use ${expected}(…) here, or move the file to the folder for ${binding.imported}.`,
@@ -310,7 +310,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
     const s = stringValue(node)
     if (s === undefined) {
       report(
-        'NON_LITERAL_ARGUMENT',
+        'non_literal_argument',
         node?.start ?? fallback,
         `${what} must be a string literal.`,
         'Use a plain string like "invoice". Strutvane reads it without running your code, so variables and expressions cannot be resolved.',
@@ -326,7 +326,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
     if (!isPascalCase(name)) {
       ok = false
       report(
-        'INVALID_MODEL_NAME',
+        'invalid_model_name',
         args[0]?.start ?? callStart,
         `Model name "${name}" must be PascalCase.`,
         'Example: "InvoiceLine".',
@@ -338,7 +338,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
     )
     if (ok && suggested !== name) {
       report(
-        'FILE_NAME_MISMATCH',
+        'file_name_mismatch',
         args[0]?.start ?? callStart,
         `Model "${name}" is defined in a file named for "${suggested}".`,
         `Rename the file to match the model, so it is easy to find.`,
@@ -348,7 +348,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
     const fields = readObject(args[1], callStart)
     if (!fields.ok) {
       report(
-        'NON_LITERAL_ARGUMENT',
+        'non_literal_argument',
         fields.at,
         fields.reason === 'not-an-object'
           ? 'The fields (second argument) must be an object literal.'
@@ -364,7 +364,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
       const options = readObject(args[2], callStart)
       if (!options.ok) {
         report(
-          'NON_LITERAL_ARGUMENT',
+          'non_literal_argument',
           options.at,
           'The model options (third argument) must be an object literal with static keys.',
         )
@@ -376,7 +376,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
         const flag = booleanValue(option.value)
         if (flag === undefined) {
           report(
-            'NON_LITERAL_ARGUMENT',
+            'non_literal_argument',
             option.value.start,
             `Option "${option.key}" must be true or false.`,
           )
@@ -417,7 +417,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
     }
     if (modelRef === undefined) {
       report(
-        'NON_LITERAL_ARGUMENT',
+        'non_literal_argument',
         first?.start ?? callStart,
         'The model (first argument) must be an imported model or a model name string.',
         "Write `import Invoice from '../models/invoice.model.ts'` and `defineResource(Invoice, …)`.",
@@ -429,7 +429,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
       const options = readObject(args[1], callStart)
       if (!options.ok) {
         report(
-          'NON_LITERAL_ARGUMENT',
+          'non_literal_argument',
           options.at,
           'The resource options (second argument) must be an object literal with static keys.',
         )
@@ -440,7 +440,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
         const actionObj = readObject(actionsProp.value, actionsProp.start)
         if (!actionObj.ok) {
           report(
-            'NON_LITERAL_ARGUMENT',
+            'non_literal_argument',
             actionObj.at,
             'Actions must be an object literal with static action names.',
           )
@@ -455,7 +455,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
               permission = stringValue(permProp.value)
               if (permission === undefined) {
                 report(
-                  'NON_LITERAL_ARGUMENT',
+                  'non_literal_argument',
                   permProp.value.start,
                   `Permission of action "${action.key}" must be a string literal.`,
                 )
@@ -473,7 +473,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
   function analyzeRoutes(value: Node, importMap: Map<string, ImportBinding>): Entry[] {
     if (value.type !== 'ArrayExpression') {
       report(
-        'UNEXPECTED_DEFAULT_EXPORT',
+        'unexpected_default_export',
         value.start,
         'A route file must default-export an array of route.<method>(…) calls.',
         "Write `export default [route.get('/path', { … })]`.",
@@ -496,7 +496,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
         FRAMEWORK_MODULES.includes(binding.source)
       if (!isRoute || method === undefined || !ROUTE_METHODS.includes(method)) {
         report(
-          'INVALID_ROUTE',
+          'invalid_route',
           call.start,
           'Each entry must be route.get/post/put/patch/delete(…) imported from @strutvane/framework.',
           "Example: route.post('/reports/revenue', { name: 'reports.revenue', permission: 'report.revenue' })",
@@ -507,7 +507,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
       const path = stringValue(args[0])
       if (path === undefined || !path.startsWith('/')) {
         report(
-          'INVALID_ROUTE',
+          'invalid_route',
           args[0]?.start ?? call.start,
           'The route path must be a string literal starting with "/".',
         )
@@ -519,7 +519,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
         const options = readObject(args[1], call.start)
         if (!options.ok) {
           report(
-            'NON_LITERAL_ARGUMENT',
+            'non_literal_argument',
             options.at,
             'Route options must be an object literal with static keys.',
           )
@@ -530,7 +530,7 @@ export function analyzeFile(file: DiscoveredFile, text: string): FileAnalysis {
           const s = stringValue(option.value)
           if (s === undefined) {
             report(
-              'NON_LITERAL_ARGUMENT',
+              'non_literal_argument',
               option.value.start,
               `Route option "${option.key}" must be a string literal.`,
             )

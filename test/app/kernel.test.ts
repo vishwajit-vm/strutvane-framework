@@ -87,7 +87,7 @@ describe('the request hooks', () => {
       'http.onRequest',
       (payload) => {
         if (new URL((payload as HttpRequestHookPayload).request.url).searchParams.has('deny'))
-          throw new StrutvaneError('FORBIDDEN', { status: 403 })
+          throw new StrutvaneError('forbidden', { status: 403 })
         return undefined
       },
       { name: 'test.deny' },
@@ -99,7 +99,7 @@ describe('the request hooks', () => {
       },
       { name: 'test.broken' },
     )
-    ;(await prepared.client.getJson('/api/x?deny=1')).assertProblem(403, 'FORBIDDEN')
+    ;(await prepared.client.getJson('/api/x?deny=1')).assertProblem(403, 'forbidden')
     ;(await prepared.client.getJson('/api/x')).assertStatus(200)
     expect(prepared.logger.messages('error')).toContain('An http.onResponse hook failed')
   })
@@ -190,7 +190,7 @@ describe('the kernel stages', () => {
       { web: defineRoutes([Route.get('/hang', () => new Promise<Response>(() => undefined))]) },
       (m) => m.requestTimeout(30),
     )
-    ;(await prepared.client.getJson('/hang')).assertProblem(503, 'SERVICE_UNAVAILABLE')
+    ;(await prepared.client.getJson('/hang')).assertProblem(503, 'service_unavailable')
     expect(() => prepared.app.middleware.requestTimeout(-1)).toThrow(RangeError)
   })
 

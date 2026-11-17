@@ -12,7 +12,7 @@
  * 3. a third-party (non-`@strutvane`) package declares a `strutvane.compat` range this CLI
  *    satisfies (exit 7 otherwise);
  * 4. the folder resolves, after following symlinks, inside the package's own directory under
- *    `node_modules` (`UNSAFE_CONTRIBUTION` otherwise).
+ *    `node_modules` (`unsafe_contribution` otherwise).
  * A dependency that declares migrations but is not enabled is ignored (and `sv doctor` says so).
  *
  * @module
@@ -93,7 +93,7 @@ export function packageMigrations(project: Project, cliVersion: string): Package
     }
     assertCompatible(pkg, cliVersion)
     const unsafe = (): CliError =>
-      new CliError('UNSAFE_CONTRIBUTION', {
+      new CliError('unsafe_contribution', {
         exitCode: EXIT.FAILURE,
         params: { name, key: 'migrations', path: String(declared) },
       })

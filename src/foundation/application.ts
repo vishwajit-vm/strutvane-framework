@@ -1118,7 +1118,7 @@ export class Application implements CoreApplication<object> {
       async () => {
         if (route === undefined || resolved === undefined) {
           if (allowed.length > 0)
-            throw new StrutvaneError('METHOD_NOT_ALLOWED', {
+            throw new StrutvaneError('method_not_allowed', {
               status: 405,
               headers: { Allow: allowed.join(', ') },
             })

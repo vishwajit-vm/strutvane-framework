@@ -450,7 +450,7 @@ export function unauthenticated(): UnauthenticatedError {
  */
 async function readJsonBody(request: Request, state: RequestState): Promise<unknown> {
   if (!isJsonMediaType(request.headers.get('content-type')))
-    throw new StrutvaneError('UNSUPPORTED_MEDIA_TYPE', { status: 415 })
+    throw new StrutvaneError('unsupported_media_type', { status: 415 })
   const text = await readLimitedText(request, state.limits.maxBytes)
   try {
     return parseJsonSafely(text, state.limits)
@@ -486,13 +486,13 @@ export function hasBearer(request: Request): boolean {
 
 /**
  * Read a body as text, at most `limit` bytes, refusing early when `Content-Length` already says
- * it's too big (413 `PAYLOAD_TOO_LARGE`). The rest of an oversized body is never buffered.
+ * it's too big (413 `payload_too_large`). The rest of an oversized body is never buffered.
  *
  * @example
  * const text = await readLimitedText(request.clone(), 64 * 1024)
  */
 export async function readLimitedText(request: Request, limit: number): Promise<string> {
-  const tooLarge = (): StrutvaneError => new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 })
+  const tooLarge = (): StrutvaneError => new StrutvaneError('payload_too_large', { status: 413 })
   const declared = Number(request.headers.get('content-length') ?? '0')
   if (declared > limit) throw tooLarge()
   if (request.body === null) return ''

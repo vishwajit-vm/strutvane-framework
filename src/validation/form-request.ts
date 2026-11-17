@@ -6,7 +6,7 @@
  * `#[FailOnUnknownFields]` is opt-in). Sending `is_admin: true` to an endpoint that doesn't accept
  * it is a 422, not a silent no-op that hides a mass-assignment probe or a client typo.
  *
- * Failures are core `ValidationError`s (422 `VALIDATION_FAILED`) whose issues carry the field's
+ * Failures are core `ValidationError`s (422 `validation_failed`) whose issues carry the field's
  * `path` in the body (`['title']`, `['lines', 2, 'amount']`), a `code` and the validator's message.
  *
  * @module

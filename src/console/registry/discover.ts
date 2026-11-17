@@ -57,7 +57,7 @@ export function discover(root: string): DiscoveryResult {
         if (name.toLowerCase().endsWith(convention.suffix.toLowerCase())) {
           diagnostics.push(
             diagnosticForFile(
-              'SUSPICIOUS_FILE_NAME',
+              'suspicious_file_name',
               'warning',
               relPath,
               `File is ignored because its suffix is not exactly "${convention.suffix}".`,
@@ -92,7 +92,7 @@ export function detectCaseConflicts(relPaths: readonly string[]): Diagnostic[] {
     } else if (first !== path) {
       diagnostics.push(
         diagnosticForFile(
-          'CASE_CONFLICT',
+          'case_conflict',
           'error',
           path,
           `"${path}" differs from "${first}" only by letter case.`,

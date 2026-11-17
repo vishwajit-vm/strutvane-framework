@@ -162,7 +162,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export async function readJsonBody(c: Context): Promise<unknown> {
   const type = c.req.header('content-type') ?? ''
   if (!JSON_TYPE.test(type)) {
-    throw new StrutvaneError('UNSUPPORTED_MEDIA_TYPE', {
+    throw new StrutvaneError('unsupported_media_type', {
       status: 415,
       params: { expected: 'application/json' },
     })
@@ -171,7 +171,7 @@ export async function readJsonBody(c: Context): Promise<unknown> {
   try {
     return JSON.parse(text) as unknown
   } catch (error) {
-    throw new StrutvaneError('MALFORMED_REQUEST', { status: 400, cause: error })
+    throw new StrutvaneError('malformed_request', { status: 400, cause: error })
   }
 }
 

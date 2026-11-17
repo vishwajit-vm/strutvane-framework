@@ -110,7 +110,7 @@ export interface CommandContext<F extends FlagMap = FlagMap, A extends ArgMap = 
   readonly cwd: string
   /** The project, when one was found. */
   readonly project: Project | undefined
-  /** The project, or a `PROJECT_NOT_FOUND` usage error. */
+  /** The project, or a `project_not_found` usage error. */
   requireProject(): Project
   readonly out: Output
   readonly prompt: Prompter
@@ -128,7 +128,7 @@ export interface CommandContext<F extends FlagMap = FlagMap, A extends ArgMap = 
   readonly appEnv: string | undefined
   /**
    * Apply the production guard from inside a command that is only sometimes destructive (e.g.
-   * `key:generate --force` replacing a key). Throws `PRODUCTION_GUARD` unless {@link appEnv} is
+   * `key:generate --force` replacing a key). Throws `production_guard` unless {@link appEnv} is
    * local, test, testing or development, or `--force --i-understand` was passed.
    */
   guardDestructive(): void
@@ -136,7 +136,7 @@ export interface CommandContext<F extends FlagMap = FlagMap, A extends ArgMap = 
    * The package migration folders `sv migrate` may apply (they run as the database owner):
    * direct dependencies with a contributor name that `strutvane.config.ts` imports, compatible,
    * with the folder's real path inside the package (see `project/package-migrations.ts`). Empty
-   * outside a project. Throws `UNSAFE_CONTRIBUTION` or an incompatibility (exit 7) instead of
+   * outside a project. Throws `unsafe_contribution` or an incompatibility (exit 7) instead of
    * returning a folder that fails the gate.
    */
   packageMigrations(): readonly PackageMigrationDir[]

@@ -399,12 +399,12 @@ function handOver(
 }
 
 /** Why the server could not bind, as a stable code (the CLI maps these to its config exit code). */
-export type ListenErrorCode = 'PORT_IN_USE' | 'PORT_ACCESS_DENIED' | 'ADDRESS_NOT_AVAILABLE'
+export type ListenErrorCode = 'port_in_use' | 'port_access_denied' | 'address_not_available'
 
 const LISTEN_ERROR_CODES: Readonly<Record<string, ListenErrorCode>> = {
-  EADDRINUSE: 'PORT_IN_USE',
-  EACCES: 'PORT_ACCESS_DENIED',
-  EADDRNOTAVAIL: 'ADDRESS_NOT_AVAILABLE',
+  EADDRINUSE: 'port_in_use',
+  EACCES: 'port_access_denied',
+  EADDRNOTAVAIL: 'address_not_available',
 }
 
 /**
@@ -422,14 +422,14 @@ export class ServerListenError extends Error {
   constructor(code: ListenErrorCode, host: string, port: number, cause?: unknown) {
     const where = `${host.includes(':') ? `[${host}]` : host}:${port}`
     const what =
-      code === 'PORT_IN_USE'
+      code === 'port_in_use'
         ? `Port ${port} is already in use (${where}).`
-        : code === 'PORT_ACCESS_DENIED'
+        : code === 'port_access_denied'
           ? `Not allowed to listen on ${where}.`
           : `Cannot listen on ${where}: this machine has no such address.`
     super(
       `${what} Choose another port with APP_PORT in .env or --port <number>` +
-        `${code === 'ADDRESS_NOT_AVAILABLE' ? ', or another interface with --host' : ''}.`,
+        `${code === 'address_not_available' ? ', or another interface with --host' : ''}.`,
       cause === undefined ? undefined : { cause },
     )
     this.code = code

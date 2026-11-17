@@ -212,21 +212,21 @@ describe('parseCommandLine', () => {
         expect.objectContaining({ code, exitCode: EXIT.USAGE }),
       )
     }
-    expectCode([], 'MISSING_ARGUMENT')
-    expectCode(['X', '--nope'], 'UNKNOWN_FLAG')
-    expectCode(['X', '--seed'], 'INVALID_FLAG_VALUE')
-    expectCode(['X', '--template', 'c'], 'INVALID_CHOICE')
+    expectCode([], 'missing_argument')
+    expectCode(['X', '--nope'], 'unknown_flag')
+    expectCode(['X', '--seed'], 'invalid_flag_value')
+    expectCode(['X', '--template', 'c'], 'invalid_choice')
   })
 
   test('surplus positionals are rejected; required variadic needs one value', () => {
     const one = cmd('one', { args: { a: {} } })
     expect(() => parseCommandLine(one, ['x', 'y'])).toThrow(
-      expect.objectContaining({ code: 'TOO_MANY_ARGUMENTS' }),
+      expect.objectContaining({ code: 'too_many_arguments' }),
     )
     expect(parseCommandLine(one, []).args).toEqual({ a: undefined })
     const req = cmd('req', { args: { files: { variadic: true, required: true } } })
     expect(() => parseCommandLine(req, [])).toThrow(
-      expect.objectContaining({ code: 'MISSING_ARGUMENT' }),
+      expect.objectContaining({ code: 'missing_argument' }),
     )
   })
 
@@ -342,7 +342,7 @@ describe('errors', () => {
     ])
     const failure = toFailure(env)
     expect(failure).toMatchObject({
-      code: 'ENV_INVALID',
+      code: 'env_invalid',
       exitCode: EXIT.VALIDATION,
       params: { count: 2 },
       issues: [
@@ -364,7 +364,7 @@ describe('errors', () => {
       problems: [{ key: 'APP_KEY', message: 'Required' }, 'junk', { key: 3 }],
     })
     expect(toFailure(foreign)).toMatchObject({
-      code: 'ENV_INVALID',
+      code: 'env_invalid',
       exitCode: 3,
       issues: [
         { path: ['APP_KEY'], message: 'Required' },
@@ -373,9 +373,9 @@ describe('errors', () => {
     })
     // Booting the app wraps provider failures; the cause still decides.
     const wrapped = new ProviderError('app', 'register', foreign)
-    expect(toFailure(wrapped)).toMatchObject({ code: 'ENV_INVALID', exitCode: 3 })
+    expect(toFailure(wrapped)).toMatchObject({ code: 'env_invalid', exitCode: 3 })
     expect(toFailure(new StrutvaneError('BOOT', { cause: wrapped }))).toMatchObject({
-      code: 'ENV_INVALID',
+      code: 'env_invalid',
     })
     // An explicit CliError keeps its own classification.
     expect(toFailure(new CliError('X', { cause: foreign }))).toMatchObject({ code: 'X' })
@@ -390,9 +390,9 @@ describe('errors', () => {
         host: '127.0.0.1',
         port: 3000,
       })
-    const failure = toFailure(listen('PORT_IN_USE'))
+    const failure = toFailure(listen('port_in_use'))
     expect(failure).toMatchObject({
-      code: 'PORT_IN_USE',
+      code: 'port_in_use',
       exitCode: EXIT.VALIDATION,
       params: { host: '127.0.0.1', port: '3000' },
       unexpected: false,
@@ -402,14 +402,14 @@ describe('errors', () => {
     expect(rendered.hint).toContain('APP_PORT')
     expect(rendered.hint).toContain('--port')
     expect(rendered.hint).not.toContain('report the bug')
-    for (const code of ['PORT_ACCESS_DENIED', 'ADDRESS_NOT_AVAILABLE']) {
+    for (const code of ['port_access_denied', 'address_not_available']) {
       const f = toFailure(listen(code))
       expect(f.exitCode, code).toBe(EXIT.VALIDATION)
       expect(renderMessages(f).message, code).toContain('127.0.0.1:3000')
     }
     // Missing host/port, or an unrelated code, is not treated as a listen error.
     expect(
-      toFailure(Object.assign(new Error('x'), { code: 'PORT_IN_USE', port: 3000 })),
+      toFailure(Object.assign(new Error('x'), { code: 'port_in_use', port: 3000 })),
     ).toMatchObject({ unexpected: true })
     expect(
       toFailure(Object.assign(new Error('x'), { code: 'EADDRINUSE', host: 'h', port: 1 })),
@@ -420,25 +420,25 @@ describe('errors', () => {
     const lookalike = Object.assign(new Error('Invalid environment'), {
       name: 'EnvValidationError',
     })
-    expect(toFailure(lookalike)).toMatchObject({ code: 'INTERNAL_ERROR', unexpected: true })
+    expect(toFailure(lookalike)).toMatchObject({ code: 'internal_error', unexpected: true })
     // Matching is by name and shape, never by message text.
     expect(toFailure(new Error('Invalid environment: 1 problem(s)'))).toMatchObject({
-      code: 'INTERNAL_ERROR',
+      code: 'internal_error',
     })
     const a = new Error('a')
     const b = new Error('b', { cause: a })
     Object.assign(a, { cause: b })
-    expect(toFailure(a)).toMatchObject({ code: 'INTERNAL_ERROR' })
+    expect(toFailure(a)).toMatchObject({ code: 'internal_error' })
   })
 
   test('devkit errors map by code (even from another copy of devkit)', () => {
-    expect(toFailure(new DevkitError('FILE_EXISTS', 'a.ts exists'))).toMatchObject({
-      code: 'FILE_EXISTS',
+    expect(toFailure(new DevkitError('file_exists', 'a.ts exists'))).toMatchObject({
+      code: 'file_exists',
       exitCode: 4,
       params: { detail: 'a.ts exists' },
     })
     const foreign = Object.assign(new Error('bad input'), {
-      code: 'GENERATOR_INPUT_INVALID',
+      code: 'generator_input_invalid',
       issues: [{ path: ['name'], message: 'x' }, { path: 'bad', code: 'c' }, 5],
     })
     expect(toFailure(foreign)).toMatchObject({
@@ -455,7 +455,7 @@ describe('errors', () => {
       new ValidationError([{ path: ['a'], code: 'required', message: 'A is required.' }]),
     )
     expect(v).toMatchObject({
-      code: 'VALIDATION_FAILED',
+      code: 'validation_failed',
       exitCode: 3,
       issues: [{ path: ['a'], code: 'required' }],
     })
@@ -465,22 +465,22 @@ describe('errors', () => {
     })
   })
 
-  test('anything else is an unexpected INTERNAL_ERROR', () => {
+  test('anything else is an unexpected internal_error', () => {
     expect(toFailure(new TypeError('boom'))).toMatchObject({
-      code: 'INTERNAL_ERROR',
+      code: 'internal_error',
       exitCode: 1,
       unexpected: true,
       params: { detail: 'boom' },
     })
     expect(toFailure('a string')).toMatchObject({ params: { detail: 'a string' } })
     expect(toFailure(Object.assign(new Error('e'), { code: 'ENOENT' }))).toMatchObject({
-      code: 'INTERNAL_ERROR',
+      code: 'internal_error',
     })
   })
 
   test('messages come from the catalog, with hints; unknown codes fall back to the detail', () => {
     expect(
-      renderMessages(toFailure(new CliError('UNKNOWN_COMMAND', { params: { name: 'x' } }))),
+      renderMessages(toFailure(new CliError('unknown_command', { params: { name: 'x' } }))),
     ).toEqual({
       message: 'Unknown command "x".',
       hint: 'Run `sv help` to see every command.',
@@ -489,7 +489,7 @@ describe('errors', () => {
       message: 'PLUGIN_CODE',
     })
     expect(
-      renderMessages(toFailure(new CliError('REGISTRY_ERRORS', { params: { count: 1 } }))).message,
+      renderMessages(toFailure(new CliError('registry_errors', { params: { count: 1 } }))).message,
     ).toContain('1 error;')
   })
 })

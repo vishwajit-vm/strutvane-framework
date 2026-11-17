@@ -56,24 +56,24 @@ export interface FieldModifier {
 
 /** Stable error codes for field specs. */
 export type FieldErrorCode =
-  | 'EMPTY_SPEC'
-  | 'INVALID_NAME'
-  | 'RESERVED_NAME'
-  | 'MISSING_TYPE'
-  | 'EMPTY_SEGMENT'
-  | 'UNEXPECTED_CHARACTER'
-  | 'UNCLOSED_PARENTHESIS'
-  | 'UNTERMINATED_QUOTE'
-  | 'EMPTY_ARGUMENT'
-  | 'UNKNOWN_TYPE'
-  | 'UNKNOWN_MODIFIER'
-  | 'WRONG_ARGUMENT_COUNT'
-  | 'INVALID_ARGUMENT'
-  | 'DUPLICATE_MODIFIER'
-  | 'CONFLICTING_MODIFIERS'
-  | 'MODIFIER_NOT_APPLICABLE'
-  | 'INVALID_DEFAULT'
-  | 'DUPLICATE_FIELD'
+  | 'empty_spec'
+  | 'invalid_name'
+  | 'reserved_name'
+  | 'missing_type'
+  | 'empty_segment'
+  | 'unexpected_character'
+  | 'unclosed_parenthesis'
+  | 'unterminated_quote'
+  | 'empty_argument'
+  | 'unknown_type'
+  | 'unknown_modifier'
+  | 'wrong_argument_count'
+  | 'invalid_argument'
+  | 'duplicate_modifier'
+  | 'conflicting_modifiers'
+  | 'modifier_not_applicable'
+  | 'invalid_default'
+  | 'duplicate_field'
 
 /** A field spec could not be parsed or is invalid. */
 export class FieldSpecError extends Error {
@@ -285,7 +285,7 @@ function scan(spec: string): RawSegment[] {
         let out = ''
         for (;;) {
           if (i >= spec.length)
-            throw error('UNTERMINATED_QUOTE', `Unterminated ${ch} quote.`, start)
+            throw error('unterminated_quote', `Unterminated ${ch} quote.`, start)
           const c = spec[i] ?? ''
           if (c === '\\' && i + 1 < spec.length) {
             out += spec[i + 1] ?? ''
@@ -305,7 +305,7 @@ function scan(spec: string): RawSegment[] {
           const c = spec[i] ?? ''
           if (forbidden.includes(c)) {
             throw error(
-              'UNEXPECTED_CHARACTER',
+              'unexpected_character',
               `Unexpected "${c}" in an argument; quote arguments that contain it.`,
               i,
             )
@@ -314,19 +314,19 @@ function scan(spec: string): RawSegment[] {
         }
         value = spec.slice(start, i).trim()
         if (value === '' && i >= spec.length) {
-          throw error('UNCLOSED_PARENTHESIS', `Missing "${close}".`, open)
+          throw error('unclosed_parenthesis', `Missing "${close}".`, open)
         }
-        if (value === '') throw error('EMPTY_ARGUMENT', 'Empty argument.', start)
+        if (value === '') throw error('empty_argument', 'Empty argument.', start)
       }
       args.push({ value, column: start + 1 })
       skipSpaces()
-      if (i >= spec.length) throw error('UNCLOSED_PARENTHESIS', `Missing "${close}".`, open)
+      if (i >= spec.length) throw error('unclosed_parenthesis', `Missing "${close}".`, open)
       if (spec[i] === ',') {
         i++
         continue
       }
       if (spec[i] === close) return args
-      throw error('UNEXPECTED_CHARACTER', `Unexpected "${spec[i]}" after an argument.`, i)
+      throw error('unexpected_character', `Unexpected "${spec[i]}" after an argument.`, i)
     }
   }
 
@@ -337,9 +337,9 @@ function scan(spec: string): RawSegment[] {
     const head = spec.slice(start, i)
     if (head === '') {
       if (i >= spec.length || spec[i] === ':') {
-        throw error('EMPTY_SEGMENT', 'Empty part between colons.', start)
+        throw error('empty_segment', 'Empty part between colons.', start)
       }
-      throw error('UNEXPECTED_CHARACTER', `Unexpected "${spec[i]}".`, i)
+      throw error('unexpected_character', `Unexpected "${spec[i]}".`, i)
     }
     let args: Located<string>[] | undefined
     if (spec[i] === '(' || spec[i] === '[') {
@@ -350,9 +350,9 @@ function scan(spec: string): RawSegment[] {
     }
     segments.push({ head: { value: head, column: start + 1 }, args })
     if (i >= spec.length) return segments
-    if (spec[i] !== ':') throw error('UNEXPECTED_CHARACTER', `Unexpected "${spec[i]}".`, i)
+    if (spec[i] !== ':') throw error('unexpected_character', `Unexpected "${spec[i]}".`, i)
     i++
-    if (i >= spec.length) throw error('EMPTY_SEGMENT', 'Nothing after the last ":".', i - 1)
+    if (i >= spec.length) throw error('empty_segment', 'Nothing after the last ":".', i - 1)
   }
 }
 
@@ -411,7 +411,7 @@ function checkArity(
           ? `at least ${arity.min}`
           : `${arity.min} to ${arity.max}`
     throw new FieldSpecError(
-      'WRONG_ARGUMENT_COUNT',
+      'wrong_argument_count',
       `${what} takes ${expected} argument(s), got ${args.length}.`,
       spec,
       column,
@@ -421,7 +421,7 @@ function checkArity(
     const kind = index > 0 && arity.restKind !== undefined ? arity.restKind : arity.kind
     if (!checkKind(kind, arg.value)) {
       throw new FieldSpecError(
-        'INVALID_ARGUMENT',
+        'invalid_argument',
         `${what}: "${arg.value}" is not ${KIND_LABEL[kind]}.`,
         spec,
         arg.column,
@@ -440,11 +440,11 @@ function checkDefault(
 ): void {
   const info = typeInfo(type)
   const fail = (message: string, at = column): FieldSpecError =>
-    new FieldSpecError('INVALID_DEFAULT', message, spec, at)
+    new FieldSpecError('invalid_default', message, spec, at)
   if (info === undefined) return
   const multi = type === 'set'
   if (!multi && args.length !== 1) {
-    throw new FieldSpecError('WRONG_ARGUMENT_COUNT', 'default takes 1 argument.', spec, column)
+    throw new FieldSpecError('wrong_argument_count', 'default takes 1 argument.', spec, column)
   }
   for (const arg of args) {
     switch (info.category) {
@@ -480,7 +480,7 @@ function checkDefault(
         break
       default:
         throw new FieldSpecError(
-          'MODIFIER_NOT_APPLICABLE',
+          'modifier_not_applicable',
           `${type} fields cannot have a default.`,
           spec,
           column,
@@ -495,15 +495,15 @@ function checkDefault(
  */
 export function parseFieldSpec(spec: string): FieldSpec {
   if (spec.trim() === '')
-    throw new FieldSpecError('EMPTY_SPEC', 'The field spec is empty.', spec, 1)
+    throw new FieldSpecError('empty_spec', 'The field spec is empty.', spec, 1)
   const segments = scan(spec)
   const [nameSeg, typeSeg, ...modifierSegs] = segments
   if (nameSeg === undefined)
-    throw new FieldSpecError('EMPTY_SPEC', 'The field spec is empty.', spec, 1)
+    throw new FieldSpecError('empty_spec', 'The field spec is empty.', spec, 1)
   const name = nameSeg.head.value
   if (nameSeg.args !== undefined || !FIELD_NAME.test(name)) {
     throw new FieldSpecError(
-      'INVALID_NAME',
+      'invalid_name',
       `Field name "${name}" must be lower camelCase (e.g. "dueDate").`,
       spec,
       nameSeg.head.column,
@@ -511,7 +511,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
   }
   if (RESERVED_FIELD_NAMES.has(name)) {
     throw new FieldSpecError(
-      'RESERVED_NAME',
+      'reserved_name',
       `"${name}" is added by the framework; choose another name.`,
       spec,
       nameSeg.head.column,
@@ -519,7 +519,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
   }
   if (typeSeg === undefined) {
     throw new FieldSpecError(
-      'MISSING_TYPE',
+      'missing_type',
       `Field "${name}" needs a type, e.g. "${name}:string".`,
       spec,
       spec.length + 1,
@@ -530,7 +530,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
   if (info === undefined) {
     const close = suggest(type, Object.keys(FIELD_TYPES))
     throw new FieldSpecError(
-      'UNKNOWN_TYPE',
+      'unknown_type',
       `Unknown field type "${type}".${close.length > 0 ? ` Did you mean ${close.join(', ')}?` : ''}`,
       spec,
       typeSeg.head.column,
@@ -541,7 +541,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
   const typeValues = typeArgs.map((a) => a.value)
   if (info.category === 'choice' && new Set(typeValues).size !== typeValues.length) {
     throw new FieldSpecError(
-      'INVALID_ARGUMENT',
+      'invalid_argument',
       `${type} values must be unique.`,
       spec,
       typeSeg.head.column,
@@ -549,7 +549,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
   }
   if (type === 'decimal' && typeValues.length === 1) {
     throw new FieldSpecError(
-      'WRONG_ARGUMENT_COUNT',
+      'wrong_argument_count',
       'decimal takes 0 or 2 arguments (precision, scale).',
       spec,
       typeSeg.head.column,
@@ -559,7 +559,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
     const [precision = 0, scale = 0] = typeValues.map(Number)
     if (precision > 65 || scale > precision) {
       throw new FieldSpecError(
-        'INVALID_ARGUMENT',
+        'invalid_argument',
         `decimal(${precision},${scale}): precision must be 1-65 and scale at most the precision.`,
         spec,
         typeSeg.head.column,
@@ -575,7 +575,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
     if (mod === undefined) {
       const close = suggest(modifier, Object.keys(FIELD_MODIFIERS))
       throw new FieldSpecError(
-        'UNKNOWN_MODIFIER',
+        'unknown_modifier',
         `Unknown modifier "${modifier}".${close.length > 0 ? ` Did you mean ${close.join(', ')}?` : ''}`,
         spec,
         seg.head.column,
@@ -583,7 +583,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
     }
     if (seen.has(modifier)) {
       throw new FieldSpecError(
-        'DUPLICATE_MODIFIER',
+        'duplicate_modifier',
         `"${modifier}" is given twice.`,
         spec,
         seg.head.column,
@@ -594,7 +594,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
       COLUMNLESS.has(info.category) && (COLUMN_MODIFIERS.has(modifier) || mod.only !== undefined)
     if (columnless || (mod.only !== undefined && !mod.only.includes(info.category))) {
       throw new FieldSpecError(
-        'MODIFIER_NOT_APPLICABLE',
+        'modifier_not_applicable',
         `"${modifier}" does not apply to ${type} fields.`,
         spec,
         seg.head.column,
@@ -611,7 +611,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
         !(Number.isInteger(value) && value >= 0)
       ) {
         throw new FieldSpecError(
-          'INVALID_ARGUMENT',
+          'invalid_argument',
           `${modifier} on a ${type} field is a length: use a whole number of characters.`,
           spec,
           args[0]?.column ?? seg.head.column,
@@ -623,7 +623,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
 
   if (seen.has('required') && seen.has('optional')) {
     throw new FieldSpecError(
-      'CONFLICTING_MODIFIERS',
+      'conflicting_modifiers',
       '"required" and "optional" cannot both be set.',
       spec,
       modifierSegs.find((s) => s.head.value === 'optional')?.head.column ?? 1,
@@ -633,7 +633,7 @@ export function parseFieldSpec(spec: string): FieldSpec {
   const max = modifiers.find((x) => x.name === 'max')?.args[0]
   if (min !== undefined && max !== undefined && Number(min) > Number(max)) {
     throw new FieldSpecError(
-      'CONFLICTING_MODIFIERS',
+      'conflicting_modifiers',
       `min (${min}) is greater than max (${max}).`,
       spec,
       modifierSegs.find((s) => s.head.value === 'max')?.head.column ?? 1,
@@ -650,7 +650,7 @@ export function parseFieldSpecs(specs: readonly string[]): FieldSpec[] {
     const field = parseFieldSpec(spec)
     if (seen.has(field.name)) {
       throw new FieldSpecError(
-        'DUPLICATE_FIELD',
+        'duplicate_field',
         `Field "${field.name}" is defined twice.`,
         spec,
         1,

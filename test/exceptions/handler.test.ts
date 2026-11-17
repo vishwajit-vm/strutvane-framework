@@ -206,7 +206,7 @@ describe('report()', () => {
   it('skips expected client errors and works outside a request', async () => {
     const { app, logger } = await shopApp({})
     await app.run(async () => {
-      report(new StrutvaneError('NOT_FOUND', { status: 404 }))
+      report(new StrutvaneError('not_found', { status: 404 }))
       report(new Error('nightly import failed'))
     })
     expect(logger.messages('error')).toEqual(['Unhandled error'])

@@ -389,7 +389,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     return undefined
   })
   const tooLarge = () => {
-    throw new StrutvaneError('PAYLOAD_TOO_LARGE', { status: 413 })
+    throw new StrutvaneError('payload_too_large', { status: 413 })
   }
   const defaultLimit = bodyLimit({
     maxSize: options.bodyLimit ?? DEFAULT_BODY_LIMIT,
@@ -532,7 +532,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
     const served = staticFiles ? await staticFiles(c.req.raw) : undefined
     if (served) return served
     const s = c.get('sv')
-    const problem = toProblemBody(new StrutvaneError('NOT_FOUND', { status: 404 }), {
+    const problem = toProblemBody(new StrutvaneError('not_found', { status: 404 }), {
       messages,
       registry: errors,
       locale: s?.locale ?? 'en',

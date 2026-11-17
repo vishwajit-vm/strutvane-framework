@@ -8,10 +8,10 @@
  *   "type": "https://strutvane.dev/errors/validation",
  *   "title": "Validation failed",
  *   "status": 422,
- *   "code": "VALIDATION_FAILED",
+ *   "code": "validation_failed",
  *   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
  *   "issues": [
- *     { "path": ["amount"], "code": "too_small", "params": { "min": 0 }, "message": "Amount must be at least 0." }
+ *     { "path": ["amount"], "field": "amount", "code": "too_small", "params": { "min": 0 }, "message": "Amount must be at least 0." }
  *   ],
  *   "fieldErrors": { "amount": ["Amount must be at least 0."] }
  * }
@@ -35,6 +35,13 @@ export interface ValidationIssue {
    * An empty path `[]` means the whole form (e.g. a cross-field rule).
    */
   readonly path: readonly (string | number)[]
+  /**
+   * The same location as a dotted string, `"lines.2.amount"` (`""` for the whole form): the key
+   * of {@link Problem.fieldErrors} and of most form libraries, so a client can place the message
+   * without joining `path` itself (CONSISTENCY #69). `path` stays the source of truth: a key that
+   * contains a dot is ambiguous here.
+   */
+  readonly field: string
   /** Stable, machine-readable code in `snake_case`, e.g. `"too_small"`, `"required"`, `"unique"`. */
   readonly code: string
   /** Values used in the message, e.g. `{ min: 0 }`. Never contains secrets. */
@@ -55,7 +62,10 @@ export interface Problem {
   readonly detail?: string
   /** A URI identifying this occurrence (e.g. the request path). */
   readonly instance?: string
-  /** Machine-readable, stable error code in `SCREAMING_SNAKE_CASE`, e.g. `"VALIDATION_FAILED"`. */
+  /**
+   * Machine-readable, stable error code in lowercase `snake_case`, e.g. `"validation_failed"`
+   * (CONSISTENCY #68; the uppercase names of 0.1 were renamed in 0.2, #123).
+   */
   readonly code: string
   /** The OpenTelemetry trace id, so support can find the request in logs. */
   readonly traceId?: string
@@ -73,50 +83,50 @@ export interface Problem {
 /** Well-known problem codes used across Strutvane packages. Apps and plugins may add their own. */
 export type ProblemCode =
   // General (RFC-0003 §4)
-  | 'VALIDATION_FAILED'
-  | 'UNAUTHENTICATED'
-  | 'FORBIDDEN'
-  | 'NOT_FOUND'
-  | 'CONFLICT'
-  | 'STALE_RECORD'
-  | 'RATE_LIMITED'
-  | 'PAYLOAD_TOO_LARGE'
-  | 'SERVICE_UNAVAILABLE'
-  | 'INTERNAL_ERROR'
+  | 'validation_failed'
+  | 'unauthenticated'
+  | 'forbidden'
+  | 'not_found'
+  | 'conflict'
+  | 'stale_record'
+  | 'rate_limited'
+  | 'payload_too_large'
+  | 'service_unavailable'
+  | 'internal_error'
   // Files and uploads (RFC-0002 §4)
-  | 'FILE_TOO_LARGE'
-  | 'TOO_MANY_FILES'
-  | 'FILE_EMPTY'
-  | 'FILE_TYPE_NOT_ALLOWED'
-  | 'FILE_CORRUPT'
-  | 'IMAGE_DIMENSIONS_INVALID'
-  | 'UPLOAD_INCOMPLETE'
-  | 'STORAGE_UNAVAILABLE'
-  | 'QUOTA_EXCEEDED'
-  | 'FILE_INFECTED'
-  | 'SCAN_UNAVAILABLE'
+  | 'file_too_large'
+  | 'too_many_files'
+  | 'file_empty'
+  | 'file_type_not_allowed'
+  | 'file_corrupt'
+  | 'image_dimensions_invalid'
+  | 'upload_incomplete'
+  | 'storage_unavailable'
+  | 'quota_exceeded'
+  | 'file_infected'
+  | 'scan_unavailable'
 
 /** Every well-known problem code, in a fixed order (for registries, docs and exhaustiveness tests). */
 export const PROBLEM_CODES: readonly ProblemCode[] = [
-  'VALIDATION_FAILED',
-  'UNAUTHENTICATED',
-  'FORBIDDEN',
-  'NOT_FOUND',
-  'CONFLICT',
-  'STALE_RECORD',
-  'RATE_LIMITED',
-  'PAYLOAD_TOO_LARGE',
-  'SERVICE_UNAVAILABLE',
-  'INTERNAL_ERROR',
-  'FILE_TOO_LARGE',
-  'TOO_MANY_FILES',
-  'FILE_EMPTY',
-  'FILE_TYPE_NOT_ALLOWED',
-  'FILE_CORRUPT',
-  'IMAGE_DIMENSIONS_INVALID',
-  'UPLOAD_INCOMPLETE',
-  'STORAGE_UNAVAILABLE',
-  'QUOTA_EXCEEDED',
-  'FILE_INFECTED',
-  'SCAN_UNAVAILABLE',
+  'validation_failed',
+  'unauthenticated',
+  'forbidden',
+  'not_found',
+  'conflict',
+  'stale_record',
+  'rate_limited',
+  'payload_too_large',
+  'service_unavailable',
+  'internal_error',
+  'file_too_large',
+  'too_many_files',
+  'file_empty',
+  'file_type_not_allowed',
+  'file_corrupt',
+  'image_dimensions_invalid',
+  'upload_incomplete',
+  'storage_unavailable',
+  'quota_exceeded',
+  'file_infected',
+  'scan_unavailable',
 ]

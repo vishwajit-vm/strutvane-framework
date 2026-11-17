@@ -2,7 +2,7 @@
  * Registers service providers in a project's `strutvane.config.ts`, the edit behind
  * `config.registerProvider('@strutvane/auth/provider')` in installers.
  *
- * Supported shapes (anything else is refused with `CONFIG_SHAPE_UNRECOGNISED`, and the file is
+ * Supported shapes (anything else is refused with `config_shape_unrecognised`, and the file is
  * never touched):
  *
  * ```ts
@@ -142,7 +142,7 @@ function asList(node: AstNode, key: 'elements' | 'properties'): ListNode {
 
 function unrecognised(path: string, detail: string): DevkitError {
   return new DevkitError(
-    'CONFIG_SHAPE_UNRECOGNISED',
+    'config_shape_unrecognised',
     `${path}: ${detail}. Expected \`export default defineConfig({ providers: [...] })\` or \`export default { providers: [...] }\`; register the provider by hand`,
   )
 }
@@ -383,11 +383,11 @@ export function createConfigPatcher(
   return {
     async registerProvider(specifier) {
       if (!isSafeSpecifier(specifier)) {
-        throw new DevkitError('INVALID_PATH', `"${specifier}" is not a valid module specifier`)
+        throw new DevkitError('invalid_path', `"${specifier}" is not a valid module specifier`)
       }
       if (!(await fs.exists(path))) {
         throw new DevkitError(
-          'CONFIG_NOT_FOUND',
+          'config_not_found',
           `${path} not found; is this a Strutvane project? (run sv init)`,
         )
       }

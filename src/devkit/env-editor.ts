@@ -106,21 +106,21 @@ export function envKeys(text: string): Set<string> {
  * backslash before `n` becomes a line break. So a value is quoted only in a style that needs no
  * escaping at all: double quotes when it has no `"` and no `\`, single quotes (taken literally)
  * when it has no `'`. A value that fits neither, or holds a control character, is refused with
- * `INVALID_ENV_VALUE` rather than written in a form the app would read differently.
+ * `invalid_env_value` rather than written in a form the app would read differently.
  */
 export function formatEnvValue(value: string): string {
   if (/[\r\n]/.test(value)) {
-    throw new DevkitError('INVALID_ENV_VALUE', 'env values cannot contain line breaks')
+    throw new DevkitError('invalid_env_value', 'env values cannot contain line breaks')
   }
   // Tab is allowed (quoted); every other C0 control character and DEL is refused.
   if (hasControlCharacter(value)) {
-    throw new DevkitError('INVALID_ENV_VALUE', 'env values cannot contain control characters')
+    throw new DevkitError('invalid_env_value', 'env values cannot contain control characters')
   }
   if (value === '' || /^[A-Za-z0-9_./:@+,-]+$/.test(value)) return value
   if (!/["\\]/.test(value)) return `"${value}"`
   if (!value.includes("'")) return `'${value}'`
   throw new DevkitError(
-    'INVALID_ENV_VALUE',
+    'invalid_env_value',
     "env values cannot contain both ' and \" (or ' and \\): no quoting keeps them unchanged for every .env loader",
   )
 }
@@ -148,24 +148,24 @@ function defaultSecret(): string {
 
 function validate(section: string, vars: readonly EnvVar[]): void {
   if (section.trim() === '' || /[\r\n]/.test(section)) {
-    throw new DevkitError('INVALID_ENV_KEY', 'section titles must be a single non-empty line')
+    throw new DevkitError('invalid_env_key', 'section titles must be a single non-empty line')
   }
   const seen = new Set<string>()
   for (const v of vars) {
     if (!KEY.test(v.key)) {
-      throw new DevkitError('INVALID_ENV_KEY', `env key "${v.key}" must be UPPER_SNAKE_CASE`)
+      throw new DevkitError('invalid_env_key', `env key "${v.key}" must be UPPER_SNAKE_CASE`)
     }
     if (seen.has(v.key))
-      throw new DevkitError('INVALID_ENV_KEY', `env key "${v.key}" is listed twice`)
+      throw new DevkitError('invalid_env_key', `env key "${v.key}" is listed twice`)
     seen.add(v.key)
     if (v.secret === true && v.value !== undefined) {
       throw new DevkitError(
-        'INVALID_ENV_VALUE',
+        'invalid_env_value',
         `env key "${v.key}" is marked secret: omit "value" and let devkit generate one`,
       )
     }
     if (v.comment !== undefined && /[\r\n]/.test(v.comment)) {
-      throw new DevkitError('INVALID_ENV_VALUE', `comment for "${v.key}" must be a single line`)
+      throw new DevkitError('invalid_env_value', `comment for "${v.key}" must be a single line`)
     }
     if (v.value !== undefined) formatEnvValue(v.value) // throws on line breaks
   }

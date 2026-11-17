@@ -62,9 +62,9 @@ function parseError(error: unknown, command: string): CliError {
     error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : ''
   const detail = error instanceof Error ? error.message : String(error)
   if (code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
-    return usageError('UNKNOWN_FLAG', { detail: firstSentence(detail), command })
+    return usageError('unknown_flag', { detail: firstSentence(detail), command })
   }
-  return usageError('INVALID_FLAG_VALUE', { detail: firstSentence(detail), command })
+  return usageError('invalid_flag_value', { detail: firstSentence(detail), command })
 }
 
 /** parseArgs messages can include advice for `--` positionals; keep the first sentence. */
@@ -143,7 +143,7 @@ export function parseCommandLine(command: AnyCommand, argv: readonly string[]): 
     if (value === undefined && def.default !== undefined) value = def.default
     if (value === undefined && def.multiple === true) value = []
     if (def.choices !== undefined && typeof value === 'string' && !def.choices.includes(value)) {
-      throw new CliError('INVALID_CHOICE', {
+      throw new CliError('invalid_choice', {
         exitCode: EXIT.USAGE,
         params: { flag: name, choices: def.choices.join(', '), value },
       })
@@ -204,19 +204,19 @@ function assignPositionals(
       args[name] = positionals.slice(i)
       i = positionals.length
       if (def.required === true && (args[name] as string[]).length === 0) {
-        throw usageError('MISSING_ARGUMENT', { arg: name, usage: usageLine(command) })
+        throw usageError('missing_argument', { arg: name, usage: usageLine(command) })
       }
       continue
     }
     const value = positionals[i]
     if (value === undefined && def.required === true) {
-      throw usageError('MISSING_ARGUMENT', { arg: name, usage: usageLine(command) })
+      throw usageError('missing_argument', { arg: name, usage: usageLine(command) })
     }
     args[name] = value
     if (value !== undefined) i++
   }
   if (i < positionals.length) {
-    throw usageError('TOO_MANY_ARGUMENTS', {
+    throw usageError('too_many_arguments', {
       value: positionals[i] ?? '',
       usage: usageLine(command),
     })

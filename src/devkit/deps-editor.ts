@@ -67,12 +67,12 @@ function parse(text: string): PackageJson {
     value = JSON.parse(text.replace(/^﻿/, ''))
   } catch (error) {
     throw new DevkitError(
-      'INVALID_PACKAGE_JSON',
+      'invalid_package_json',
       `package.json is not valid JSON: ${describeError(error)}`,
     )
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new DevkitError('INVALID_PACKAGE_JSON', 'package.json must contain a JSON object')
+    throw new DevkitError('invalid_package_json', 'package.json must contain a JSON object')
   }
   return value as PackageJson
 }
@@ -81,7 +81,7 @@ function field(pkg: PackageJson, name: string): Record<string, string> {
   const value = pkg[name]
   if (value === undefined) return {}
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new DevkitError('INVALID_PACKAGE_JSON', `package.json "${name}" must be an object`)
+    throw new DevkitError('invalid_package_json', `package.json "${name}" must be an object`)
   }
   return value as Record<string, string>
 }
@@ -111,17 +111,17 @@ export function createDepsEditor(
     async ensure(deps, addOptions = {}) {
       for (const [name, spec] of Object.entries(deps)) {
         if (!NAME.test(name)) {
-          throw new DevkitError('INVALID_PACKAGE_JSON', `"${name}" is not a valid npm package name`)
+          throw new DevkitError('invalid_package_json', `"${name}" is not a valid npm package name`)
         }
         if (typeof spec !== 'string' || spec.trim() === '') {
           throw new DevkitError(
-            'INVALID_PACKAGE_JSON',
+            'invalid_package_json',
             `version for "${name}" must be a non-empty string`,
           )
         }
         if (LOCAL_SPEC.test(spec)) {
           throw new DevkitError(
-            'LOCAL_DEPENDENCY_SPEC',
+            'local_dependency_spec',
             `"${name}": "${spec}" only works on one machine; use a published version (ADR-0016)`,
           )
         }

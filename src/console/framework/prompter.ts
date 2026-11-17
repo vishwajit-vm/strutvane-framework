@@ -5,7 +5,7 @@
  * or `--json` was passed. Otherwise:
  * - with `--yes`, the default answer is used (confirmations are accepted);
  * - without it, a question that has a default uses it, and one that has none fails with
- *   `INPUT_REQUIRED` (exit 2) naming what to pass on the command line.
+ *   `input_required` (exit 2) naming what to pass on the command line.
  * A CI job therefore either succeeds deterministically or fails fast; it never hangs.
  *
  * The interactive implementation uses `@clack/prompts`, chosen for its small size (no
@@ -47,7 +47,7 @@ export interface Prompter {
 
 /** A prompter that never asks: `yes` accepts defaults (and confirmations). */
 export function createNonInteractivePrompter(options: { readonly yes: boolean }): Prompter {
-  const required = (message: string): CliError => usageError('INPUT_REQUIRED', { detail: message })
+  const required = (message: string): CliError => usageError('input_required', { detail: message })
   return {
     interactive: false,
     async confirm(message, opts = {}) {
@@ -77,7 +77,7 @@ export interface ClackApi {
 /** Turn a cancelled prompt (Ctrl+C / Esc) into the documented interrupt exit code. */
 function unwrap<T>(api: ClackApi, value: T): Exclude<T, symbol> {
   if (api.isCancel(value) || typeof value === 'symbol') {
-    throw new CliError('INTERRUPTED', { exitCode: EXIT.INTERRUPTED })
+    throw new CliError('interrupted', { exitCode: EXIT.INTERRUPTED })
   }
   return value as Exclude<T, symbol>
 }

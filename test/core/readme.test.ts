@@ -60,8 +60,8 @@ test('README errors and messages', () => {
   const messages = createMessages({
     app: [
       defineMessages('en', {
-        'errors.INVOICE_ALREADY_PAID.title': 'Invoice already paid',
-        'errors.INVOICE_ALREADY_PAID.detail': 'Invoice {number} was paid on {date}.',
+        'errors.invoice_already_paid.title': 'Invoice already paid',
+        'errors.invoice_already_paid.detail': 'Invoice {number} was paid on {date}.',
       }),
       defineMessages('de', { 'validation.required': '{attribute} ist erforderlich.' }),
     ],
@@ -69,7 +69,7 @@ test('README errors and messages', () => {
   const locale = negotiateLocale('de-CH, de;q=0.9, en;q=0.5', messages.locales())
 
   const paid = toProblem(
-    new DomainError('INVOICE_ALREADY_PAID', { number: 'INV-7', date: '2026-11-01' }),
+    new DomainError('invoice_already_paid', { number: 'INV-7', date: '2026-11-01' }),
     {
       messages,
     },

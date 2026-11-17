@@ -178,7 +178,7 @@ describe('ResourceController edges', () => {
       await prepared.client
         .actingAs(author(prepared, 2))
         .postJson('/api/failing', { title: 'Boom' })
-    ).assertProblem(500, 'INTERNAL_ERROR')
+    ).assertProblem(500, 'internal_error')
   })
 })
 

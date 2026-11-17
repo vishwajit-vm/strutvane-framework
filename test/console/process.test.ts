@@ -88,7 +88,7 @@ describe('the real executable (child process)', () => {
     expect(about.status).toBe(0)
     expect(JSON.parse(about.stdout)).toMatchObject({ schemaVersion: 1, ok: true, command: 'about' })
     expect(unknown.status).toBe(2)
-    expect(JSON.parse(unknown.stdout).error.code).toBe('UNKNOWN_COMMAND')
+    expect(JSON.parse(unknown.stdout).error.code).toBe('unknown_command')
     expect(generated.status).toBe(0)
     // This one needs the file the run above generated.
     expect((await run(root, ['make:model', 'Tag', 'name:text'])).status).toBe(4)
@@ -187,7 +187,7 @@ describe('spawning', () => {
     expect(needsShell('C:\\tools\\git.exe', 'win32', 'node')).toBe(false)
     const spawn = createNodeSpawner('win32', process.execPath, { PATH: '' })
     await expect(spawn('pnpm', ['install'], { cwd: tempDir() })).rejects.toMatchObject({
-      code: 'COMMAND_NOT_FOUND',
+      code: 'command_not_found',
     })
   })
 
@@ -277,19 +277,19 @@ describe('spawning', () => {
 })
 
 describe('prompters', () => {
-  test('non-interactive: defaults, --yes, INPUT_REQUIRED', async () => {
+  test('non-interactive: defaults, --yes, input_required', async () => {
     const strict = createNonInteractivePrompter({ yes: false })
     expect(strict.interactive).toBe(false)
     await expect(strict.confirm('Go?')).rejects.toMatchObject({
-      code: 'INPUT_REQUIRED',
+      code: 'input_required',
       exitCode: 2,
     })
     expect(await strict.confirm('Go?', { default: false })).toBe(false)
     expect(await strict.text('Name?', { default: 'x' })).toBe('x')
-    await expect(strict.text('Name?')).rejects.toMatchObject({ code: 'INPUT_REQUIRED' })
+    await expect(strict.text('Name?')).rejects.toMatchObject({ code: 'input_required' })
     expect(await strict.select('Pick', [{ value: 'a' }], { default: 'a' })).toBe('a')
     await expect(strict.select('Pick', [{ value: 'a' }])).rejects.toMatchObject({
-      code: 'INPUT_REQUIRED',
+      code: 'input_required',
     })
     expect(
       await createNonInteractivePrompter({ yes: true }).confirm('Go?', { default: false }),
@@ -341,7 +341,7 @@ describe('prompters', () => {
       confirm: async () => CANCEL,
     } as unknown as ClackApi)
     await expect(cancelling.confirm('Go?')).rejects.toMatchObject({
-      code: 'INTERRUPTED',
+      code: 'interrupted',
       exitCode: 130,
     })
   })
@@ -371,7 +371,7 @@ describe('contribution containment and Windows paths', () => {
     expect(pkg).toBeDefined()
     if (pkg !== undefined)
       expect(() => resolveContribution(pkg, 'commands')).toThrow(
-        expect.objectContaining({ code: 'UNSAFE_CONTRIBUTION' }),
+        expect.objectContaining({ code: 'unsafe_contribution' }),
       )
   })
 
@@ -486,7 +486,7 @@ describe('contribution containment and Windows paths', () => {
       'globalThis.__planted = true; export default []',
     )
     const r = await cli(['routes', '--json'], { cwd: dir })
-    expect(r.json().error?.code).toBe('PROJECT_NOT_FOUND')
+    expect(r.json().error?.code).toBe('project_not_found')
     expect((globalThis as { __planted?: boolean }).__planted).toBeUndefined()
   })
 })

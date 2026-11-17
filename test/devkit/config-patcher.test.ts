@@ -103,15 +103,15 @@ describe('registerProvider', () => {
     const error = await rejectionOf(
       createConfigPatcher(fs).registerProvider('@strutvane/auth/provider'),
     )
-    expect((error as DevkitError).code).toBe('CONFIG_SHAPE_UNRECOGNISED')
+    expect((error as DevkitError).code).toBe('config_shape_unrecognised')
     expect(await fs.changes()).toEqual([])
   })
 
-  test('a missing config file is CONFIG_NOT_FOUND', async () => {
+  test('a missing config file is config_not_found', async () => {
     const error = await rejectionOf(
       createConfigPatcher(fs).registerProvider('@strutvane/auth/provider'),
     )
-    expect((error as DevkitError).code).toBe('CONFIG_NOT_FOUND')
+    expect((error as DevkitError).code).toBe('config_not_found')
   })
 
   test.each(["x'; process.exit(1); '", '@scope/../../etc', 'https://evil.example/provider.js', ''])(
@@ -119,7 +119,7 @@ describe('registerProvider', () => {
     async (specifier) => {
       await writeFiles(projectRoot, { 'strutvane.config.ts': CONFIG })
       const error = await rejectionOf(createConfigPatcher(fs).registerProvider(specifier))
-      expect((error as DevkitError).code).toBe('INVALID_PATH')
+      expect((error as DevkitError).code).toBe('invalid_path')
       expect(await fs.changes()).toEqual([])
     },
   )

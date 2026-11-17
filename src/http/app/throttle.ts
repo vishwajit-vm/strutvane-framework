@@ -109,7 +109,7 @@ export class ThrottleRequests implements Middleware {
     }
     if (count > definition.maxAttempts) {
       const retryAfter = Math.max(1, (await this.#store.ttl(bucket)) ?? definition.decaySeconds)
-      throw new StrutvaneError('RATE_LIMITED', {
+      throw new StrutvaneError('rate_limited', {
         status: 429,
         headers: { ...headers, 'Retry-After': String(retryAfter) },
       })

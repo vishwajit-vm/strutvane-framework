@@ -108,7 +108,7 @@ export function createStagedFs(
 
     async read(path) {
       const content = await current(path)
-      if (content === undefined) throw new DevkitError('FILE_NOT_FOUND', `file not found: ${path}`)
+      if (content === undefined) throw new DevkitError('file_not_found', `file not found: ${path}`)
       return content
     },
 
@@ -123,7 +123,7 @@ export function createStagedFs(
       if (existing === next) return // identical: no-op (keeps installers idempotent)
       if (existing !== undefined && writeOptions.overwrite !== true) {
         throw new DevkitError(
-          'FILE_EXISTS',
+          'file_exists',
           `${rel} already exists with different content; pass { overwrite: true } to replace it`,
         )
       }

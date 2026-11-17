@@ -82,7 +82,7 @@ export const registryBuildCommand: AnyCommand = defineCommand({
     printDiagnostics(ctx.out, result.diagnostics)
     const summary = compileSummary(result)
     if (result.output === undefined) {
-      throw new CliError('REGISTRY_ERRORS', {
+      throw new CliError('registry_errors', {
         exitCode: EXIT.VALIDATION,
         params: { count: errorCount(result) },
         data: summary,
@@ -91,7 +91,7 @@ export const registryBuildCommand: AnyCommand = defineCommand({
     if (check) {
       const stale = !compiler.isCurrent(result)
       if (stale && ctx.flags.check === true) {
-        throw new CliError('REGISTRY_STALE', {
+        throw new CliError('registry_stale', {
           exitCode: EXIT.PENDING,
           params: { path: OUTPUT_FILE },
           data: { ...summary, stale },
@@ -127,7 +127,7 @@ export const registryWatchCommand: AnyCommand = defineCommand({
     const root = ctx.requireProject().root
     const debounceMs = Number(ctx.flags.debounce)
     if (!Number.isFinite(debounceMs) || debounceMs < 0 || debounceMs > 10_000) {
-      throw new CliError('INVALID_FLAG_VALUE', {
+      throw new CliError('invalid_flag_value', {
         exitCode: EXIT.USAGE,
         params: { detail: '--debounce must be between 0 and 10000 ms.', command: ctx.command },
       })

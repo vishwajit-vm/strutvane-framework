@@ -79,23 +79,23 @@ const NAME = /^[a-z][a-z0-9-]*$/
  */
 export function defineInstaller<T extends DevkitInstaller>(installer: T): T {
   if (typeof installer !== 'object' || installer === null) {
-    throw new DevkitError('INVALID_INSTALLER', 'an installer must be an object')
+    throw new DevkitError('invalid_installer', 'an installer must be an object')
   }
   if (typeof installer.name !== 'string' || !NAME.test(installer.name)) {
     throw new DevkitError(
-      'INVALID_INSTALLER',
+      'invalid_installer',
       `installer name "${String(installer.name)}" must be lowercase kebab-case`,
     )
   }
   if (typeof installer.install !== 'function') {
     throw new DevkitError(
-      'INVALID_INSTALLER',
+      'invalid_installer',
       `installer "${installer.name}" needs an install() function`,
     )
   }
   if (installer.uninstall !== undefined && typeof installer.uninstall !== 'function') {
     throw new DevkitError(
-      'INVALID_INSTALLER',
+      'invalid_installer',
       `installer "${installer.name}": uninstall must be a function`,
     )
   }
@@ -104,7 +104,7 @@ export function defineInstaller<T extends DevkitInstaller>(installer: T): T {
     (!Array.isArray(installer.enhances) || installer.enhances.some((e) => typeof e !== 'string'))
   ) {
     throw new DevkitError(
-      'INVALID_INSTALLER',
+      'invalid_installer',
       `installer "${installer.name}": enhances must be a list of package names`,
     )
   }
@@ -146,7 +146,7 @@ export async function runInstaller(
   const hook = mode === 'install' ? installer.install : installer.uninstall
   if (hook === undefined) {
     throw new DevkitError(
-      'UNINSTALL_NOT_SUPPORTED',
+      'uninstall_not_supported',
       `installer "${installer.name}" has no uninstall()`,
     )
   }
@@ -156,7 +156,7 @@ export async function runInstaller(
     fs.discard()
     if (error instanceof DevkitError) throw error
     throw new DevkitError(
-      'INSTALLER_FAILED',
+      'installer_failed',
       `installer "${installer.name}" failed during ${mode} (nothing was changed): ${describeError(error)}`,
       { cause: error },
     )

@@ -70,7 +70,7 @@ describe('security headers', () => {
     expect(response.status).toBe(500)
     const text = await response.text()
     expect(text).not.toContain('reading "title"')
-    expect(text).toContain('INTERNAL_ERROR')
+    expect(text).toContain('internal_error')
     expect(logger.messages('error')).toContain('Unhandled error while serving a request')
     expect(response.headers.get('content-security-policy')).toContain("default-src 'self'")
   })
@@ -410,7 +410,7 @@ describe('body limits and prototype-pollution-safe JSON', () => {
     ).assertProblem(413, 'json_too_many_keys')
     ;(await alice.send('POST', '/api/echo', `"${'x'.repeat(1024 * 1024)}"`)).assertProblem(
       413,
-      'PAYLOAD_TOO_LARGE',
+      'payload_too_large',
     )
     const tight = await customApp(routes, (m) => m.limits({ maxDepth: 2, maxKeys: 3 }))
     const bob = tight.client.actingAs(author(tight, 3))

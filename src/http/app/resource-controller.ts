@@ -343,7 +343,7 @@ export abstract class ResourceController<
   }
 
   /**
-   * Run a write and turn a unique-index violation into a 409 `CONFLICT`. The error text differs
+   * Run a write and turn a unique-index violation into a 409 `conflict`. The error text differs
    * per engine (SQLite "UNIQUE constraint failed", MySQL "Duplicate entry"/1062, PostgreSQL 23505).
    *
    * @example
@@ -360,7 +360,7 @@ export abstract class ResourceController<
           code === '23505' ||
           code === 'ER_DUP_ENTRY')
       )
-        throw new ConflictError('CONFLICT', undefined, { cause: error })
+        throw new ConflictError('conflict', undefined, { cause: error })
       throw error
     }
   }

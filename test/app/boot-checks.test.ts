@@ -183,9 +183,9 @@ describe('ResourceController edges', () => {
       api: defineRoutes([Route.apiResource('racing-posts', RacingController, { only: ['store'] })]),
     })
     const alice = prepared.client.actingAs(author(prepared, 2))
-    ;(await alice.postJson('/api/racing-posts', { title: 'Race' })).assertProblem(409, 'CONFLICT')
+    ;(await alice.postJson('/api/racing-posts', { title: 'Race' })).assertProblem(409, 'conflict')
     ;(await alice.postJson('/api/racing-posts', { title: 'Race', author_id: 1 }))
-      .assertProblem(422, 'VALIDATION_FAILED')
+      .assertProblem(422, 'validation_failed')
       .assertJsonPath('issues.0.path', ['author_id'])
   })
 
@@ -204,11 +204,11 @@ describe('ResourceController edges', () => {
       .assertStatus(200)
       .assertJsonPath('data.bio', 'Hello')
     ;(await alice.patchJson('/api/writers/2', { email: 'bob@example.test' }))
-      .assertProblem(422, 'VALIDATION_FAILED')
+      .assertProblem(422, 'validation_failed')
       .assertJsonPath('issues.0.code', 'taken')
     ;(await alice.patchJson('/api/writers/2', { api_token: 'mine' })).assertProblem(
       422,
-      'VALIDATION_FAILED',
+      'validation_failed',
     )
   })
 })
@@ -268,7 +268,7 @@ describe('withExceptions and early responses', () => {
     expect(await status('/early')).toBe(302)
     const value = await app.handle(new Request('http://localhost/value'))
     expect(value.status).toBe(500)
-    expect(await value.text()).toContain('INTERNAL_ERROR')
+    expect(await value.text()).toContain('internal_error')
     expect(reported).toEqual(['gone', 'handled by a tracker', 'a string, not an error'])
     expect(logger.messages('error')).toEqual([
       'Unhandled error while serving a request',

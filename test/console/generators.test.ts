@@ -170,7 +170,7 @@ describe('FieldSchema: the field catalogue is enforced', () => {
         { model: 'Invoice', fields: [field] },
         { projectRoot: root, dryRun: true },
       ),
-    ).rejects.toMatchObject({ code: 'GENERATOR_INPUT_INVALID' })
+    ).rejects.toMatchObject({ code: 'generator_input_invalid' })
     const ok = await runGenerator(
       modelGenerator,
       {
@@ -222,7 +222,7 @@ describe('fuzz: hostile field objects never produce extra statements', () => {
         try {
           model = modelTemplate(n, [field], OPTIONS)
         } catch (error) {
-          expect(error).toMatchObject({ code: 'INVALID_FIELD', exitCode: 3 })
+          expect(error).toMatchObject({ code: 'invalid_field', exitCode: 3 })
           return
         }
         expect(modelFieldCount(model)).toBe(1)
@@ -230,7 +230,7 @@ describe('fuzz: hostile field objects never produce extra statements', () => {
         try {
           factory = factoryTemplate(n, [field])
         } catch (error) {
-          expect(error).toMatchObject({ code: 'INVALID_FIELD' })
+          expect(error).toMatchObject({ code: 'invalid_field' })
           return
         }
         expect(statements(factory)).toHaveLength(3)
@@ -255,18 +255,18 @@ describe('fuzz: hostile field objects never produce extra statements', () => {
       field({ type: 'toString' }),
       field({ modifiers: [{ name: 'constructor', args: [] }] }),
     ]) {
-      expect(() => fieldBuilder(bad)).toThrow(expect.objectContaining({ code: 'INVALID_FIELD' }))
+      expect(() => fieldBuilder(bad)).toThrow(expect.objectContaining({ code: 'invalid_field' }))
     }
     expect(() =>
       factoryTemplate(names('Invoice'), [
         field({ type: 'decimal', typeArgs: ['10', '2; evil()'] }),
       ]),
-    ).toThrow(expect.objectContaining({ code: 'INVALID_FIELD' }))
+    ).toThrow(expect.objectContaining({ code: 'invalid_field' }))
     expect(() =>
       factoryTemplate(names('Invoice'), [
         field({ type: 'integer', modifiers: [{ name: 'max', args: ['1 }); evil(); ({'] }] }),
       ]),
-    ).toThrow(expect.objectContaining({ code: 'INVALID_FIELD' }))
+    ).toThrow(expect.objectContaining({ code: 'invalid_field' }))
   })
 })
 
@@ -275,7 +275,7 @@ describe('names: Windows device names', () => {
     '%s is refused',
     (name) => {
       expect(() => names(name, 'Model name')).toThrow(
-        expect.objectContaining({ code: 'INVALID_NAME', exitCode: 3 }),
+        expect.objectContaining({ code: 'invalid_name', exitCode: 3 }),
       )
     },
   )
@@ -300,13 +300,13 @@ describe('names: Windows device names', () => {
 
 describe('field parser: prototype keys are not catalogue entries', () => {
   test.each([
-    ['x:constructor', 'UNKNOWN_TYPE'],
-    ['x:__proto__', 'UNKNOWN_TYPE'],
-    ['x:toString', 'UNKNOWN_TYPE'],
-    ['x:hasOwnProperty', 'UNKNOWN_TYPE'],
-    ['x:string:constructor', 'UNKNOWN_MODIFIER'],
-    ['x:string:__proto__', 'UNKNOWN_MODIFIER'],
-    ['x:string:valueOf', 'UNKNOWN_MODIFIER'],
+    ['x:constructor', 'unknown_type'],
+    ['x:__proto__', 'unknown_type'],
+    ['x:toString', 'unknown_type'],
+    ['x:hasOwnProperty', 'unknown_type'],
+    ['x:string:constructor', 'unknown_modifier'],
+    ['x:string:__proto__', 'unknown_modifier'],
+    ['x:string:valueOf', 'unknown_modifier'],
   ])('%s → %s', (spec, code) => {
     expect(() => parseFieldSpec(spec)).toThrow(expect.objectContaining({ code }))
   })
@@ -326,7 +326,7 @@ describe('registry output never goes through a link', () => {
     }
     const r = await cli(['registry:build', '--json'], { cwd: root })
     expect(r.code).toBe(3)
-    expect(r.json().error?.code).toBe('UNSAFE_OUTPUT_PATH')
+    expect(r.json().error?.code).toBe('unsafe_output_path')
     expect(readdirSync(elsewhere)).toEqual([])
     expect(() => assertNoLink(join(root, '.strutvane'))).toThrow(UnsafeOutputPathError)
     expect(() => assertNoLink(join(root, 'missing'))).not.toThrow()

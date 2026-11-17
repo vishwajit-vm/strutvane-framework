@@ -45,7 +45,7 @@ describe('lifetimes', () => {
     const s2 = root.createScope()
     expect(s1.make(Obj)).toBe(s1.make(Obj))
     expect(s1.make(Obj)).not.toBe(s2.make(Obj))
-    expect(() => root.make(Obj)).toThrowError(expect.objectContaining({ code: 'SCOPE_REQUIRED' }))
+    expect(() => root.make(Obj)).toThrowError(expect.objectContaining({ code: 'scope_required' }))
   })
 
   test('scope-local bindings never leak to the parent', () => {
@@ -60,7 +60,7 @@ describe('lifetimes', () => {
       .scoped(Num, () => 1)
       .singleton(Str, (r) => `n=${r.make(Num)}`)
     const scope = root.createScope()
-    expect(() => scope.make(Str)).toThrowError(expect.objectContaining({ code: 'SCOPE_REQUIRED' }))
+    expect(() => scope.make(Str)).toThrowError(expect.objectContaining({ code: 'scope_required' }))
   })
 
   test('transient services get scoped dependencies from the current scope', () => {
@@ -82,7 +82,7 @@ describe('errors', () => {
       c.make(Num)
     } catch (error) {
       expect(error).toBeInstanceOf(ContainerError)
-      expect((error as ContainerError).code).toBe('UNKNOWN_TOKEN')
+      expect((error as ContainerError).code).toBe('unknown_token')
     }
   })
 
@@ -99,7 +99,7 @@ describe('errors', () => {
     const c = createContainer().singleton(Num, () => 1)
     c.make(Num)
     expect(() => c.value(Num, 2)).toThrowError(
-      expect.objectContaining({ code: 'ALREADY_RESOLVED' }),
+      expect.objectContaining({ code: 'already_resolved' }),
     )
   })
 
@@ -121,7 +121,7 @@ describe('dispose', () => {
     await root.dispose()
     expect(order).toEqual(['str', 'num', 'first-registered'])
     expect(root.disposed).toBe(true)
-    expect(() => root.make(Num)).toThrowError(expect.objectContaining({ code: 'DISPOSED' }))
+    expect(() => root.make(Num)).toThrowError(expect.objectContaining({ code: 'disposed' }))
     expect(() => root.createScope()).toThrow(ContainerError)
     expect(() => root.onDispose(() => undefined)).toThrow(ContainerError)
   })
@@ -180,7 +180,7 @@ describe('resolving after disposal', () => {
     root.singleton(Obj, () => ({ id: ++created }), { dispose })
     const scope = root.createScope() // e.g. a request still in flight during shutdown
     await root.dispose()
-    expect(() => scope.make(Obj)).toThrow(expect.objectContaining({ code: 'DISPOSED' }))
+    expect(() => scope.make(Obj)).toThrow(expect.objectContaining({ code: 'disposed' }))
     expect(created).toBe(0) // no instance whose cleanup could never run
   })
 
@@ -191,9 +191,9 @@ describe('resolving after disposal', () => {
     root.scoped(Obj, () => ({ id: 2 }))
     const scope = root.createScope()
     await scope.dispose()
-    expect(() => scope.make(Obj)).toThrow(expect.objectContaining({ code: 'DISPOSED' }))
+    expect(() => scope.make(Obj)).toThrow(expect.objectContaining({ code: 'disposed' }))
     const other = root.createScope()
     await root.dispose()
-    expect(() => other.make(Str)).toThrow(expect.objectContaining({ code: 'DISPOSED' }))
+    expect(() => other.make(Str)).toThrow(expect.objectContaining({ code: 'disposed' }))
   })
 })

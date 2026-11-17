@@ -42,7 +42,7 @@ import { CONVENTIONS } from '../registry/conventions.ts'
 
 /** Turn a field-spec error into a CLI validation error with the column. */
 export function fieldError(error: FieldSpecError): CliError {
-  return new CliError('INVALID_FIELD', {
+  return new CliError('invalid_field', {
     exitCode: EXIT.VALIDATION,
     params: { spec: error.spec, detail: `${error.message} (column ${error.column})` },
     issues: [
@@ -85,7 +85,7 @@ function requireModel(ctx: CommandContext, n: Names): string {
   const path = paths.model(n)
   const file = join(root, path)
   if (!existsSync(file)) {
-    throw new CliError('MODEL_NOT_FOUND', {
+    throw new CliError('model_not_found', {
       exitCode: EXIT.VALIDATION,
       params: { model: n.pascal, path },
     })
@@ -377,7 +377,7 @@ export const makeModelCommand: AnyCommand = defineCommand({
     const fields = parseFields(specs)
     const seedCount = Number(ctx.flags.seed)
     if (!Number.isInteger(seedCount) || seedCount < 1 || seedCount > 100_000) {
-      throw usageError('INVALID_FLAG_VALUE', {
+      throw usageError('invalid_flag_value', {
         detail: '--seed must be a whole number from 1 to 100000.',
         command: ctx.command,
       })
@@ -508,7 +508,7 @@ export const makeSeederCommand: AnyCommand = defineCommand({
     const model = ctx.flags.model === undefined ? undefined : modelNames(ctx.flags.model)
     const count = Number(ctx.flags.count)
     if (!Number.isInteger(count) || count < 1 || count > 100_000) {
-      throw usageError('INVALID_FLAG_VALUE', {
+      throw usageError('invalid_flag_value', {
         detail: '--count must be a whole number from 1 to 100000.',
         command: ctx.command,
       })
@@ -543,7 +543,7 @@ export const makeTestCommand: AnyCommand = defineCommand({
   examples: ['sv make:test invoice-totals --unit --model Invoice'],
   async run(ctx) {
     if (ctx.flags.unit === true && ctx.flags.e2e === true) {
-      throw usageError('INVALID_ARGUMENT', { detail: 'Choose one of --unit and --e2e.' })
+      throw usageError('invalid_argument', { detail: 'Choose one of --unit and --e2e.' })
     }
     const kind = ctx.flags.unit === true ? 'unit' : ctx.flags.e2e === true ? 'e2e' : 'feature'
     const n = names(ctx.args.name, 'Test name')

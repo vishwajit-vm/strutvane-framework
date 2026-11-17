@@ -145,7 +145,7 @@ async function execute(
   const base = options.cwd ?? process.cwd()
   const cwd = scan.cwd === undefined ? base : resolve(base, scan.cwd)
   if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
-    throw usageError('CWD_NOT_FOUND', { cwd })
+    throw usageError('cwd_not_found', { cwd })
   }
   const root = findProjectRoot(cwd)
   const project = root === undefined ? undefined : loadProject(root)
@@ -235,10 +235,10 @@ async function execute(
   const parsed = parseCommandLine(command, rest)
   const { globals } = parsed
   if (command.requiresProject !== false && project === undefined) {
-    throw usageError('PROJECT_NOT_FOUND', { cwd })
+    throw usageError('project_not_found', { cwd })
   }
   if (globals.env !== undefined && !isValidEnvName(globals.env)) {
-    throw usageError('INVALID_ARGUMENT', {
+    throw usageError('invalid_argument', {
       detail: `--env "${globals.env}" must be a plain name like "test".`,
     })
   }
@@ -283,7 +283,7 @@ async function execute(
     cwd,
     project,
     requireProject(): Project {
-      if (project === undefined) throw usageError('PROJECT_NOT_FOUND', { cwd })
+      if (project === undefined) throw usageError('project_not_found', { cwd })
       return project
     },
     out,
@@ -319,7 +319,7 @@ function unresolved(
   plugins: PluginCommands | undefined,
 ): CliError {
   if (resolution.kind === 'ambiguous') {
-    return usageError('AMBIGUOUS_COMMAND', {
+    return usageError('ambiguous_command', {
       name: resolution.input,
       matches: resolution.matches.join(', '),
     })
@@ -327,7 +327,7 @@ function unresolved(
   const input = resolution.kind === 'unknown' ? resolution.input : ''
   const incompatible = (plugins?.problems ?? []).filter((p) => p.kind === 'incompatible')
   if (incompatible.length > 0) {
-    return new CliError('INCOMPATIBLE_PLUGINS', {
+    return new CliError('incompatible_plugins', {
       exitCode: EXIT.INCOMPATIBLE,
       params: {
         name: input,
@@ -342,7 +342,7 @@ function unresolved(
     })
   }
   const suggestions = resolution.kind === 'unknown' ? resolution.suggestions : []
-  return new CliError('UNKNOWN_COMMAND', {
+  return new CliError('unknown_command', {
     exitCode: EXIT.USAGE,
     params: { name: input },
     issues: suggestions.map((s) => ({ path: [], code: 'SUGGESTION', message: s })),
@@ -360,7 +360,7 @@ function guardProduction(command: string, appEnv: ResolvedAppEnv, confirmed: boo
     appEnv.value === undefined
       ? 'not set'
       : `"${printable(appEnv.value, 40)}" (from ${appEnv.source === 'process' ? 'the environment' : appEnv.source})`
-  throw usageError('PRODUCTION_GUARD', { command, env })
+  throw usageError('production_guard', { command, env })
 }
 
 function finish(state: RunState, streams: OutputStreams, data: unknown, exitCode: number): number {

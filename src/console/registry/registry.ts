@@ -83,7 +83,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     const first = modelsByName.get(model.name)
     if (first !== undefined) {
       report(
-        'DUPLICATE_MODEL',
+        'duplicate_model',
         model.file,
         model.at,
         `Model "${model.name}" is already defined in ${first.file}.`,
@@ -100,7 +100,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
   const addPermission = (permission: string, file: string, at: Position): void => {
     if (!isValidPermission(permission)) {
       report(
-        'INVALID_PERMISSION',
+        'invalid_permission',
         file,
         at,
         `"${permission}" is not a valid permission.`,
@@ -128,7 +128,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     if (model === undefined) {
       const ref = 'file' in resource.modelRef ? resource.modelRef.file : resource.modelRef.name
       report(
-        'UNKNOWN_MODEL',
+        'unknown_model',
         resource.file,
         resource.at,
         `This resource refers to "${ref}", which is not a model.`,
@@ -139,7 +139,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     const existing = resourceFor.get(model.name)
     if (existing !== undefined) {
       report(
-        'DUPLICATE_RESOURCE',
+        'duplicate_resource',
         resource.file,
         resource.at,
         `Model "${model.name}" already has a resource in ${existing}.`,
@@ -160,7 +160,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
   for (const policy of ofKind('policy')) {
     if (!modelsByKey.has(policy.resource)) {
       report(
-        'UNKNOWN_MODEL',
+        'unknown_model',
         policy.file,
         policy.at,
         `Policy for "${policy.resource}", but no model has that resource key.`,
@@ -171,7 +171,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     const existing = policyFor.get(policy.resource)
     if (existing !== undefined) {
       report(
-        'DUPLICATE_POLICY',
+        'duplicate_policy',
         policy.file,
         policy.at,
         `"${policy.resource}" already has a policy in ${existing}.`,
@@ -193,7 +193,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     const existingKey = routeKeys.get(key)
     if (existingKey !== undefined) {
       report(
-        'DUPLICATE_ROUTE',
+        'duplicate_route',
         route.file,
         route.at,
         `${key} is already declared in ${existingKey}.`,
@@ -203,7 +203,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     const existingName = routeNames.get(name)
     if (existingName !== undefined) {
       report(
-        'DUPLICATE_ROUTE_NAME',
+        'duplicate_route_name',
         route.file,
         route.at,
         `Route name "${name}" is already used in ${existingName}.`,
@@ -237,8 +237,8 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     }
     return kept
   }
-  const jobs = unique(named('job'), 'DUPLICATE_JOB', 'Job')
-  const commands = unique(named('command'), 'DUPLICATE_COMMAND', 'Command')
+  const jobs = unique(named('job'), 'duplicate_job', 'Job')
+  const commands = unique(named('command'), 'duplicate_command', 'Command')
   const listeners = named('listener')
 
   // ---- pages ----
@@ -248,7 +248,7 @@ export function buildRegistry(analyses: readonly FileAnalysis[]): {
     const first = pageRoutes.get(page.route)
     if (first !== undefined) {
       report(
-        'DUPLICATE_PAGE_ROUTE',
+        'duplicate_page_route',
         page.file,
         page.at,
         `URL "${page.route}" is already served by ${first}.`,

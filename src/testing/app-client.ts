@@ -290,7 +290,7 @@ export class TestResponse {
    * Fail unless this is a problem+json with the given status and code.
    *
    * @example
-   * response.assertProblem(422, 'VALIDATION_FAILED')
+   * response.assertProblem(422, 'validation_failed')
    */
   assertProblem(status: number, code: string): this {
     this.assertStatus(status)

@@ -59,20 +59,20 @@ const NAME = /^[a-z][a-z0-9-]*$/
 export function defineGenerator<Input>(generator: Generator<Input>): Generator<Input> {
   if (typeof generator.name !== 'string' || !NAME.test(generator.name)) {
     throw new DevkitError(
-      'INVALID_GENERATOR',
+      'invalid_generator',
       `generator name "${String(generator.name)}" must be lowercase kebab-case`,
     )
   }
   if (typeof generator.files !== 'function') {
     throw new DevkitError(
-      'INVALID_GENERATOR',
+      'invalid_generator',
       `generator "${generator.name}" needs a files() function`,
     )
   }
   const std = (generator.inputs as Partial<StandardSchemaV1> | undefined)?.['~standard']
   if (std === undefined || std.version !== 1 || typeof std.validate !== 'function') {
     throw new DevkitError(
-      'INVALID_GENERATOR',
+      'invalid_generator',
       `generator "${generator.name}": inputs must be a Standard Schema v1 validator (e.g. a Zod schema)`,
     )
   }
@@ -112,7 +112,7 @@ export async function runGenerator<Input>(
   for (const file of files) {
     if (seen.has(file.path)) {
       throw new DevkitError(
-        'INVALID_GENERATOR',
+        'invalid_generator',
         `generator "${generator.name}" produced ${file.path} twice`,
       )
     }

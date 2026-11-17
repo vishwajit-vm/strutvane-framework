@@ -1,8 +1,8 @@
 /**
  * The application core's client-facing problem codes and their English wording (RFC-0003). Codes
  * are lowercase `snake_case` (CONSISTENCY #68). Codes the framework already registered are reused
- * in their current spelling (`METHOD_NOT_ALLOWED`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`,
- * `RATE_LIMITED`, `csrf_token_mismatch`, `untrusted_host`, the `idempotency_*` codes, and the
+ * in their current spelling (`method_not_allowed`, `unauthenticated`, `forbidden`, `not_found`,
+ * `rate_limited`, `csrf_token_mismatch`, `untrusted_host`, the `idempotency_*` codes, and the
  * security kit's `invalid_signature`/`signature_expired`).
  *
  * - `idempotency_key_required`: a route with the `idempotent` middleware got no `Idempotency-Key`.

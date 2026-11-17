@@ -7,7 +7,7 @@
  * | ResourceController needs | What the ORM does |
  * |---|---|
  * | `metadata()` | labels, fields, primary key, `internal` flag (from `resources.json`) |
- * | `paginate(query, constraints)` | validate every name against the allow-lists (422 `VALIDATION_FAILED` listing every bad one), then search/filter/sort/paginate, tenant-scoped, with the constraints ANDed in |
+ * | `paginate(query, constraints)` | validate every name against the allow-lists (422 `validation_failed` listing every bad one), then search/filter/sort/paginate, tenant-scoped, with the constraints ANDed in |
  * | `createFromValidated(values)` | insert (only `fillable` keys reach it) |
  * | `record.updateFromValidated(values)` | `fill(values).save()` |
  * | `record.delete()` | soft delete when the table has `deleted_at` |

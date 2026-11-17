@@ -223,7 +223,7 @@ describe('sv db:seed in a tenancy app (--tenant)', () => {
     expect(await count(root, 'SELECT COUNT(*) AS n FROM "invoices"')).toBe(4)
   })
 
-  test('without --tenant: a validation error that names the flag, not TENANT_REQUIRED', async () => {
+  test('without --tenant: a validation error that names the flag, not tenant_required', async () => {
     const root = await tenantProject()
     const error = await run('db:seed', root).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ValidationError)

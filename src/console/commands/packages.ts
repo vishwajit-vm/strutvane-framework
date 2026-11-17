@@ -54,7 +54,7 @@ import { isStrutvanePackage } from './about.ts'
 /** Validate and expand a package argument (`auth` → `@strutvane/auth`). */
 export function packageArgument(input: string): string {
   const name = expandPackageName(input.trim())
-  if (!isValidPackageName(name)) throw usageError('INVALID_PACKAGE_NAME', { name: input })
+  if (!isValidPackageName(name)) throw usageError('invalid_package_name', { name: input })
   return name
 }
 
@@ -66,7 +66,7 @@ export function installSpec(name: string, cliVersion: string): string {
   return isStrutvanePackage(name) ? channelSpec(name, cliVersion) : name
 }
 
-/** Run the package manager; a non-zero exit is a `COMMAND_FAILED` error. */
+/** Run the package manager; a non-zero exit is a `command_failed` error. */
 async function runPackageManager(
   ctx: CommandContext,
   project: Project,
@@ -81,7 +81,7 @@ async function runPackageManager(
     stdio: ctx.globals.json ? 'pipe' : 'inherit',
   })
   if (result.code !== 0) {
-    throw new CliError('COMMAND_FAILED', {
+    throw new CliError('command_failed', {
       exitCode: EXIT.FAILURE,
       params: { command: `${command} ${args.join(' ')}`, code: result.code },
     })
@@ -96,7 +96,7 @@ async function loadInstaller(
 ): Promise<DevkitInstaller | undefined> {
   const pkg = readInstalledPackage(project.root, name)
   if (pkg === undefined) {
-    throw new CliError('PACKAGE_NOT_INSTALLED', { exitCode: EXIT.FAILURE, params: { name } })
+    throw new CliError('package_not_installed', { exitCode: EXIT.FAILURE, params: { name } })
   }
   assertCompatible(pkg, ctx.version)
   const path = resolveContribution(pkg, 'installer')
@@ -108,7 +108,7 @@ async function loadInstaller(
     typeof (installer as { install?: unknown }).install !== 'function' ||
     typeof (installer as { name?: unknown }).name !== 'string'
   ) {
-    throw new CliError('INVALID_CONTRIBUTION', {
+    throw new CliError('invalid_contribution', {
       exitCode: EXIT.FAILURE,
       params: { name, key: 'installer', detail: 'expected an object with a name and install()' },
     })
@@ -201,7 +201,7 @@ export const removeCommand: AnyCommand = defineCommand({
     const project = ctx.requireProject()
     const name = packageArgument(ctx.args.package)
     if (readInstalledPackage(project.root, name) === undefined) {
-      throw new CliError('PACKAGE_NOT_INSTALLED', { exitCode: EXIT.FAILURE, params: { name } })
+      throw new CliError('package_not_installed', { exitCode: EXIT.FAILURE, params: { name } })
     }
     const installer = await loadInstaller(ctx, project, name)
     let result: InstallResult | undefined

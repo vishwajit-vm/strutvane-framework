@@ -146,7 +146,7 @@ describe('parseMultipart', () => {
       maxFileSize: 1000,
     }).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(StrutvaneError)
-    expect((err as StrutvaneError).code).toBe('FILE_TOO_LARGE')
+    expect((err as StrutvaneError).code).toBe('file_too_large')
     expect((err as StrutvaneError).status).toBe(413)
     expect(await readdir(temp)).toEqual([])
   })
@@ -160,7 +160,7 @@ describe('parseMultipart', () => {
       ]),
       { maxTotalSize: 8000 },
     ).catch((e: unknown) => e)
-    expect((err as StrutvaneError).code).toBe('PAYLOAD_TOO_LARGE')
+    expect((err as StrutvaneError).code).toBe('payload_too_large')
     expect(await readdir(temp)).toEqual([])
   })
 
@@ -173,7 +173,7 @@ describe('parseMultipart', () => {
       ]),
       { maxFiles: 2 },
     ).catch((e: unknown) => e)
-    expect((err as StrutvaneError).code).toBe('TOO_MANY_FILES')
+    expect((err as StrutvaneError).code).toBe('too_many_files')
     expect(await readdir(temp)).toEqual([])
   })
 
@@ -194,7 +194,7 @@ describe('parseMultipart', () => {
       ]),
       { maxFields: 1 },
     ).catch((e: unknown) => e)
-    expect((manyFields as StrutvaneError).code).toBe('PAYLOAD_TOO_LARGE')
+    expect((manyFields as StrutvaneError).code).toBe('payload_too_large')
     expect(await readdir(temp)).toEqual([])
   })
 
@@ -204,24 +204,24 @@ describe('parseMultipart', () => {
       body: '{}',
       headers: { 'content-type': 'application/json' },
     })
-    await expect(parse(json)).rejects.toMatchObject({ code: 'UNSUPPORTED_MEDIA_TYPE', status: 415 })
+    await expect(parse(json)).rejects.toMatchObject({ code: 'unsupported_media_type', status: 415 })
     const noBody = new Request('http://x.test', {
       method: 'POST',
       headers: { 'content-type': 'multipart/form-data; boundary=x' },
     })
-    await expect(parse(noBody)).rejects.toMatchObject({ code: 'UPLOAD_INCOMPLETE' })
+    await expect(parse(noBody)).rejects.toMatchObject({ code: 'upload_incomplete' })
     const truncated = new Request('http://x.test', {
       method: 'POST',
       headers: { 'content-type': 'multipart/form-data; boundary=XYZ' },
       body: '--XYZ\r\nContent-Disposition: form-data; name="f"; filename="a.txt"\r\n\r\nhello',
     })
-    await expect(parse(truncated)).rejects.toMatchObject({ code: 'UPLOAD_INCOMPLETE' })
+    await expect(parse(truncated)).rejects.toMatchObject({ code: 'upload_incomplete' })
     const badBoundary = new Request('http://x.test', {
       method: 'POST',
       headers: { 'content-type': 'multipart/form-data; nope' },
       body: 'x',
     })
-    await expect(parse(badBoundary)).rejects.toMatchObject({ code: 'UPLOAD_INCOMPLETE' })
+    await expect(parse(badBoundary)).rejects.toMatchObject({ code: 'upload_incomplete' })
     expect(await readdir(temp)).toEqual([])
   })
 
@@ -242,7 +242,7 @@ describe('parseMultipart', () => {
       duplex: 'half',
     } as RequestInit)
     await expect(parse(req, { idleTimeoutMs: 50 })).rejects.toMatchObject({
-      code: 'UPLOAD_INCOMPLETE',
+      code: 'upload_incomplete',
       status: 408,
     })
     expect(await readdir(temp)).toEqual([])
@@ -271,7 +271,7 @@ describe('parseMultipart leaves nothing running', () => {
     for (let i = 0; i < 5; i++) {
       await expect(
         parse(form([{ name: 'f', file: { bytes: EXE, filename: 'a.exe' } }]), { maxFiles: 0 }),
-      ).rejects.toMatchObject({ code: 'TOO_MANY_FILES' })
+      ).rejects.toMatchObject({ code: 'too_many_files' })
     }
     expect(timers()).toBeLessThanOrEqual(before)
   })

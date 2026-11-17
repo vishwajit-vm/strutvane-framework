@@ -34,13 +34,13 @@ export const envCheckCommand: AnyCommand = defineCommand({
     const root = ctx.requireProject().root
     const envName = ctx.globals.env
     if (envName !== undefined && !isValidEnvName(envName)) {
-      throw usageError('INVALID_ARGUMENT', {
+      throw usageError('invalid_argument', {
         detail: `--env "${envName}" must be a plain name like "test".`,
       })
     }
     const result = checkEnv(root, { envName, strict: ctx.flags.strict === true })
     if (!result.exampleExists) {
-      throw new CliError('ENV_EXAMPLE_MISSING', {
+      throw new CliError('env_example_missing', {
         exitCode: EXIT.VALIDATION,
         params: { path: result.exampleFile },
       })
@@ -52,7 +52,7 @@ export const envCheckCommand: AnyCommand = defineCommand({
     }
     const errors = result.problems.filter((p) => p.severity === 'error')
     if (errors.length > 0) {
-      throw new CliError('ENV_PROBLEMS', {
+      throw new CliError('env_problems', {
         exitCode: EXIT.VALIDATION,
         params: { count: errors.length },
         data: result,
@@ -121,7 +121,7 @@ export const keyGenerateCommand: AnyCommand = defineCommand({
     const replacesKey = existing?.all.some((e) => e.key === 'APP_KEY' && e.value !== '') === true
     if (replacesKey) {
       if (!ctx.globals.force) {
-        throw new CliError('KEY_EXISTS', { exitCode: EXIT.CONFLICT, params: { path: '.env' } })
+        throw new CliError('key_exists', { exitCode: EXIT.CONFLICT, params: { path: '.env' } })
       }
       // Replacing a key makes existing sessions and encrypted data unreadable: outside local,
       // test and development environments that needs --force --i-understand.

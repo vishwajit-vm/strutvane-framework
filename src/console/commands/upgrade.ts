@@ -67,7 +67,7 @@ export async function collectTemplates(
     let exported = pickExport(await importFile(path), 'templates')
     if (typeof exported === 'function') exported = await exported({ projectRoot: project.root })
     if (!Array.isArray(exported) || !exported.every(isTemplateOutput)) {
-      throw new CliError('INVALID_CONTRIBUTION', {
+      throw new CliError('invalid_contribution', {
         exitCode: EXIT.FAILURE,
         params: {
           name,
@@ -99,7 +99,7 @@ async function bump(ctx: CommandContext, project: Project, spec: string): Promis
     stdio: ctx.globals.json ? 'pipe' : 'inherit',
   })
   if (result.code !== 0) {
-    throw new CliError('COMMAND_FAILED', {
+    throw new CliError('command_failed', {
       exitCode: EXIT.FAILURE,
       params: { command: `${command} ${args.join(' ')}`, code: result.code },
     })
@@ -144,13 +144,13 @@ export const upgradeCommand: AnyCommand = defineCommand({
     let project = ctx.requireProject()
     const { to, channel } = ctx.flags
     if (to !== undefined && channel !== undefined) {
-      throw usageError('INVALID_ARGUMENT', { detail: 'Pass either --to or --channel, not both.' })
+      throw usageError('invalid_argument', { detail: 'Pass either --to or --channel, not both.' })
     }
     if (to !== undefined && !VERSION.test(to)) {
-      throw usageError('INVALID_ARGUMENT', { detail: `--to "${to}" is not a version like 0.2.0.` })
+      throw usageError('invalid_argument', { detail: `--to "${to}" is not a version like 0.2.0.` })
     }
     if (channel !== undefined && !TAG.test(channel)) {
-      throw usageError('INVALID_ARGUMENT', { detail: `--channel "${channel}" is not a dist-tag.` })
+      throw usageError('invalid_argument', { detail: `--channel "${channel}" is not a dist-tag.` })
     }
     const spec = to ?? channel
     let bumped: string[] = []
@@ -196,7 +196,7 @@ export const upgradeCommand: AnyCommand = defineCommand({
       conflicted: applied.conflicted,
     }
     if (applied.conflicted.length > 0) {
-      throw new CliError('MERGE_CONFLICTS', {
+      throw new CliError('merge_conflicts', {
         exitCode: EXIT.CONFLICT,
         params: { count: applied.conflicted.length, files: applied.conflicted.join(', ') },
         data,
@@ -207,7 +207,7 @@ export const upgradeCommand: AnyCommand = defineCommand({
     if (ctx.flags.typecheck && (bumped.length > 0 || applied.written.length > 0)) {
       const passed = await typecheck(ctx, project.root)
       if (passed === false) {
-        throw new CliError('TYPECHECK_FAILED', {
+        throw new CliError('typecheck_failed', {
           exitCode: EXIT.FAILURE,
           data: { ...data, typecheck: false },
         })

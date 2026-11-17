@@ -292,7 +292,7 @@ describe('the same styles for auth, can and throttle (one generic helper)', () =
     ;(await guest.getJson('/api/reports')).assertStatus(200)
     ;(await guest.getJson('/api/reports/mine')).assertStatus(401)
     ;(await alice.getJson('/api/reports/mine')).assertStatus(200)
-    ;(await alice.getJson('/api/reports/secret')).assertProblem(403, 'FORBIDDEN')
+    ;(await alice.getJson('/api/reports/secret')).assertProblem(403, 'forbidden')
     ;(await admin.getJson('/api/reports/secret')).assertStatus(200)
     ;(await guest.getJson('/api/reports')).assertStatus(200)
     ;(await guest.getJson('/api/reports')).assertStatus(429)
@@ -621,7 +621,7 @@ describe('_method spoofing (attack-style)', () => {
     ;(await prepared.client.getJson('/things/7?_method=DELETE')).assertJsonPath('shown', '7')
     ;(await prepared.client.withoutCsrf().postForm('/things/7?_method=DELETE', {})).assertProblem(
       405,
-      'METHOD_NOT_ALLOWED',
+      'method_not_allowed',
     )
   })
 })

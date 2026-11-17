@@ -83,9 +83,9 @@ describe('recovery refuses planted journals', () => {
     await plantJournal([{ index: 0, path, hadOriginal }], { 0: '[core]\n\thooksPath = x\n' })
     const before = await snapshot(projectRoot)
     const error = await rejectionOf(recoverTransactions({ io: nodeIo, projectRoot }))
-    expect((error as DevkitError).code).toBe('INVALID_PATH')
+    expect((error as DevkitError).code).toBe('invalid_path')
     expect(await rejectionOf(planRecovery({ io: nodeIo, projectRoot }))).toMatchObject({
-      code: 'INVALID_PATH',
+      code: 'invalid_path',
     })
     expect(await snapshot(projectRoot)).toEqual(before)
   })
@@ -97,7 +97,7 @@ describe('recovery refuses planted journals', () => {
     await writeFiles(projectRoot, { [path]: 'original\n' })
     await plantJournal([{ index: 0, path, hadOriginal }], { 0: 'planted\n' })
     const error = await rejectionOf(recoverTransactions({ io: nodeIo, projectRoot }))
-    expect((error as DevkitError).code).toBe('INVALID_PATH')
+    expect((error as DevkitError).code).toBe('invalid_path')
     expect((error as Error).message).toMatch(/recovery only restores project files/)
     expect(await readFile(projectRoot, path)).toBe('original\n')
   })
@@ -123,7 +123,7 @@ describe('recovery refuses planted journals', () => {
     await plantJournal([{ index: 0, path: 'src', hadOriginal: false }])
     const before = await snapshot(projectRoot)
     const error = await rejectionOf(recoverTransactions({ io: nodeIo, projectRoot }))
-    expect((error as DevkitError).code).toBe('INTERRUPTED_TRANSACTION')
+    expect((error as DevkitError).code).toBe('interrupted_transaction')
     expect((error as Error).message).toMatch(/only deletes regular files/)
     expect(await snapshot(projectRoot)).toEqual(before)
   })
@@ -141,7 +141,7 @@ describe('recovery refuses planted journals', () => {
       ctx.skip()
     await plantJournal([{ index: 0, path: 'link.txt', hadOriginal: false }])
     const error = await rejectionOf(recoverTransactions({ io: nodeIo, projectRoot }))
-    expect((error as DevkitError).code).toBe('INTERRUPTED_TRANSACTION')
+    expect((error as DevkitError).code).toBe('interrupted_transaction')
     expect((await nodeIo.inspect(join(projectRoot, 'link.txt')))?.kind).toBe('symlink')
     expect(await readFile(projectRoot, 'a.txt')).toBe('A\n')
   })
@@ -278,11 +278,11 @@ describe('staging area safety', () => {
             projectRoot,
           }),
         )
-        expect((error as DevkitError).code).toBe('PATH_OUTSIDE_PROJECT')
+        expect((error as DevkitError).code).toBe('path_outside_project')
         expect(await snapshot(outside)).toEqual({})
         expect(await snapshot(projectRoot)).toEqual(before)
         const recovery = await rejectionOf(recoverTransactions({ io: nodeIo, projectRoot }))
-        expect((recovery as DevkitError).code).toBe('PATH_OUTSIDE_PROJECT')
+        expect((recovery as DevkitError).code).toBe('path_outside_project')
       } finally {
         await cleanOutside()
       }
@@ -303,7 +303,7 @@ describe('staging area safety', () => {
       const error = await rejectionOf(
         commitTransaction([{ path, content: 'x' }], { io: nodeIo, projectRoot }),
       )
-      expect((error as DevkitError).code).toBe('INVALID_PATH')
+      expect((error as DevkitError).code).toBe('invalid_path')
     }
     expect(await nodeIo.exists(stagingDir(projectRoot))).toBe(false)
   })
@@ -316,7 +316,7 @@ describe('nodeIo.removeFile and modes', () => {
     await nodeIo.removeFile(join(projectRoot, 'missing.txt'))
     await writeFiles(projectRoot, { 'dir/x.txt': 'x' })
     const error = await rejectionOf(nodeIo.removeFile(join(projectRoot, 'dir')))
-    expect((error as DevkitError).code).toBe('INVALID_PATH')
+    expect((error as DevkitError).code).toBe('invalid_path')
     expect(await readFile(projectRoot, 'dir/x.txt')).toBe('x')
   })
 
@@ -325,7 +325,7 @@ describe('nodeIo.removeFile and modes', () => {
     if (!(await trySymlink(join(projectRoot, 'real'), join(projectRoot, 'alias'), 'junction')))
       ctx.skip()
     const error = await rejectionOf(nodeIo.removeFile(join(projectRoot, 'alias')))
-    expect((error as DevkitError).code).toBe('INVALID_PATH')
+    expect((error as DevkitError).code).toBe('invalid_path')
     expect(await readFile(projectRoot, 'real/x.txt')).toBe('x')
   })
 

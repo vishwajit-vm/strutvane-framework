@@ -45,7 +45,7 @@ function compile(ctx: CommandContext): { registry: Registry; root: string } {
     if (d.severity === 'warning') ctx.out.warn(formatDiagnostic(d))
   if (result.registry === undefined) {
     const errors = result.diagnostics.filter((d) => d.severity === 'error')
-    throw new CliError('REGISTRY_ERRORS', {
+    throw new CliError('registry_errors', {
       exitCode: EXIT.VALIDATION,
       params: { count: errors.length },
       issues: errors.map((d) => ({ path: [d.file], code: d.code, message: formatDiagnostic(d) })),

@@ -70,15 +70,15 @@ export interface RouteContext<Params = Readonly<Record<string, string>>> {
   readonly clientAddress?: string
   /**
    * The JSON request body. A body that is not `application/json` is a 415
-   * `UNSUPPORTED_MEDIA_TYPE` problem (so a cross-site form post can never reach the handler as
-   * JSON); malformed JSON is a 400 `MALFORMED_REQUEST` problem.
+   * `unsupported_media_type` problem (so a cross-site form post can never reach the handler as
+   * JSON); malformed JSON is a 400 `malformed_request` problem.
    */
   json<T = unknown>(): Promise<T>
   /** The booted application (container, config, logger): `app.make(Token)`. */
   readonly app: Application
   /**
    * `{ tenantId }` of this request. Pass it to repository calls: a tenant-scoped model refuses
-   * (TENANT_REQUIRED) to run without it, so forgetting it fails closed.
+   * (tenant_required) to run without it, so forgetting it fails closed.
    */
   readonly scope: Scope
   /**

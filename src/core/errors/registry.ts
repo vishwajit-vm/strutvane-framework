@@ -9,12 +9,13 @@
  * @module
  */
 import type { ProblemCode } from '../../contracts/index.ts'
+import { currentErrorCode, warnUppercaseCode } from './legacy-codes.ts'
 
 /** What a problem code means. */
 export interface ErrorDefinition {
   /**
-   * `snake_case` (the convention for new codes, CONSISTENCY #68) or `SCREAMING_SNAKE_CASE` (the
-   * codes that shipped before it).
+   * Lowercase `snake_case` (CONSISTENCY #68). An app's own `SCREAMING_SNAKE_CASE` code is still
+   * accepted through the 0.2 line, with a deprecation warning (#123).
    */
   readonly code: string
   /** Default HTTP status (an error instance may override it). */
@@ -33,34 +34,34 @@ export interface ErrorRegistry {
   list(): readonly ErrorDefinition[]
 }
 
-/** One case per code: `csrf_token_mismatch` or `NOT_FOUND`, never `Not_Found`. */
+/** One case per code: `csrf_token_mismatch` (or, until 0.3, an app's `INVOICE_PAID`), never `Not_Found`. */
 const CODE = /^(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9_]*)$/
 
 /** The built-in codes from the framework's contracts (RFC-0002 and RFC-0003). */
 export const BUILTIN_ERRORS: readonly ErrorDefinition[] = Object.freeze(
   (
     [
-      ['VALIDATION_FAILED', 422, 'Validation failed'],
-      ['UNAUTHENTICATED', 401, 'Sign-in required'],
-      ['FORBIDDEN', 403, 'Not allowed'],
-      ['NOT_FOUND', 404, 'Not found'],
-      ['CONFLICT', 409, 'Conflict'],
-      ['STALE_RECORD', 409, 'Changed by someone else'],
-      ['RATE_LIMITED', 429, 'Too many requests'],
-      ['PAYLOAD_TOO_LARGE', 413, 'Request too large'],
-      ['SERVICE_UNAVAILABLE', 503, 'Temporarily unavailable'],
-      ['INTERNAL_ERROR', 500, 'Something went wrong'],
-      ['FILE_TOO_LARGE', 413, 'File too large'],
-      ['TOO_MANY_FILES', 413, 'Too many files'],
-      ['FILE_EMPTY', 422, 'Empty file'],
-      ['FILE_TYPE_NOT_ALLOWED', 422, 'File type not allowed'],
-      ['FILE_CORRUPT', 422, 'File could not be read'],
-      ['IMAGE_DIMENSIONS_INVALID', 422, 'Image size not allowed'],
-      ['UPLOAD_INCOMPLETE', 400, 'Upload incomplete'],
-      ['STORAGE_UNAVAILABLE', 503, 'Storage temporarily unavailable'],
-      ['QUOTA_EXCEEDED', 422, 'Storage quota exceeded'],
-      ['FILE_INFECTED', 422, 'File rejected'],
-      ['SCAN_UNAVAILABLE', 503, 'File scanning temporarily unavailable'],
+      ['validation_failed', 422, 'Validation failed'],
+      ['unauthenticated', 401, 'Sign-in required'],
+      ['forbidden', 403, 'Not allowed'],
+      ['not_found', 404, 'Not found'],
+      ['conflict', 409, 'Conflict'],
+      ['stale_record', 409, 'Changed by someone else'],
+      ['rate_limited', 429, 'Too many requests'],
+      ['payload_too_large', 413, 'Request too large'],
+      ['service_unavailable', 503, 'Temporarily unavailable'],
+      ['internal_error', 500, 'Something went wrong'],
+      ['file_too_large', 413, 'File too large'],
+      ['too_many_files', 413, 'Too many files'],
+      ['file_empty', 422, 'Empty file'],
+      ['file_type_not_allowed', 422, 'File type not allowed'],
+      ['file_corrupt', 422, 'File could not be read'],
+      ['image_dimensions_invalid', 422, 'Image size not allowed'],
+      ['upload_incomplete', 400, 'Upload incomplete'],
+      ['storage_unavailable', 503, 'Storage temporarily unavailable'],
+      ['quota_exceeded', 422, 'Storage quota exceeded'],
+      ['file_infected', 422, 'File rejected'],
+      ['scan_unavailable', 503, 'File scanning temporarily unavailable'],
     ] as const satisfies readonly (readonly [ProblemCode, number, string])[]
   ).map(([code, status, title]) =>
     Object.freeze({ code, status, title, owner: '@strutvane/framework' }),
@@ -71,10 +72,13 @@ export const BUILTIN_ERRORS: readonly ErrorDefinition[] = Object.freeze(
 export function createErrorRegistry(options: { readonly builtin?: boolean } = {}): ErrorRegistry {
   const definitions = new Map<string, ErrorDefinition>()
   const registry: ErrorRegistry = {
-    register(definition) {
+    register(given) {
+      // An old uppercase name registers under its new name (deprecation warning, CONSISTENCY #123),
+      // so it collides with the built-in exactly as the old name did.
+      const definition = { ...given, code: currentErrorCode(given.code) }
       if (!CODE.test(definition.code)) {
         throw new TypeError(
-          `Error code "${definition.code}" must be snake_case (or SCREAMING_SNAKE_CASE)`,
+          `Error code "${definition.code}" must be lowercase snake_case, such as "invoice_already_paid"`,
         )
       }
       if (
@@ -86,6 +90,7 @@ export function createErrorRegistry(options: { readonly builtin?: boolean } = {}
           `Error code "${definition.code}": status must be an HTTP error status (400-599)`,
         )
       }
+      if (/[A-Z]/.test(definition.code)) warnUppercaseCode(definition.code)
       const existing = definitions.get(definition.code)
       if (existing) {
         throw new Error(
@@ -94,7 +99,8 @@ export function createErrorRegistry(options: { readonly builtin?: boolean } = {}
       }
       definitions.set(definition.code, Object.freeze({ ...definition }))
     },
-    get: (code) => definitions.get(code),
+    // An old uppercase name finds its renamed definition (with a one-time deprecation warning).
+    get: (code) => definitions.get(code) ?? definitions.get(currentErrorCode(code)),
     list: () => [...definitions.values()].sort((a, b) => a.code.localeCompare(b.code)),
   }
   if (options.builtin !== false) for (const d of BUILTIN_ERRORS) registry.register(d)

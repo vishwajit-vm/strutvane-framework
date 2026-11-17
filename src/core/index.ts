@@ -63,6 +63,11 @@ export {
   ValidationError,
 } from './errors/errors.ts'
 export {
+  currentErrorCode,
+  LEGACY_ERROR_CODES,
+  type LegacyProblemCode,
+} from './errors/legacy-codes.ts'
+export {
   fieldErrorsFrom,
   humanize,
   issuePathKey,

@@ -75,28 +75,28 @@ export interface CliFailure {
  * plugin's installer may bundle its own copy of devkit, whose classes are different objects.
  */
 const DEVKIT_EXIT: Readonly<Record<string, ExitCode>> = {
-  PATH_OUTSIDE_PROJECT: EXIT.VALIDATION,
-  INVALID_PATH: EXIT.VALIDATION,
-  FILE_EXISTS: EXIT.CONFLICT,
-  FILE_NOT_FOUND: EXIT.FAILURE,
-  INVALID_ENV_KEY: EXIT.VALIDATION,
-  INVALID_ENV_VALUE: EXIT.VALIDATION,
-  INVALID_PACKAGE_JSON: EXIT.VALIDATION,
-  LOCAL_DEPENDENCY_SPEC: EXIT.VALIDATION,
-  CONFIG_NOT_FOUND: EXIT.VALIDATION,
-  CONFIG_SHAPE_UNRECOGNISED: EXIT.VALIDATION,
-  INVALID_INSTALLER: EXIT.FAILURE,
-  INSTALLER_FAILED: EXIT.FAILURE,
-  UNINSTALL_NOT_SUPPORTED: EXIT.FAILURE,
-  INVALID_GENERATOR: EXIT.FAILURE,
-  GENERATOR_INPUT_INVALID: EXIT.VALIDATION,
-  TRANSACTION_ABORTED: EXIT.FAILURE,
-  INTERRUPTED_TRANSACTION: EXIT.FAILURE,
+  path_outside_project: EXIT.VALIDATION,
+  invalid_path: EXIT.VALIDATION,
+  file_exists: EXIT.CONFLICT,
+  file_not_found: EXIT.FAILURE,
+  invalid_env_key: EXIT.VALIDATION,
+  invalid_env_value: EXIT.VALIDATION,
+  invalid_package_json: EXIT.VALIDATION,
+  local_dependency_spec: EXIT.VALIDATION,
+  config_not_found: EXIT.VALIDATION,
+  config_shape_unrecognised: EXIT.VALIDATION,
+  invalid_installer: EXIT.FAILURE,
+  installer_failed: EXIT.FAILURE,
+  uninstall_not_supported: EXIT.FAILURE,
+  invalid_generator: EXIT.FAILURE,
+  generator_input_invalid: EXIT.VALIDATION,
+  transaction_aborted: EXIT.FAILURE,
+  interrupted_transaction: EXIT.FAILURE,
   // Not devkit's, but matched the same way: the registry compiler refusing to write via a link.
-  UNSAFE_OUTPUT_PATH: EXIT.VALIDATION,
+  unsafe_output_path: EXIT.VALIDATION,
   // The framework's: a project file that cannot be loaded, and a boot that never finished.
-  PROJECT_INVALID: EXIT.VALIDATION,
-  BOOT_TIMEOUT: EXIT.FAILURE,
+  project_invalid: EXIT.VALIDATION,
+  boot_timeout: EXIT.FAILURE,
 }
 
 /**
@@ -106,9 +106,9 @@ const DEVKIT_EXIT: Readonly<Record<string, ExitCode>> = {
  * `port` fields, never with `instanceof` (the framework is loaded from the project).
  */
 const LISTEN_CODES: ReadonlySet<string> = new Set([
-  'PORT_IN_USE',
-  'PORT_ACCESS_DENIED',
-  'ADDRESS_NOT_AVAILABLE',
+  'port_in_use',
+  'port_access_denied',
+  'address_not_available',
 ])
 
 /** The listen-error shape the CLI relies on. */
@@ -241,7 +241,7 @@ export function toFailure(error: unknown): CliFailure {
   if (envError !== undefined) {
     const issues = envIssues(envError.problems)
     return {
-      code: 'ENV_INVALID',
+      code: 'env_invalid',
       exitCode: EXIT.VALIDATION,
       params: { count: issues.length },
       issues,
@@ -262,7 +262,7 @@ export function toFailure(error: unknown): CliFailure {
   }
   if (isBootFailure(error)) {
     return {
-      code: 'BOOT_FAILED',
+      code: 'boot_failed',
       exitCode: EXIT.FAILURE,
       params: { provider: error.provider, detail: error.message },
       issues: [],
@@ -272,7 +272,7 @@ export function toFailure(error: unknown): CliFailure {
   }
   if (error instanceof ValidationError) {
     return {
-      code: 'VALIDATION_FAILED',
+      code: 'validation_failed',
       exitCode: EXIT.VALIDATION,
       params: {},
       issues: issuesOf(error.issues),
@@ -305,7 +305,7 @@ export function toFailure(error: unknown): CliFailure {
   }
   const detail = error instanceof Error ? error.message : String(error)
   return {
-    code: 'INTERNAL_ERROR',
+    code: 'internal_error',
     exitCode: EXIT.FAILURE,
     params: { detail },
     issues: [],

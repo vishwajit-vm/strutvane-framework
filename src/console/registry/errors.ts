@@ -10,26 +10,26 @@ export type Severity = 'error' | 'warning'
 
 /** Every diagnostic the registry compiler can produce. Stable: docs and tests rely on them. */
 export type DiagnosticCode =
-  | 'PARSE_ERROR'
-  | 'MISSING_DEFAULT_EXPORT'
-  | 'UNEXPECTED_DEFAULT_EXPORT'
-  | 'NOT_IMPORTED_FROM_FRAMEWORK'
-  | 'NON_LITERAL_ARGUMENT'
-  | 'INVALID_MODEL_NAME'
-  | 'FILE_NAME_MISMATCH'
-  | 'DUPLICATE_MODEL'
-  | 'DUPLICATE_RESOURCE'
-  | 'DUPLICATE_POLICY'
-  | 'UNKNOWN_MODEL'
-  | 'INVALID_PERMISSION'
-  | 'INVALID_ROUTE'
-  | 'DUPLICATE_ROUTE'
-  | 'DUPLICATE_ROUTE_NAME'
-  | 'DUPLICATE_JOB'
-  | 'DUPLICATE_COMMAND'
-  | 'DUPLICATE_PAGE_ROUTE'
-  | 'CASE_CONFLICT'
-  | 'SUSPICIOUS_FILE_NAME'
+  | 'parse_error'
+  | 'missing_default_export'
+  | 'unexpected_default_export'
+  | 'not_imported_from_framework'
+  | 'non_literal_argument'
+  | 'invalid_model_name'
+  | 'file_name_mismatch'
+  | 'duplicate_model'
+  | 'duplicate_resource'
+  | 'duplicate_policy'
+  | 'unknown_model'
+  | 'invalid_permission'
+  | 'invalid_route'
+  | 'duplicate_route'
+  | 'duplicate_route_name'
+  | 'duplicate_job'
+  | 'duplicate_command'
+  | 'duplicate_page_route'
+  | 'case_conflict'
+  | 'suspicious_file_name'
 
 export interface Diagnostic {
   readonly code: DiagnosticCode
@@ -88,7 +88,7 @@ export function diagnosticForFile(
     : { code, severity, message, file, line: 1, column: 1, hint }
 }
 
-/** `app/models/x.model.ts:3:16 error DUPLICATE_MODEL Model "X" …\n  hint: …` */
+/** `app/models/x.model.ts:3:16 error duplicate_model Model "X" …\n  hint: …` */
 export function formatDiagnostic(d: Diagnostic): string {
   const head = `${d.file}:${d.line}:${d.column} ${d.severity} ${d.code} ${d.message}`
   return d.hint === undefined ? head : `${head}\n  hint: ${d.hint}`

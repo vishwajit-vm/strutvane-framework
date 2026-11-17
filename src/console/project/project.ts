@@ -52,20 +52,20 @@ export function findProjectRoot(
   }
 }
 
-/** Read and parse a JSON object file. Throws `INVALID_PACKAGE_JSON` (exit 3) when it is not one. */
+/** Read and parse a JSON object file. Throws `invalid_package_json` (exit 3) when it is not one. */
 export function readJsonObject(path: string): Record<string, unknown> {
   let parsed: unknown
   try {
     parsed = JSON.parse(stripBom(readFileSync(path, 'utf8')))
   } catch (error) {
-    throw new CliError('INVALID_PACKAGE_JSON', {
+    throw new CliError('invalid_package_json', {
       exitCode: EXIT.VALIDATION,
       params: { path, detail: error instanceof Error ? error.message : String(error) },
       cause: error,
     })
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new CliError('INVALID_PACKAGE_JSON', {
+    throw new CliError('invalid_package_json', {
       exitCode: EXIT.VALIDATION,
       params: { path, detail: 'expected a JSON object' },
     })

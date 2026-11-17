@@ -58,7 +58,7 @@ const FIELD_NAME = /^[a-z][A-Za-z0-9]*$/
 
 /** A field that cannot be rendered safely (only reachable by bypassing input validation). */
 function unrenderable(field: FieldSpec, detail: string): CliError {
-  return new CliError('INVALID_FIELD', {
+  return new CliError('invalid_field', {
     exitCode: EXIT.VALIDATION,
     params: { spec: String(field.name).slice(0, 40), detail },
   })

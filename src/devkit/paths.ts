@@ -86,7 +86,7 @@ export function recoveryRefusal(path: string): string | undefined {
 /**
  * Validate a project-relative POSIX path and return it normalised (no `./`, no duplicate slashes).
  *
- * Throws `PATH_OUTSIDE_PROJECT` for traversal and absolute paths, and `INVALID_PATH` for anything
+ * Throws `path_outside_project` for traversal and absolute paths, and `invalid_path` for anything
  * else that isn't a plain relative path, including protected locations: `.git/`,
  * `node_modules/` and `.strutvane/staging/`, at any depth. Every devkit reader and writer goes
  * through this function, so no installer, generator, upgrade or recovery journal can target
@@ -94,28 +94,28 @@ export function recoveryRefusal(path: string): string | undefined {
  */
 export function normaliseRelativePath(path: string): string {
   if (typeof path !== 'string' || path.length === 0) {
-    throw new DevkitError('INVALID_PATH', 'path must be a non-empty string')
+    throw new DevkitError('invalid_path', 'path must be a non-empty string')
   }
   if (hasControlCharacter(path)) {
     throw new DevkitError(
-      'INVALID_PATH',
+      'invalid_path',
       `path contains control characters: ${JSON.stringify(path)}`,
     )
   }
   if (path.includes('\\')) {
-    throw new DevkitError('INVALID_PATH', `use forward slashes in project paths: ${path}`)
+    throw new DevkitError('invalid_path', `use forward slashes in project paths: ${path}`)
   }
   if (path.startsWith('/') || /^[A-Za-z]:/.test(path) || isAbsolute(path)) {
-    throw new DevkitError('PATH_OUTSIDE_PROJECT', `absolute paths are not allowed: ${path}`)
+    throw new DevkitError('path_outside_project', `absolute paths are not allowed: ${path}`)
   }
   const parts = path.split('/').filter((p) => p !== '' && p !== '.')
   if (parts.includes('..')) {
-    throw new DevkitError('PATH_OUTSIDE_PROJECT', `path escapes the project: ${path}`)
+    throw new DevkitError('path_outside_project', `path escapes the project: ${path}`)
   }
   if (parts.length === 0)
-    throw new DevkitError('INVALID_PATH', `path points at the project root: ${path}`)
+    throw new DevkitError('invalid_path', `path points at the project root: ${path}`)
   const reason = protectedReason(parts)
-  if (reason !== undefined) throw new DevkitError('INVALID_PATH', `${reason}: ${path}`)
+  if (reason !== undefined) throw new DevkitError('invalid_path', `${reason}: ${path}`)
   return parts.join('/')
 }
 
@@ -150,7 +150,7 @@ function realPathOf(absolute: string, hops = 0): string {
       const target = linkTarget(current)
       if (target !== undefined) {
         if (hops >= MAX_LINK_HOPS) {
-          throw new DevkitError('INVALID_PATH', `too many levels of links: ${absolute}`)
+          throw new DevkitError('invalid_path', `too many levels of links: ${absolute}`)
         }
         const resolved = realPathOf(resolve(dirname(current), target), hops + 1)
         return join(resolved, ...[...missing].reverse())
@@ -180,8 +180,8 @@ function isInside(parent: string, child: string): boolean {
 
 /**
  * Turn a project-relative path into an absolute one, guaranteeing that it stays inside
- * `projectRoot` even through symlinks or junctions (`PATH_OUTSIDE_PROJECT` otherwise), and that
- * neither the path nor its real path is a protected location (`INVALID_PATH`; see
+ * `projectRoot` even through symlinks or junctions (`path_outside_project` otherwise), and that
+ * neither the path nor its real path is a protected location (`invalid_path`; see
  * {@link normaliseRelativePath}).
  */
 export function resolveInsideProject(projectRoot: string, path: string): string {
@@ -189,13 +189,13 @@ export function resolveInsideProject(projectRoot: string, path: string): string 
   const root = resolve(projectRoot)
   const absolute = join(root, ...rel.split('/'))
   if (!isInside(root, absolute)) {
-    throw new DevkitError('PATH_OUTSIDE_PROJECT', `path escapes the project: ${path}`)
+    throw new DevkitError('path_outside_project', `path escapes the project: ${path}`)
   }
   const realRoot = realPathOf(root)
   const realTarget = realPathOf(absolute)
   if (!isInside(realRoot, realTarget)) {
     throw new DevkitError(
-      'PATH_OUTSIDE_PROJECT',
+      'path_outside_project',
       `path resolves outside the project through a symlink or junction: ${path}`,
     )
   }
@@ -206,7 +206,7 @@ export function resolveInsideProject(projectRoot: string, path: string): string 
   const reason = realSegments.length === 0 ? undefined : protectedReason(realSegments)
   if (reason !== undefined) {
     throw new DevkitError(
-      'INVALID_PATH',
+      'invalid_path',
       `${reason} (reached through a symlink, junction or alias): ${path}`,
     )
   }

@@ -41,32 +41,32 @@ describe('PROBLEM_CODES', () => {
   // A Record over the union forces every code to be listed here; the assertion keeps the runtime
   // list in sync with the type (RFC-0002 + RFC-0003 codes).
   const every: Record<ProblemCode, true> = {
-    VALIDATION_FAILED: true,
-    UNAUTHENTICATED: true,
-    FORBIDDEN: true,
-    NOT_FOUND: true,
-    CONFLICT: true,
-    STALE_RECORD: true,
-    RATE_LIMITED: true,
-    PAYLOAD_TOO_LARGE: true,
-    SERVICE_UNAVAILABLE: true,
-    INTERNAL_ERROR: true,
-    FILE_TOO_LARGE: true,
-    TOO_MANY_FILES: true,
-    FILE_EMPTY: true,
-    FILE_TYPE_NOT_ALLOWED: true,
-    FILE_CORRUPT: true,
-    IMAGE_DIMENSIONS_INVALID: true,
-    UPLOAD_INCOMPLETE: true,
-    STORAGE_UNAVAILABLE: true,
-    QUOTA_EXCEEDED: true,
-    FILE_INFECTED: true,
-    SCAN_UNAVAILABLE: true,
+    validation_failed: true,
+    unauthenticated: true,
+    forbidden: true,
+    not_found: true,
+    conflict: true,
+    stale_record: true,
+    rate_limited: true,
+    payload_too_large: true,
+    service_unavailable: true,
+    internal_error: true,
+    file_too_large: true,
+    too_many_files: true,
+    file_empty: true,
+    file_type_not_allowed: true,
+    file_corrupt: true,
+    image_dimensions_invalid: true,
+    upload_incomplete: true,
+    storage_unavailable: true,
+    quota_exceeded: true,
+    file_infected: true,
+    scan_unavailable: true,
   }
 
-  test('lists every ProblemCode exactly once, all SCREAMING_SNAKE_CASE', () => {
+  test('lists every ProblemCode exactly once, all snake_case', () => {
     expect([...PROBLEM_CODES].sort()).toEqual(Object.keys(every).sort())
     expect(new Set(PROBLEM_CODES).size).toBe(PROBLEM_CODES.length)
-    for (const code of PROBLEM_CODES) expect(code).toMatch(/^[A-Z][A-Z0-9_]*$/)
+    for (const code of PROBLEM_CODES) expect(code).toMatch(/^[a-z][a-z0-9_]*$/)
   })
 })

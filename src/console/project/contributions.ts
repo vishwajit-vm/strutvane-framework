@@ -11,7 +11,7 @@
  * plain registry package name, and (3) resolves (after following symlinks) to a file inside that
  * package's own directory under the project's `node_modules`. A manifest that points elsewhere
  * (`"commands": "../../../evil.js"`, an absolute path, a symlink out of the package) is refused
- * with `UNSAFE_CONTRIBUTION` instead of being executed. Nothing outside `node_modules` is ever
+ * with `unsafe_contribution` instead of being executed. Nothing outside `node_modules` is ever
  * imported, including the project's own source files.
  *
  * @module
@@ -46,13 +46,13 @@ export function resolveContribution(
   const declared = field?.[key]
   if (declared === undefined) return undefined
   const fail = (detail: string): CliError =>
-    new CliError('INVALID_CONTRIBUTION', {
+    new CliError('invalid_contribution', {
       exitCode: EXIT.FAILURE,
       params: { name: pkg.name, key, detail },
     })
   if (typeof declared !== 'string' || declared.trim() === '') throw fail('expected a relative path')
   const unsafe = (): CliError =>
-    new CliError('UNSAFE_CONTRIBUTION', {
+    new CliError('unsafe_contribution', {
       exitCode: EXIT.FAILURE,
       params: { name: pkg.name, key, path: declared },
     })
@@ -111,11 +111,11 @@ export function checkCompat(pkg: InstalledPackage, cliVersion: string): CompatRe
     : { ok: false, range: printable(range, 80) }
 }
 
-/** Throw `INCOMPATIBLE_PACKAGE` or `MISSING_COMPAT` (exit 7) unless the package accepts this CLI. */
+/** Throw `incompatible_package` or `missing_compat` (exit 7) unless the package accepts this CLI. */
 export function assertCompatible(pkg: InstalledPackage, cliVersion: string): void {
   const result = checkCompat(pkg, cliVersion)
   if (!result.ok) {
-    throw new CliError(result.missing === true ? 'MISSING_COMPAT' : 'INCOMPATIBLE_PACKAGE', {
+    throw new CliError(result.missing === true ? 'missing_compat' : 'incompatible_package', {
       exitCode: EXIT.INCOMPATIBLE,
       params: { name: pkg.name, version: pkg.version, range: result.range, cli: cliVersion },
     })

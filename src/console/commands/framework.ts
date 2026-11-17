@@ -59,7 +59,7 @@ Destructive: type the full name; unless APP_ENV is local, test, testing or devel
     run(ctx) {
       const project = ctx.requireProject()
       const installed = readInstalledPackage(project.root, FRAMEWORK_PACKAGE) !== undefined
-      throw new CliError(installed ? 'FRAMEWORK_COMMAND_MISSING' : 'FRAMEWORK_REQUIRED', {
+      throw new CliError(installed ? 'framework_command_missing' : 'framework_required', {
         exitCode: EXIT.FAILURE,
         params: { command: name },
       })

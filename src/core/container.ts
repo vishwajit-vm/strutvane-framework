@@ -82,11 +82,11 @@ export interface Container extends Resolver {
 
 /** Error codes for container failures (programmer errors, so they fail fast and loudly). */
 export type ContainerErrorCode =
-  | 'UNKNOWN_TOKEN'
-  | 'CIRCULAR_DEPENDENCY'
-  | 'SCOPE_REQUIRED'
-  | 'ALREADY_RESOLVED'
-  | 'DISPOSED'
+  | 'unknown_token'
+  | 'circular_dependency'
+  | 'scope_required'
+  | 'already_resolved'
+  | 'disposed'
 
 /** Thrown for container misuse. The message always names the token(s) involved. */
 export class ContainerError extends Error {
@@ -184,7 +184,7 @@ class ContainerImpl implements Container {
     this.#assertAlive()
     if (this.#instances.has(token.id)) {
       throw new ContainerError(
-        'ALREADY_RESOLVED',
+        'already_resolved',
         `Cannot rebind "${token.name}": it was already resolved, so existing users hold the old instance.`,
       )
     }
@@ -204,13 +204,13 @@ class ContainerImpl implements Container {
     this.#assertAlive()
     if (stack.some((t) => t.id === token.id)) {
       const path = [...stack, token].map((t) => t.name).join(' -> ')
-      throw new ContainerError('CIRCULAR_DEPENDENCY', `Circular dependency: ${path}`)
+      throw new ContainerError('circular_dependency', `Circular dependency: ${path}`)
     }
     const found = this.#findBinding(token.id)
     if (!found) {
       const via = stack.length > 0 ? ` (needed by "${stack.at(-1)?.name}")` : ''
       throw new ContainerError(
-        'UNKNOWN_TOKEN',
+        'unknown_token',
         `No binding for "${token.name}"${via}. Register it in a service provider.`,
       )
     }
@@ -235,7 +235,7 @@ class ContainerImpl implements Container {
     } else {
       if (this.#parent === undefined && owner === this) {
         throw new ContainerError(
-          'SCOPE_REQUIRED',
+          'scope_required',
           `"${token.name}" is scoped (one per request). Resolve it from a scope (container.createScope()), not the root.`,
         )
       }
@@ -265,7 +265,7 @@ class ContainerImpl implements Container {
   }
 
   #assertAlive(): void {
-    if (this.#disposed) throw new ContainerError('DISPOSED', 'This container has been disposed.')
+    if (this.#disposed) throw new ContainerError('disposed', 'This container has been disposed.')
   }
 }
 

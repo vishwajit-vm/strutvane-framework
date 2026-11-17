@@ -4,7 +4,7 @@
  * Rules:
  * - A {@link StrutvaneError} becomes a problem with its code, its status, a catalog title and
  *   detail, and structured `issues` (for validation errors).
- * - **Anything else becomes `500 INTERNAL_ERROR` with no internal details.** Exception messages
+ * - **Anything else becomes `500 internal_error` with no internal details.** Exception messages
  *   and stack traces can contain SQL, file paths or secrets; they belong in logs, never in responses.
  *
  * @module
@@ -95,6 +95,7 @@ export function renderIssues(
         : messages.format('validation.invalid', params, lookup))
     return {
       path: [...issue.path],
+      field: issuePathKey(issue.path),
       code: issue.code,
       ...(issue.params && Object.keys(issue.params).length > 0 ? { params: issue.params } : {}),
       message,
@@ -137,10 +138,10 @@ export function toProblem(error: unknown, options: ToProblemOptions = {}): Probl
     return buildProblem(error, options)
   } catch {
     return {
-      type: typeUri(options.typeBase ?? 'https://strutvane.dev/errors/', 'INTERNAL_ERROR'),
+      type: typeUri(options.typeBase ?? 'https://strutvane.dev/errors/', 'internal_error'),
       title: 'Something went wrong',
       status: 500,
-      code: 'INTERNAL_ERROR',
+      code: 'internal_error',
       ...(options.traceId ? { traceId: options.traceId } : {}),
     }
   }
@@ -157,7 +158,7 @@ function buildProblem(error: unknown, options: ToProblemOptions): Problem {
   }
 
   const known = error instanceof StrutvaneError
-  const code = known ? error.code : 'INTERNAL_ERROR'
+  const code = known ? error.code : 'internal_error'
   const definition = registry.get(code)
   const status = (known ? error.status : undefined) ?? definition?.status ?? 500
   const params = known ? error.params : {}

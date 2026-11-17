@@ -44,7 +44,7 @@ async function writeAppFile(
 ): Promise<{ readonly path: string; readonly action: string; readonly dryRun: boolean }> {
   const root = appRoot(ctx)
   const input = { path, content }
-  // --force replaces an existing file; without it devkit refuses (FILE_EXISTS, exit 4).
+  // --force replaces an existing file; without it devkit refuses (file_exists, exit 4).
   const generator: Generator<z.infer<typeof FileInput>> = ctx.globals.force
     ? { ...appFileGenerator, files: (file) => [{ ...file, overwrite: true }] }
     : appFileGenerator

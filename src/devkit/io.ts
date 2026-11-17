@@ -62,7 +62,7 @@ export interface DevkitIo {
   /**
    * Remove one regular file; no error if it is missing. Never recurses and never follows a
    * symlink: a directory, symlink, junction or other special file is refused with
-   * `INVALID_PATH`, so a bad path can never delete more than the one file it names.
+   * `invalid_path`, so a bad path can never delete more than the one file it names.
    */
   removeFile(path: string): Promise<void>
   /** Describe a path without following a final symlink, or `undefined` if it does not exist. */
@@ -118,7 +118,7 @@ export const nodeIo: DevkitIo = {
     if (info === undefined) return
     if (info.kind !== 'file') {
       throw new DevkitError(
-        'INVALID_PATH',
+        'invalid_path',
         `refusing to delete ${path}: it is a ${info.kind}, and devkit only deletes regular files`,
       )
     }

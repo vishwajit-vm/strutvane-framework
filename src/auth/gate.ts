@@ -99,7 +99,7 @@ export class PolicyDenial extends Error {
 }
 
 /**
- * Like {@link allows}, but throws a 403 `FORBIDDEN`. Laravel's `$this->authorize()`.
+ * Like {@link allows}, but throws a 403 `forbidden`. Laravel's `$this->authorize()`.
  *
  * @example
  * await authorize(new PostPolicy(), 'delete', ctx.user, post)

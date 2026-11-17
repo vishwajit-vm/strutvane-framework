@@ -288,8 +288,8 @@ const seedCommand: ContributedCommand = {
         ids: createUuidV7Generator(),
         ...(tenantId !== undefined ? { tenantId } : {}),
       }).catch((error: unknown) => {
-        // A tenancy app seeded without a tenant: say which flag fixes it, not TENANT_REQUIRED.
-        if (tenantId === undefined && codeOf(error) === 'TENANT_REQUIRED')
+        // A tenancy app seeded without a tenant: say which flag fixes it, not tenant_required.
+        if (tenantId === undefined && codeOf(error) === 'tenant_required')
           throw new ValidationError([
             {
               path: ['--tenant'],

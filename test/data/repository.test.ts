@@ -74,7 +74,7 @@ describe.each(DIALECTS)('repository on %s', (dialect) => {
     const customer = await seedCustomer()
     await fx.repo('Invoice').create({ number: 'INV-1', amount: '1', customer: customer.id }, A)
     await expect(fx.repo('Customer').delete(customer.id, A)).rejects.toMatchObject({
-      code: 'RECORD_IN_USE',
+      code: 'record_in_use',
       status: 409,
     })
     const other = await seedCustomer(A, 'Other', 'o@x.test')

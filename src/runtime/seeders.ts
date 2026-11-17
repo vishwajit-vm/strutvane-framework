@@ -11,7 +11,7 @@
  *
  * In a tenancy app, tenant-scoped models are seeded for one tenant at a time:
  * `sv db:seed --tenant <id>` puts `{ tenantId }` in `scope`, which seeders pass on (without it,
- * `sv db:seed` says which flag is missing instead of failing with `TENANT_REQUIRED`).
+ * `sv db:seed` says which flag is missing instead of failing with `tenant_required`).
  *
  * `sv db:seed` runs `database/seeders/database.seeder.ts`, which calls the others in order
  * (`sv make:model` registers each new model's seeder there, after the seeders of the models it
@@ -56,7 +56,7 @@ export interface SeederContext {
   readonly db: Database
   /**
    * The tenant this run seeds (`sv db:seed --tenant <id>`), or `undefined`. Tenant-scoped models
-   * refuse to be written without one (`TENANT_REQUIRED`).
+   * refuse to be written without one (`tenant_required`).
    */
   readonly tenantId: string | undefined
   /**

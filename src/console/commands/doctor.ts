@@ -390,7 +390,7 @@ export const doctorCommand: AnyCommand = defineCommand({
       warnings: checks.filter((c) => c.status === 'warn').length,
     }
     if (failed.length > 0) {
-      throw new CliError('DOCTOR_FAILED', {
+      throw new CliError('doctor_failed', {
         exitCode: EXIT.VALIDATION,
         params: { count: failed.length },
         data,

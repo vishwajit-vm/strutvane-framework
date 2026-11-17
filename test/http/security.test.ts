@@ -151,7 +151,7 @@ describe.each(DIALECTS)('resource API attacks on %s', (dialect) => {
       body: { owner: 'bob' },
     })
     expect(moved.status).toBe(403)
-    expect(moved.body.code).toBe('FORBIDDEN')
+    expect(moved.body.code).toBe('forbidden')
     // rolled back: still alice's, still invisible to bob
     expect(
       (await alice().request<{ owner: string }>('GET', `${BASE}/accounts/${id}`)).body.owner,

@@ -47,7 +47,7 @@ describe('discover', () => {
     const { files, diagnostics } = discover(root)
     expect(files).toEqual([])
     expect(diagnostics.map((d) => [d.code, d.severity, d.file])).toEqual([
-      ['SUSPICIOUS_FILE_NAME', 'warning', 'app/models/order.Model.ts'],
+      ['suspicious_file_name', 'warning', 'app/models/order.Model.ts'],
     ])
   })
 
@@ -66,7 +66,7 @@ describe('case conflicts', () => {
     ]) {
       const diagnostics = detectCaseConflicts(input)
       expect(diagnostics).toHaveLength(1)
-      expect(diagnostics[0]?.code).toBe('CASE_CONFLICT')
+      expect(diagnostics[0]?.code).toBe('case_conflict')
       expect(diagnostics[0]?.file).toBe('app/models/invoice.model.ts')
       expect(diagnostics[0]?.message).toContain('app/models/Invoice.model.ts')
     }

@@ -132,7 +132,7 @@ async function assertSafeStateDirs(io: DevkitIo, projectRoot: string): Promise<v
     const info = await io.inspect(join(projectRoot, ...rel.split('/')))
     if (info !== undefined && info.kind !== 'directory') {
       throw new DevkitError(
-        'PATH_OUTSIDE_PROJECT',
+        'path_outside_project',
         `${rel} is a ${info.kind}, not a folder; devkit refuses to stage changes through it (remove it and retry)`,
       )
     }
@@ -157,7 +157,7 @@ export async function commitTransaction(
   await assertSafeStateDirs(io, projectRoot)
   if (await hasInterruptedTransaction(io, projectRoot)) {
     throw new DevkitError(
-      'INTERRUPTED_TRANSACTION',
+      'interrupted_transaction',
       'a previous change was interrupted; run recovery first (sv recover), then retry',
     )
   }
@@ -165,7 +165,7 @@ export async function commitTransaction(
   for (const op of operations) {
     if (seen.has(op.path)) {
       throw new DevkitError(
-        'INVALID_PATH',
+        'invalid_path',
         `the same file appears twice in one transaction: ${op.path}`,
       )
     }
@@ -266,7 +266,7 @@ interface LoadedTransaction {
 
 function refuse(message: string, cause?: unknown): DevkitError {
   return new DevkitError(
-    'INTERRUPTED_TRANSACTION',
+    'interrupted_transaction',
     message,
     cause === undefined ? undefined : { cause },
   )
@@ -301,10 +301,10 @@ async function loadInterrupted(io: DevkitIo, projectRoot: string): Promise<Loade
       )
     }
     for (const entry of journal.entries) {
-      // Throws PATH_OUTSIDE_PROJECT / INVALID_PATH for escapes and protected locations.
+      // Throws path_outside_project / invalid_path for escapes and protected locations.
       const target = resolveInsideProject(projectRoot, entry.path)
       const refusal = recoveryRefusal(normaliseRelativePath(entry.path))
-      if (refusal !== undefined) throw new DevkitError('INVALID_PATH', `${refusal}: ${entry.path}`)
+      if (refusal !== undefined) throw new DevkitError('invalid_path', `${refusal}: ${entry.path}`)
       const current = await io.inspect(target)
       if (entry.hadOriginal) {
         const backup = await io.inspect(join(dir, 'backup', String(entry.index)))
@@ -357,7 +357,7 @@ export async function planRecovery(options: {
  * Returns how many transactions were rolled back.
  *
  * Every journal is validated first (see the module documentation); if any is unsafe, nothing is
- * changed and an `INTERRUPTED_TRANSACTION`, `INVALID_PATH` or `PATH_OUTSIDE_PROJECT` error says
+ * changed and an `interrupted_transaction`, `invalid_path` or `path_outside_project` error says
  * why. With `confirmed` (a plan from {@link planRecovery}), recovery also refuses to run if the
  * journals no longer describe exactly that plan.
  */
