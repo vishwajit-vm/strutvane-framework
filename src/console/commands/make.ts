@@ -135,7 +135,7 @@ function existingFields(
 }
 
 /**
- * The field-syntax part of `sv help make:model`. Both spellings are always accepted; the order
+ * The field-syntax part of `node strut help make:model`. Both spellings are always accepted; the order
  * depends on the platform because on Windows the parenthesised one breaks before the CLI even
  * runs: PowerShell strips the quotes and cmd.exe re-parses the arguments inside the `.cmd` shims
  * that npm and npx run through, where `)` ends a block ("… was unexpected at this time"). That
@@ -177,15 +177,15 @@ export function fieldSyntaxDetails(platform: NodeJS.Platform): string {
   ].join('\n')
 }
 
-/** `sv help make:model` examples: the cmd-safe spelling first on Windows. */
+/** `node strut help make:model` examples: the cmd-safe spelling first on Windows. */
 export function makeModelExamples(platform: NodeJS.Platform): string[] {
   const brackets =
-    'sv make:model Invoice number:string:unique amount:decimal[12,2]:min[0] customer:belongsTo[Customer]'
+    'node strut make:model Invoice number:string:unique amount:decimal[12,2]:min[0] customer:belongsTo[Customer]'
   const parens =
-    "sv make:model Invoice number:string:unique 'amount:decimal(12,2):min(0)' 'customer:belongsTo(Customer)'"
+    "node strut make:model Invoice number:string:unique 'amount:decimal(12,2):min(0)' 'customer:belongsTo(Customer)'"
   return [
     ...(platform === 'win32' ? [brackets, parens] : [parens, brackets]),
-    'sv make model Tag name:string:required --no-seeder --dry-run --diff',
+    'node strut make model Tag name:string:required --no-seeder --dry-run --diff',
   ]
 }
 
@@ -269,7 +269,7 @@ function reportSeederRegistration(
   const path = DATABASE_SEEDER_PATH
   if (result.status === 'unrecognised') {
     ctx.out.warn(
-      `${path} does not have the shape sv make:model can edit, so ${seeder} was not registered. Add these lines yourself:`,
+      `${path} does not have the shape node strut make:model can edit, so ${seeder} was not registered. Add these lines yourself:`,
     )
     for (const line of result.manual) ctx.out.line(`  ${line}`)
     return { seeder, path, status: 'manual', manual: result.manual }
@@ -420,7 +420,7 @@ export const makeModelCommand: AnyCommand = defineCommand({
         },
         seedCount,
       },
-      'sv migrate',
+      'node strut migrate',
       seeding?.file === undefined ? [] : [seeding.file],
     )
     const seederRegistration =
@@ -445,7 +445,7 @@ export const makeResourceCommand: AnyCommand = defineCommand({
       description: 'Lifecycle hooks, e.g. beforeCreate,afterUpdate',
     },
   },
-  examples: ['sv make:resource Invoice --actions approve,send --hooks beforeCreate'],
+  examples: ['node strut make:resource Invoice --actions approve,send --hooks beforeCreate'],
   async run(ctx) {
     const n = modelNames(ctx.args.model)
     requireModel(ctx, n)
@@ -470,7 +470,7 @@ export const makePolicyCommand: AnyCommand = defineCommand({
       description: 'Starting rules',
     },
   },
-  examples: ['sv make:policy Invoice --template owner'],
+  examples: ['node strut make:policy Invoice --template owner'],
   async run(ctx) {
     const n = modelNames(ctx.args.model)
     const file = requireModel(ctx, n)
@@ -488,7 +488,7 @@ export const makeFactoryCommand: AnyCommand = defineCommand({
   name: 'make:factory',
   description: "Create a factory with fake data matching a model's field types",
   args: { model: { required: true, description: 'Model name' } },
-  examples: ['sv make:factory Invoice'],
+  examples: ['node strut make:factory Invoice'],
   async run(ctx) {
     const n = modelNames(ctx.args.model)
     const file = requireModel(ctx, n)
@@ -510,7 +510,7 @@ export const makeSeederCommand: AnyCommand = defineCommand({
     },
     count: { type: 'string', valueName: '<n>', default: '10', description: 'Rows to create' },
   },
-  examples: ['sv make:seeder Invoice --model Invoice --count 50'],
+  examples: ['node strut make:seeder Invoice --model Invoice --count 50'],
   async run(ctx) {
     const n = names(ctx.args.name, 'Seeder name')
     const model = ctx.flags.model === undefined ? undefined : modelNames(ctx.flags.model)
@@ -548,7 +548,7 @@ export const makeTestCommand: AnyCommand = defineCommand({
     e2e: { type: 'boolean', description: 'A Playwright end-to-end test (tests/e2e/)' },
     model: { type: 'string', valueName: '<Model>', description: 'Import this model in the test' },
   },
-  examples: ['sv make:test invoice-totals --unit --model Invoice'],
+  examples: ['node strut make:test invoice-totals --unit --model Invoice'],
   async run(ctx) {
     if (ctx.flags.unit === true && ctx.flags.e2e === true) {
       throw usageError('invalid_argument', { detail: 'Choose one of --unit and --e2e.' })
@@ -606,7 +606,7 @@ export const makeMigrationCommand: AnyCommand = defineCommand({
           sql: ctx.flags.sql === true,
           table: ctx.flags.table,
         },
-        'sv migrate',
+        'node strut migrate',
       )
       return { data }
     }
@@ -619,7 +619,7 @@ export const makeMigrationCommand: AnyCommand = defineCommand({
       },
     })
     if ((ctx.flags.seeder === true || ctx.flags.factory === true) && plan.table === undefined) {
-      throw usageError('INVALID_ARGUMENT', {
+      throw usageError('invalid_argument', {
         detail: `Can't tell which table "${name}" is about, so no seeder or factory was written. Name it create_<table>_table or add_<column>_to_<table>_table.`,
       })
     }

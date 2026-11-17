@@ -83,8 +83,12 @@ describe('make:migration (migration-first)', () => {
     expect(read(root, 'database/migrations/2026_11_20_000000_backfill_slugs.ts')).toContain(
       'up(schema) {}',
     )
-    const refused = await cli(['make:migration', 'backfill_more', '--seeder'], { cwd: root })
+    const refused = await cli(['make:migration', 'backfill_more', '--seeder', '--json'], {
+      cwd: root,
+    })
     expect(refused.code).not.toBe(0)
+    // #123: codes are lowercase snake_case (the merged branch once threw INVALID_ARGUMENT here).
+    expect(refused.json().error).toMatchObject({ code: 'invalid_argument' })
   })
 
   test('a database.seeder.ts without markers is left alone and the lines to add are shown', async () => {
