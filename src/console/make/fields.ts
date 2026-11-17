@@ -1,5 +1,5 @@
 /**
- * The field mini-language used by `sv make:model` (docs/09 §3.1):
+ * The field mini-language used by `node strut make:model` (docs/09 §3.1):
  *
  * ```
  * name:type[(args)][:modifier[(args)]]…

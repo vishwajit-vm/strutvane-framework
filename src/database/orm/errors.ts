@@ -74,7 +74,7 @@ function massAssignmentMessage(
 ): string {
   if (reason === 'unknown') {
     const hint = suggestion === undefined ? '' : ` Did you mean "${suggestion}"?`
-    return `"${table}" has no column "${field}".${hint} Columns come from your migrations: add one with a new migration, then run \`sv migrate\`.`
+    return `"${table}" has no column "${field}".${hint} Columns come from your migrations: add one with a new migration, then run \`node strut migrate\`.`
   }
   if (reason === 'system') {
     return `"${field}" on "${table}" is managed by Strutvane (keys, timestamps, soft deletes, tenant) and can't be mass-assigned. Remove it from the input.`

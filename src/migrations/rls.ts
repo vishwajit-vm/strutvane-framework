@@ -89,7 +89,7 @@ export interface TenancyFinding {
 }
 
 /**
- * Audit the connected Postgres database (the basis of `sv doctor`). Every way tenant isolation is
+ * Audit the connected Postgres database (the basis of `node strut doctor`). Every way tenant isolation is
  * commonly lost is checked, because RLS is only as strong as its weakest path around it:
  *
  * - every table with a `tenant_id` column has RLS **enabled** and **forced**;

@@ -59,7 +59,7 @@ export interface Messages {
   locales(): readonly string[]
   /**
    * Keys defined in the fallback locale but missing in `locale` (or its base language), sorted.
-   * This powers `sv lang:check`.
+   * This powers `node strut lang:check`.
    */
   missingKeys(locale: string): readonly string[]
 }

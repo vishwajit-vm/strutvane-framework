@@ -4,7 +4,7 @@
  * Each generator validates its input with a Zod schema (Standard Schema, so devkit reports every
  * problem as an RFC-0003 issue) and returns the files to write. The commands only collect input;
  * staging, `--dry-run`, diffs and the all-or-nothing commit are devkit's. Exporting the generators
- * lets other tools (an IDE extension, `create-strutvane`) produce exactly what `sv make:*` does.
+ * lets other tools (an IDE extension, `create-strutvane`) produce exactly what `node strut make:*` does.
  *
  * @module
  */

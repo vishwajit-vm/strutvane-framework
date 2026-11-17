@@ -41,7 +41,7 @@ function toParseArgsOption(def: FlagDefinition): ParseArgsOption {
   return option
 }
 
-/** Usage line for help and errors: `sv make:model <name> [fields...] [flags]`. */
+/** Usage line for help and errors: `node strut make:model <name> [fields...] [flags]`. */
 export function usageLine(command: AnyCommand): string {
   const args = Object.entries(
     (command.args ?? {}) as Record<string, { required?: boolean; variadic?: boolean }>,

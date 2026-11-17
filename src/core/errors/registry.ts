@@ -22,7 +22,7 @@ export interface ErrorDefinition {
   readonly status: number
   /** Default English title, used when no catalog defines `errors.<code>.title`. */
   readonly title: string
-  /** Which package registered it (for `sv doctor` and duplicate errors). */
+  /** Which package registered it (for `node strut doctor` and duplicate errors). */
   readonly owner?: string
 }
 

@@ -1,5 +1,5 @@
 /**
- * `sv migrate` for a project: diff the models against the last snapshot, write a timestamped
+ * `node strut migrate` for a project: diff the models against the last snapshot, write a timestamped
  * migration (plus the new snapshot) into `database/migrations`, then apply every pending one.
  *
  * Planning is prompt-free (ADR-0009): a rename candidate stops with

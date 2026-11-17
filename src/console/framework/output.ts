@@ -4,7 +4,7 @@
  * Commands write through {@link Output} and never touch `process.stdout` or `console`. That gives
  * three guarantees:
  * - with `--json`, stdout contains exactly one JSON document (the envelope) and nothing else, so
- *   `sv routes --json | jq` always works;
+ *   `node strut routes --json | jq` always works;
  * - colors are decided once (flag, `NO_COLOR`, `FORCE_COLOR`, TTY) instead of per call site;
  * - tests capture output by passing their own streams.
  *

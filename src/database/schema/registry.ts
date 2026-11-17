@@ -102,7 +102,7 @@ const infoCache = new Map<string, TableInfo>()
 
 /**
  * Hand the ORM the schema snapshot. The generated `.strutvane/schema.ts` calls this at boot.
- * Registering again (watch mode after `sv migrate`) replaces the snapshot and clears caches.
+ * Registering again (watch mode after `node strut migrate`) replaces the snapshot and clears caches.
  *
  * @example
  * registerSchema(snapshot)
@@ -127,7 +127,7 @@ export function tableInfo(table: string): TableInfo {
     const hint =
       snapshot === undefined
         ? 'No schema is registered yet: call registerSchema(snapshot) at boot.'
-        : 'Did you create it in a migration and run `sv migrate`?'
+        : 'Did you create it in a migration and run `node strut migrate`?'
     throw new OrmUsageError(
       'unknown_table',
       `The table "${table}" is not in the schema snapshot. ${hint}`,
@@ -170,7 +170,7 @@ export function tableState(table: string): TableState {
   if (state === undefined) {
     throw new OrmUsageError(
       'unknown_table',
-      `The table "${table}" is not in the schema snapshot. Did you create it in a migration and run \`sv migrate\`?`,
+      `The table "${table}" is not in the schema snapshot. Did you create it in a migration and run \`node strut migrate\`?`,
     )
   }
   return state

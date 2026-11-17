@@ -1,5 +1,5 @@
 /**
- * The installer protocol: how `sv add <package>` sets a package up completely, with config
+ * The installer protocol: how `node strut add <package>` sets a package up completely, with config
  * files, `.env` + `.env.example` keys, migrations, routes and UI screens.
  *
  * `@strutvane/framework/devkit` provides `defineInstaller()` and the real implementations of the context

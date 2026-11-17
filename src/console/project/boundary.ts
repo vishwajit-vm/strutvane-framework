@@ -80,7 +80,7 @@ export function isOwnedByCurrentUser(dir: string, facts: BoundaryFacts): boolean
 /**
  * Packages whose presence in dependencies or devDependencies marks a project: the framework, which
  * ships the CLI, and `@strutvane/cli`, so projects created before the consolidation are still
- * found (and `sv doctor` can then tell them to remove it).
+ * found (and `node strut doctor` can then tell them to remove it).
  */
 const CLI_PACKAGES: readonly string[] = ['@strutvane/framework', '@strutvane/cli']
 

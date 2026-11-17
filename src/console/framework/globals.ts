@@ -2,7 +2,7 @@
  * Universal flags (docs/09 §1.3) and the early scan of the command line.
  *
  * The command name has to be found before its flags are known, but global flags may appear
- * anywhere (`sv --json routes`, `sv routes --json`). {@link scanCommandLine} therefore splits the
+ * anywhere (`node strut --json routes`, `node strut routes --json`). {@link scanCommandLine} therefore splits the
  * line into the leading command words and everything else, skipping over the values of global
  * string flags (`--cwd ./app`) so they are never mistaken for a command.
  *

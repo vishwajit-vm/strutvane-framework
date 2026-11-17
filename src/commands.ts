@@ -247,7 +247,7 @@ function codeOf(error: unknown): string | undefined {
 }
 
 /**
- * The seeder files `sv db:seed` should warn about: when `DatabaseSeeder` ran nothing besides
+ * The seeder files `node strut db:seed` should warn about: when `DatabaseSeeder` ran nothing besides
  * itself while other seeder files exist, every one of them (it ran "successfully" and seeded no
  * rows, which looks like a broken seeder rather than an unregistered one). Empty otherwise.
  */
@@ -306,7 +306,7 @@ const seedCommand: ContributedCommand = {
               message: `Tenant-scoped models (${registry.all
                 .filter((m) => m.options.tenant)
                 .map((m) => m.name)
-                .join(', ')}) need a tenant: run sv db:seed --tenant <tenant id>.`,
+                .join(', ')}) need a tenant: run node strut db:seed --tenant <tenant id>.`,
             },
           ])
         throw error
@@ -323,7 +323,7 @@ const seedCommand: ContributedCommand = {
               .map((u) => `await call(${u.name})`)
               .join(
                 '; ',
-              )} (sv make:model does this for new models), or run one with sv db:seed --class ${unregistered[0]?.name ?? ''}.`,
+              )} (node strut make:model does this for new models), or run one with node strut db:seed --class ${unregistered[0]?.name ?? ''}.`,
           )
         }
       }
@@ -398,7 +398,7 @@ const devCommand: ContributedCommand = {
 
 /**
  * The project's Vite CLI script, when the project has a `vite.config.*` and `vite` installed
- * (resolved from the project root, the same rule `sv dev` uses; never this package's).
+ * (resolved from the project root, the same rule `node strut dev` uses; never this package's).
  */
 export async function projectViteBin(root: string): Promise<string | undefined> {
   if (findViteConfig(root) === undefined) return undefined

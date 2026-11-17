@@ -2,7 +2,7 @@
  * The CLI's own name and version.
  *
  * Read from `package.json` at runtime instead of being inlined at build time, so the version shown
- * by `sv --version`, written into generated headers and compared by the launcher is always the one
+ * by `node strut --version`, written into generated headers and compared by the launcher is always the one
  * npm actually installed. The manifest is the nearest `package.json` above this module (see
  * `ownManifest`), which is right from `src/console/` (tests, type stripping) and from any `dist/`
  * chunk (published build) alike.

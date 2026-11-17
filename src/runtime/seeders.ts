@@ -10,11 +10,11 @@
  * ```
  *
  * In a tenancy app, tenant-scoped models are seeded for one tenant at a time:
- * `sv db:seed --tenant <id>` puts `{ tenantId }` in `scope`, which seeders pass on (without it,
- * `sv db:seed` says which flag is missing instead of failing with `tenant_required`).
+ * `node strut db:seed --tenant <id>` puts `{ tenantId }` in `scope`, which seeders pass on (without it,
+ * `node strut db:seed` says which flag is missing instead of failing with `tenant_required`).
  *
- * `sv db:seed` runs `database/seeders/database.seeder.ts`, which calls the others in order
- * (`sv make:model` registers each new model's seeder there, after the seeders of the models it
+ * `node strut db:seed` runs `database/seeders/database.seeder.ts`, which calls the others in order
+ * (`node strut make:model` registers each new model's seeder there, after the seeders of the models it
  * belongs to):
  *
  * ```ts
@@ -27,11 +27,11 @@
  * })
  * ```
  *
- * `sv db:seed --class InvoiceSeeder` runs one seeder by name. When `DatabaseSeeder` runs nothing
- * while other seeder files exist, `sv db:seed` warns and names them.
+ * `node strut db:seed --class InvoiceSeeder` runs one seeder by name. When `DatabaseSeeder` runs nothing
+ * while other seeder files exist, `node strut db:seed` warns and names them.
  *
  * The string form `defineSeeder('Name', async (ctx) => …)` is the documented shape everywhere
- * (starter, `sv make:*`, docs); the object form `defineSeeder({ name?, run })` stays supported.
+ * (starter, `node strut make:*`, docs); the object form `defineSeeder({ name?, run })` stays supported.
  *
  * @module
  */
@@ -56,7 +56,7 @@ export interface SeedFactory {
 export interface SeederContext {
   readonly db: Database
   /**
-   * The tenant this run seeds (`sv db:seed --tenant <id>`), or `undefined`. Tenant-scoped models
+   * The tenant this run seeds (`node strut db:seed --tenant <id>`), or `undefined`. Tenant-scoped models
    * refuse to be written without one (`tenant_required`).
    */
   readonly tenantId: string | undefined
@@ -153,7 +153,7 @@ export interface MigrationDefinition {
 }
 
 /**
- * Declare a hand-written migration (`database/migrations/<timestamp>_<name>.ts`). `sv migrate`
+ * Declare a hand-written migration (`database/migrations/<timestamp>_<name>.ts`). `node strut migrate`
  * runs `up({ db })` in timestamp order inside its transaction. `down()` is kept for the planned
  * rollback command and is not run today.
  */
@@ -189,7 +189,7 @@ export async function runSeeder(
     readonly db: Database
     readonly registry: ModelRegistry
     readonly ids: () => string
-    /** Seed tenant-scoped models for this tenant (`sv db:seed --tenant <id>`). */
+    /** Seed tenant-scoped models for this tenant (`node strut db:seed --tenant <id>`). */
     readonly tenantId?: string
   },
 ): Promise<string[]> {

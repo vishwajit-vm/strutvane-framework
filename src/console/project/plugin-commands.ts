@@ -100,7 +100,7 @@ export interface MergedCommands {
 /**
  * Merge built-ins with contributed commands. A contributed command replaces a built-in
  * placeholder (that is what placeholders are for); it never replaces a real built-in, so a plugin
- * cannot hijack `sv add` or `sv upgrade`. Between two plugins, the first (by package name) wins.
+ * cannot hijack `node strut add` or `node strut upgrade`. Between two plugins, the first (by package name) wins.
  */
 export function mergeCommands(
   builtins: readonly AnyCommand[],

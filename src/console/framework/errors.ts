@@ -100,7 +100,7 @@ const DEVKIT_EXIT: Readonly<Record<string, ExitCode>> = {
 }
 
 /**
- * The framework's `ServerListenError` codes (`sv dev` / `sv start` could not bind its address).
+ * The framework's `ServerListenError` codes (`node strut dev` / `node strut start` could not bind its address).
  * A taken or forbidden port is the user's configuration, not a bug: exit with the config code and
  * name the host, the port and how to change them. Matched by `code` plus the documented `host` and
  * `port` fields, never with `instanceof` (the framework is loaded from the project).

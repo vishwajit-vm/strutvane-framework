@@ -59,7 +59,7 @@ export interface HookRegistry<M extends Record<string, unknown>> {
   ): () => void
   /** Run every handler for `hook` in order and return the final payload. */
   run<K extends keyof M & string>(hook: K, payload: M[K]): Promise<M[K]>
-  /** Handler names for a hook, in execution order (for `sv doctor` and debugging). */
+  /** Handler names for a hook, in execution order (for `node strut doctor` and debugging). */
   order<K extends keyof M & string>(hook: K): readonly string[]
 }
 

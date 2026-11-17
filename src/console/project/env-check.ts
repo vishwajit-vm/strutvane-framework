@@ -1,5 +1,5 @@
 /**
- * The `.env` ↔ `.env.example` comparison behind `sv env:check` and `sv doctor`.
+ * The `.env` ↔ `.env.example` comparison behind `node strut env:check` and `node strut doctor`.
  *
  * `.env.example` is the documented contract of every variable the app reads (each installer keeps
  * it complete), and `.env` is the local, never-committed copy. Problems:

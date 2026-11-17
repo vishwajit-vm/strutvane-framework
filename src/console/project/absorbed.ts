@@ -10,7 +10,7 @@
  * - `@strutvane/cli` declares `strutvane-cli` and the `strutvane` launcher declares `strutvane`;
  *   the framework declares both. Which one `npm run` executes then depends on install order.
  *
- * `sv doctor` fails on any of them so the app fails closed with a fix, not at run time.
+ * `node strut doctor` fails on any of them so the app fails closed with a fix, not at run time.
  *
  * @module
  */

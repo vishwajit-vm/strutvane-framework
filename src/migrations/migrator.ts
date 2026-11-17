@@ -195,7 +195,7 @@ export async function introspectColumns(db: Database): Promise<Map<string, Set<s
 /**
  * Compare the models with the live schema (tables and columns). An empty list means the
  * database has exactly the columns the models describe. Catches hand edits and forgotten
- * migrations; used by `sv migrate:status` and `/ready`-style checks.
+ * migrations; used by `node strut migrate:status` and `/ready`-style checks.
  */
 export async function detectSchemaDrift(
   db: Database,

@@ -5,7 +5,7 @@
  * - `--diff` prints a unified diff; without `--dry-run` it asks before writing;
  * - existing files are never overwritten unless `--force`, and files tracked in
  *   `.strutvane/lock.json` (ejected, owned code) are never overwritten at all: they are merged by
- *   `sv upgrade`;
+ *   `node strut upgrade`;
  * - a second run with the same input changes nothing (identical files are not changes), so
  *   generators are idempotent;
  * - after writing, the registry is rebuilt so new models, resources and policies are wired up
