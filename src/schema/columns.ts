@@ -203,6 +203,20 @@ export interface SchemaSnapshot {
  * @example
  * replayMigrations(loaded, EMPTY_SCHEMA)
  */
+/**
+ * The largest sizes a column may declare: what every supported engine can store (MySQL caps
+ * DECIMAL at 65 digits and VARCHAR at 65,535 bytes). Checked by the schema builder and again on
+ * operations that come back from the replay sandbox, so a crafted value can't make DDL
+ * generation allocate without bound.
+ *
+ * @example
+ * COLUMN_LIMITS.precision // 65
+ */
+export const COLUMN_LIMITS: { readonly length: number; readonly precision: number } = {
+  length: 65_535,
+  precision: 65,
+}
+
 export const EMPTY_SCHEMA: SchemaState = Object.freeze({ tables: Object.freeze([]) })
 
 /**

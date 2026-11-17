@@ -13,7 +13,13 @@
  */
 
 import { pluralize } from '../core/inflection.ts'
-import type { ColumnDef, ColumnKind, DefaultValue, ReferentialAction } from './columns.ts'
+import {
+  COLUMN_LIMITS,
+  type ColumnDef,
+  type ColumnKind,
+  type DefaultValue,
+  type ReferentialAction,
+} from './columns.ts'
 import { assertIdentifier, SchemaError } from './errors.ts'
 import type { TableAction } from './operations.ts'
 
@@ -538,11 +544,19 @@ export class Blueprint {
   }
 }
 
-function assertPositiveInteger(table: string, column: string, what: string, value: number): void {
-  if (Number.isInteger(value) && value > 0) return
+function assertPositiveInteger(
+  table: string,
+  column: string,
+  what: 'length' | 'precision',
+  value: number,
+): void {
+  const limit = COLUMN_LIMITS[what]
+  if (Number.isInteger(value) && value > 0 && value <= limit) return
   throw new SchemaError(
     'invalid_column',
-    `Column "${table}.${column}" has ${what} ${value}, which isn't a positive whole number.`,
-    `Pass a ${what} such as 255.`,
+    `Column "${table}.${column}" has ${what} ${value}, which isn't a whole number from 1 to ${limit}.`,
+    what === 'length'
+      ? `Pass a length such as 255, or use t.text() for longer text.`
+      : `Pass a precision from 1 to ${limit}, for example t.decimal('price', 12, 2).`,
   )
 }

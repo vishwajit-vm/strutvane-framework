@@ -123,7 +123,57 @@ function applyTableActions(
   assertSlugSourcesExist(requireTable(current, name))
   // Also checked at the end: t.tenant() and the (tenant, id) key may come after a foreign key.
   assertTenancy(current, requireTable(current, name))
+  assertTenantRewrites(current, requireTable(current, name), actions)
   return current
+}
+
+/**
+ * The rewrites the recorder makes on a tenant table, required again here, so operations that did
+ * not come from the recorder (the replay sandbox's child answers with plain JSON) can't skip them
+ * (F-05, F-14): in this batch, every unique index includes the tenant column, every foreign key
+ * to a tenant table is composite, and afterwards the `(tenant, key)` unique index exists.
+ */
+function assertTenantRewrites(
+  state: SchemaState,
+  table: TableState,
+  actions: readonly TableAction[],
+): void {
+  const tenant = tenantColumnOf(table)?.name
+  if (tenant === undefined) return
+  const refuse = (what: string): never => {
+    throw new SchemaError(
+      'invalid_tenancy',
+      `The tenant table "${table.name}" ${what}.`,
+      'Tenant tables are shaped by the schema builder (tenant-prefixed unique indexes, composite foreign keys): use it instead of changing operations by hand.',
+    )
+  }
+  for (const action of actions) {
+    if (action.type === 'addIndex' && action.index.unique && !action.index.columns.includes(tenant))
+      refuse(`has the unique index "${action.index.name}" without its tenant column "${tenant}"`)
+    if (action.type === 'addColumn') {
+      const reference = action.column.references
+      if (reference === undefined || action.column.tenant === true) continue
+      const parent = reference.table === table.name ? table : findTable(state, reference.table)
+      if (
+        parent !== undefined &&
+        tenantColumnOf(parent) !== undefined &&
+        reference.tenant === undefined
+      )
+        refuse(
+          `has a plain foreign key "${action.column.name}" to the tenant table "${reference.table}"`,
+        )
+    }
+  }
+  const key = table.columns.find((column) => column.kind === 'id' || column.primary === true)?.name
+  if (key === undefined) return
+  const keyed = table.indexes.some(
+    (index) =>
+      index.unique &&
+      index.columns.length === 2 &&
+      index.columns[0] === tenant &&
+      index.columns[1] === key,
+  )
+  if (!keyed) refuse(`has no unique (${tenant}, ${key}) index`)
 }
 
 /**

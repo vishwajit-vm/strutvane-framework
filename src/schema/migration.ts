@@ -103,7 +103,7 @@ export function recordOperations(
   } finally {
     recorder.seal()
   }
-  return recorder.operations
+  return recorder.recorded()
 }
 
 /** Migrations are recorded synchronously: a returned promise means operations would be lost. */
@@ -142,7 +142,8 @@ interface TrackedTable {
  * the tenancy rules.
  */
 class SchemaRecorder implements SchemaBuilder {
-  readonly operations: SchemaOperation[] = []
+  /** Private: a migration holds this object, and must not be able to push operations directly. */
+  readonly #operations: SchemaOperation[] = []
   readonly #state: SchemaState
   /**
    * Tables touched so far, tracked lazily from the state (a replay records every migration twice,
@@ -172,6 +173,14 @@ class SchemaRecorder implements SchemaBuilder {
     return tracked
   }
 
+  /**
+   * A deep copy of what was recorded, so nothing the migration still holds (an array it passed in,
+   * a timer that fires later) can change the operations after the fact.
+   */
+  recorded(): SchemaOperation[] {
+    return structuredClone(this.#operations)
+  }
+
   /** Stop recording: a call that arrives after up()/down() returned is a bug, never a silent no-op. */
   seal(): void {
     this.#sealed = true
@@ -199,7 +208,7 @@ class SchemaRecorder implements SchemaBuilder {
       global: clean?.global === true,
     }
     const actions = this.#withTenancy(table, tracked, runBlueprint(table, define))
-    this.operations.push({
+    this.#operations.push({
       type: 'createTable',
       table,
       actions,
@@ -219,26 +228,26 @@ class SchemaRecorder implements SchemaBuilder {
       global: false,
     }
     const actions = this.#withTenancy(table, tracked, runBlueprint(table, define))
-    this.operations.push({ type: 'alterTable', table, actions })
+    this.#operations.push({ type: 'alterTable', table, actions })
     if (existing !== undefined) this.#tables.set(table, tracked)
   }
 
   drop(table: string): void {
     this.#assertOpen()
-    this.operations.push({ type: 'dropTable', table, ifExists: false })
+    this.#operations.push({ type: 'dropTable', table, ifExists: false })
     this.#tables.set(table, null)
   }
 
   dropIfExists(table: string): void {
     this.#assertOpen()
-    this.operations.push({ type: 'dropTable', table, ifExists: true })
+    this.#operations.push({ type: 'dropTable', table, ifExists: true })
     this.#tables.set(table, null)
   }
 
   rename(from: string, to: string): void {
     this.#assertOpen()
     assertIdentifier(to, 'table')
-    this.operations.push({ type: 'renameTable', from, to })
+    this.#operations.push({ type: 'renameTable', from, to })
     const tracked = this.#get(from)
     this.#tables.set(from, null)
     if (tracked !== undefined) this.#tables.set(to, tracked)

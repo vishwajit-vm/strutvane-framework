@@ -24,6 +24,7 @@ import type {
   SchemaState,
   TableState,
 } from './columns.ts'
+import { COLUMN_LIMITS } from './columns.ts'
 import { assertIdentifier, SchemaError } from './errors.ts'
 import type { CreateTableOptions, SchemaOperation, TableAction } from './operations.ts'
 
@@ -92,7 +93,10 @@ export function parseSchemaSnapshot(json: unknown): SchemaSnapshot {
  */
 export function parseOperations(json: unknown, migration: string): SchemaOperation[] {
   return reported(
-    () => list(json, 'operations').map((op, index) => readOperation(op, `operations[${index}]`)),
+    () =>
+      bounded(json, 'operations', MAX_OPERATIONS).map((op, index) =>
+        readOperation(op, `operations[${index}]`),
+      ),
     (where, problem) => {
       const error = new SchemaError(
         'invalid_migration',
@@ -161,7 +165,7 @@ function readOperation(value: unknown, where: string): SchemaOperation {
 }
 
 function readActions(value: unknown, where: string): TableAction[] {
-  return list(value, where).map((entry, index): TableAction => {
+  return bounded(value, where, MAX_ACTIONS).map((entry, index): TableAction => {
     const at = `${where}[${index}]`
     const raw = record(entry, at)
     switch (raw['type']) {
@@ -225,9 +229,11 @@ function parseColumn(value: unknown, where: string): ColumnDef {
     }
     out.default = fallback
   }
-  for (const key of ['length', 'precision', 'scale'] as const) {
-    if (key in raw) out[key] = count(raw[key], `${where}.${key}`)
-  }
+  if ('length' in raw) out.length = count(raw['length'], `${where}.length`, 1, COLUMN_LIMITS.length)
+  if ('precision' in raw)
+    out.precision = count(raw['precision'], `${where}.precision`, 1, COLUMN_LIMITS.precision)
+  if ('scale' in raw)
+    out.scale = count(raw['scale'], `${where}.scale`, 0, out.precision ?? COLUMN_LIMITS.precision)
   if ('values' in raw) {
     out.values = list(raw['values'], `${where}.values`).map((entry, index) =>
       text(entry, `${where}.values[${index}]`),
@@ -319,11 +325,21 @@ function text(value: unknown, where: string): string {
   return value
 }
 
-function count(value: unknown, where: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    fail(where, 'must be a whole number')
+function count(value: unknown, where: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+    fail(where, `must be a whole number from ${min} to ${max}`)
   }
   return value
+}
+
+/** The most operations one migration may record, and actions one operation may hold. */
+const MAX_OPERATIONS = 1_000
+const MAX_ACTIONS = 1_000
+
+function bounded(value: unknown, where: string, max: number): readonly unknown[] {
+  const items = list(value, where)
+  if (items.length > max) fail(where, `has more than ${max} entries`)
+  return items
 }
 
 /** A shape problem, turned into the right SchemaError by {@link reported}. */
