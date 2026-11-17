@@ -24,7 +24,7 @@ import { Application } from '../../src/foundation/application.ts'
 import { type ConfigFiles, defineConfig } from '../../src/foundation/config.ts'
 import { APP_ENVIRONMENTS } from '../../src/foundation/env.ts'
 import type { MiddlewareConfig } from '../../src/http/app/middleware.ts'
-import { defineRoutes, Route } from '../../src/routing/route.ts'
+import { defineRoutes, Route, type RouteList, type RoutesSource } from '../../src/routing/route.ts'
 import { MemoryLogger } from '../app/helpers.ts'
 import { type CliResult, cli } from '../console/helpers.ts'
 
@@ -99,7 +99,7 @@ export const testConfig: ConfigFiles = {
 }
 
 /** routes/web.ts: a page, a form post, a webhook that opts out of CSRF and a developer tool. */
-export const webRoutes = defineRoutes([
+export const webRoutes: RouteList<unknown> = defineRoutes([
   Route.get('/', (ctx) => ctx.json({ home: true })).name('home'),
   Route.get('/posts', (ctx) => ctx.json({ posts: [] })).name('posts.index'),
   Route.post('/posts', (ctx) => ctx.json({ created: true })).name('posts.store'),
@@ -114,7 +114,8 @@ export interface AppOptions {
   readonly env?: Readonly<Record<string, string>>
   readonly config?: ConfigFiles
   readonly middleware?: (middleware: MiddlewareConfig) => void
-  readonly web?: typeof webRoutes
+  /** routes/web.ts; default {@link webRoutes}. Any routes list or callback. */
+  readonly web?: RoutesSource
 }
 
 /** The in-process test app on `base`, with a test clock and a memory logger. */
