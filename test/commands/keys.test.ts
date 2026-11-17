@@ -18,7 +18,7 @@ import { APP_KEY, appFolder, buildApp, cleanupFolders, newKey, strut } from './h
 afterEach(cleanupFolders)
 
 const envOf = (base: string, name = '.env'): string => readFileSync(join(base, name), 'utf8')
-const valueOf = (text: string, key: string): string | undefined =>
+const envValue = (text: string, key: string): string | undefined =>
   new RegExp(`^${key}=(.*)$`, 'm').exec(text)?.[1]
 
 const signedRoutes = defineRoutes([
@@ -48,9 +48,9 @@ describe('key:rotate', () => {
       configCacheRemoved: true,
     })
     const text = envOf(base)
-    const current = valueOf(text, 'APP_KEY') ?? ''
+    const current = envValue(text, 'APP_KEY') ?? ''
     expect(current).not.toBe(APP_KEY)
-    expect(valueOf(text, 'APP_PREVIOUS_KEYS')).toBe(APP_KEY)
+    expect(envValue(text, 'APP_PREVIOUS_KEYS')).toBe(APP_KEY)
     expect(text).toContain('# keep me\nAPP_NAME="Blog"\n')
     expect(rotated.stdout).not.toContain(current)
     expect(existsSync(join(base, 'bootstrap', 'cache', 'config.json'))).toBe(false)
@@ -76,7 +76,7 @@ describe('key:rotate', () => {
 
     // A second rotation keeps both earlier keys, newest first, without duplicates.
     await strut(['key:rotate'], { cwd: base })
-    expect(valueOf(envOf(base), 'APP_PREVIOUS_KEYS')).toBe(`${current},${APP_KEY}`)
+    expect(envValue(envOf(base), 'APP_PREVIOUS_KEYS')).toBe(`${current},${APP_KEY}`)
   })
 
   it('refuses without a .env or without a valid key, and needs confirmation in production', async () => {
@@ -94,7 +94,7 @@ describe('key:rotate', () => {
       env: { APP_ENV: undefined },
     })
     expect(guarded.json().error?.code).toBe('production_guard')
-    expect(valueOf(envOf(base), 'APP_KEY')).toBe(APP_KEY)
+    expect(envValue(envOf(base), 'APP_KEY')).toBe(APP_KEY)
     const forced = await strut(['key:rotate', '--force', '--i-understand'], {
       cwd: base,
       env: { APP_ENV: undefined },
