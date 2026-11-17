@@ -122,6 +122,13 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   readonly #model: ModelRuntime
   readonly #alias: string
   #where: WhereNode[] = []
+  /**
+   * Conditions the framework adds that the developer's own conditions must never widen: a
+   * relation's parent key, its correlation in `whereHas`/`withCount`, eager-load keys and the
+   * cursor seek. They are AND-ed outside the developer's parentheses, like the scopes, so
+   * `user.posts().where(a).orWhere(b)` stays `author_id = ? AND (a OR b)`.
+   */
+  #fixed: WhereNode[] = []
   #orderBy: OrderNode[] = []
   #joins: JoinNode[] = []
   #extraSelect: SelectItem[] = []
@@ -793,7 +800,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
     query.#orderBy = orders
     if (cursor !== undefined) {
       const values = decodeCursor(cursor, fingerprint, orders.length)
-      query.#where.push(this.#seekCondition(orders, values))
+      query.#fixed.push(this.#seekCondition(orders, values))
     }
     const rows = await query.limit(perPage + 1).get()
     const hasMore = rows.length > perPage
@@ -829,6 +836,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   clone(): Builder<TClass, TResult> {
     const copy = new Builder<TClass, TResult>(this.#model, this.#alias)
     copy.#where = [...this.#where]
+    copy.#fixed = [...this.#fixed]
     copy.#orderBy = [...this.#orderBy]
     copy.#joins = [...this.#joins]
     copy.#extraSelect = [...this.#extraSelect]
@@ -846,9 +854,9 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   // For relations (internal API: not part of what app code is meant to call)
   // -------------------------------------------------------------------------------------------
 
-  /** @internal Add a prepared condition node. */
+  /** @internal Add a prepared condition node that the query's own conditions can't OR away. */
   addCondition(node: WhereNode): void {
-    this.#where.push(node)
+    this.#fixed.push(node)
   }
 
   /** @internal Add an inner join (belongsToMany's pivot table). */
@@ -1064,9 +1072,10 @@ export class Builder<TClass extends AnyModelClass, TResult> {
 
   #ast(select?: readonly SelectItem[]): SelectAst {
     const scopes = this.#scopeConditions()
-    // The developer's conditions go in parentheses before scopes are AND-ed on (see the header).
+    // The developer's conditions go in parentheses before the framework's own conditions and the
+    // scopes are AND-ed on (see the header).
     const own: WhereNode[] =
-      this.#where.length > 0 && scopes.length > 0
+      this.#where.length > 0 && scopes.length + this.#fixed.length > 0
         ? [{ kind: 'group', conjunction: 'and', nodes: this.#where }]
         : this.#where
     const counts: SelectItem[] = this.#counts.map(({ name, constrain }) => ({
@@ -1081,7 +1090,7 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       alias: this.#alias,
       select: select ?? [{ kind: 'all', alias: this.#alias }, ...this.#extraSelect, ...counts],
       joins: this.#joins,
-      where: [...own, ...scopes],
+      where: [...this.#fixed, ...own, ...scopes],
       orderBy: this.#orderBy,
       ...(this.#limit === undefined ? {} : { limit: this.#limit }),
       ...(this.#offset === undefined ? {} : { offset: this.#offset }),

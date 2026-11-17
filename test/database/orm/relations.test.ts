@@ -152,6 +152,56 @@ function suite(engine: Engine): void {
     expect(User.query().whereHas('posts').toSql().sql).toMatch(/EXISTS \(SELECT/)
   })
 
+  test('orWhere never widens a relation past its parent (every relation path)', async () => {
+    await seedBlog()
+    const ada = await User.query().where('name', 'Ada').firstOrFail()
+    const grace = await User.query().where('name', 'Grace').firstOrFail()
+    const either = (query: ReturnType<typeof ada.posts>) =>
+      query.where('title', 'nothing').orWhere('status', 'draft')
+    // hasMany query: only Ada's drafts, never Grace's or Linus's.
+    expect((await either(ada.posts()).get()).map((post) => post.title)).toEqual(['Ada two'])
+    // belongsTo query.
+    const graceOne = await Post.query().where('title', 'Grace one').firstOrFail()
+    const authors = await graceOne.author().where('name', 'nothing').orWhere('name', 'Ada').get()
+    expect(authors).toEqual([])
+    // belongsToMany query: only this post's tags.
+    const tags = await graceOne.tags().where('name', 'nothing').orWhere('name', 'news').get()
+    expect(tags.map((tag) => tag.name)).toEqual(['news'])
+    const untagged = await makePost(grace, 'Grace untagged', 'draft')
+    expect(await untagged.tags().where('name', 'x').orWhere('name', 'news').count()).toBe(0)
+    // Constrained eager loading: each user still gets only their own posts.
+    const users = await User.query()
+      .with({ posts: (query) => query.where('title', 'nothing').orWhere('status', 'draft') })
+      .orderBy('name')
+      .get()
+    expect(users.map((user) => user.posts.map((post) => post.title).sort())).toEqual([
+      ['Ada two'],
+      ['Grace two', 'Grace untagged'],
+      ['Linus two'],
+    ])
+    // whereHas: the correlation survives the OR (withCount builds the same correlated subquery).
+    const nobody = await makeUser('Nobody')
+    const having = await User.query()
+      .whereHas('posts', (query) => query.where('title', 'nothing').orWhere('status', 'draft'))
+      .orderBy('name')
+      .get()
+    expect(having.map((user) => user.name)).toEqual(['Ada', 'Grace', 'Linus'])
+    expect(having.map((user) => user.id)).not.toContain(nobody.id)
+    // A cursor page stays a seek even when the query ends in orWhere.
+    const page = await Post.query()
+      .where('status', 'published')
+      .orWhere('status', 'draft')
+      .orderBy('id')
+      .cursorPaginate(2)
+    const next = await Post.query()
+      .where('status', 'published')
+      .orWhere('status', 'draft')
+      .orderBy('id')
+      .cursorPaginate(2, page.nextCursor ?? undefined)
+    const firstIds = page.data.map((post) => post.id)
+    for (const post of next.data) expect(firstIds).not.toContain(post.id)
+  })
+
   test('relation queries: user.posts() is a scoped query; create sets the foreign key', async () => {
     await seedBlog()
     const ada = await User.query().where('name', 'Ada').firstOrFail()
