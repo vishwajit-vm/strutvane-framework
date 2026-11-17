@@ -9,7 +9,7 @@
  *   `x-api-key`, `*token*`, `*secret*`, `*password*`, `*signature*`, `*csrf*`, `*session*` …),
  *   plus `key` anywhere and the OAuth words `code` and `state`;
  * - header values that *look* like credentials whatever their name (`Bearer …`, `Basic …`, JWTs);
- * - passwords in URLs (`postgres://user:secret@db`) and JWTs inside the error message.
+ * - passwords in URLs (`postgres://user:secret@db`) and JWTs inside the error message. // trufflehog:ignore
  *
  * What is never included: the request body (it is not read at all), the host's environment
  * variables, and source files outside the app (see `code-frame.ts`). Long values are cut, so a
@@ -197,10 +197,10 @@ export function redactHeaders(headers: Headers): [string, string][] {
 
 /**
  * Mask credentials that sometimes end up inside error messages: URL passwords
- * (`postgres://app:secret@db`) and JWTs.
+ * (`postgres://app:secret@db`) and JWTs. // trufflehog:ignore
  *
  * @example
- * redactText('connect postgres://app:hunter2@db failed') // 'connect postgres://app:[REDACTED]@db failed'
+ * redactText('connect postgres://app:hunter2@db failed') // 'connect postgres://app:[REDACTED]@db failed' // trufflehog:ignore
  */
 export function redactText(text: string): string {
   return text.replace(URL_PASSWORD, `$1:${REDACTED}@`).replace(JWT, REDACTED)

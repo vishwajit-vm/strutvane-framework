@@ -55,12 +55,11 @@ describe('databaseSettings', () => {
   })
 
   test('DB_URL names the engine when DB_CONNECTION is unset; a mismatch is refused', () => {
-    expect(databaseSettings({ DB_URL: 'postgres://u:p@db:5432/app' }, root).connection).toBe(
-      'pgsql',
-    )
-    expect(problems({ DB_CONNECTION: 'mysql', DB_URL: 'postgres://u:p@db/app' })).toEqual([
-      'DB_URL',
-    ])
+    // Fake credentials: the secrets scanner can't reach host `db`, so it flags them as unverified.
+    const pgWithPort = 'postgres://u:p@db:5432/app' // trufflehog:ignore
+    const pg = 'postgres://u:p@db/app' // trufflehog:ignore
+    expect(databaseSettings({ DB_URL: pgWithPort }, root).connection).toBe('pgsql')
+    expect(problems({ DB_CONNECTION: 'mysql', DB_URL: pg })).toEqual(['DB_URL'])
     expect(problems({ DB_URL: 'not a url' })).toEqual(['DB_URL'])
     expect(problems({ DB_CONNECTION: 'mysql', DB_URL: 'redis://x' })).toEqual(['DB_URL'])
   })

@@ -238,7 +238,7 @@ describe('safeFetch refuses private, loopback, link-local and metadata targets',
       'file:///etc/passwd',
       'gopher://127.0.0.1/',
       'ftp://example.com/',
-      `http://user:pass@service.test:${port}/`,
+      `http://user:pass@service.test:${port}/`, // trufflehog:ignore
       'not a url',
     ]) {
       expect((await refused(url)).code, url).toBe('invalid_url')

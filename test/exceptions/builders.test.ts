@@ -215,9 +215,9 @@ describe('redaction', () => {
   })
 
   it('masks URL passwords and JWTs inside messages', () => {
-    expect(redactText('connect postgres://app:hunter2@db:5432/x failed')).toBe(
-      'connect postgres://app:[REDACTED]@db:5432/x failed',
-    )
+    // Fake credential for the redaction test (the secrets scanner can't reach host `db`).
+    const message = 'connect postgres://app:hunter2@db:5432/x failed' // trufflehog:ignore
+    expect(redactText(message)).toBe('connect postgres://app:[REDACTED]@db:5432/x failed')
     expect(redactText('token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI3In0.abc expired')).toBe(
       'token [REDACTED] expired',
     )
