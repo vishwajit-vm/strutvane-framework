@@ -1,5 +1,5 @@
 /**
- * The web UI in `sv dev`: the project's own Vite, mounted in middleware mode on the app's HTTP
+ * The web UI in `node strut dev`: the project's own Vite, mounted in middleware mode on the app's HTTP
  * server, so one port serves the API and the UI with hot reload (docs/05 §1). The UI's fetches to
  * `/api/v1` and auth's `trustedOrigins: [APP_URL]` then work without a proxy or CORS.
  *

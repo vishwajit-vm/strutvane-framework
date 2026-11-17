@@ -19,13 +19,13 @@ import {
 /** English messages for every CLI error code. */
 export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.error.unknown_command': 'Unknown command "{name}".',
-  'cli.hint.unknown_command': 'Run `sv help` to see every command.',
+  'cli.hint.unknown_command': 'Run `node strut help` to see every command.',
   'cli.error.ambiguous_command': '"{name}" matches several commands: {matches}.',
   'cli.hint.ambiguous_command': 'Type more of the command name.',
   'cli.error.unknown_flag': '{detail}',
-  'cli.hint.unknown_flag': 'Run `sv help {command}` to see its flags.',
+  'cli.hint.unknown_flag': 'Run `node strut help {command}` to see its flags.',
   'cli.error.invalid_flag_value': '{detail}',
-  'cli.hint.invalid_flag_value': 'Run `sv help {command}` to see its flags.',
+  'cli.hint.invalid_flag_value': 'Run `node strut help {command}` to see its flags.',
   'cli.error.invalid_choice': '--{flag} must be one of: {choices} (got "{value}").',
   'cli.error.missing_argument': 'Missing required argument <{arg}>.',
   'cli.hint.missing_argument': 'Usage: {usage}',
@@ -44,22 +44,23 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
     'Field syntax: name:type[:modifier]…, arguments in [brackets] or (parentheses), e.g. status:enum[draft,paid]:default[draft]. On Windows use brackets: parentheses break inside the .cmd shims of npm and npx.',
   'cli.error.invalid_name': '{detail}',
   'cli.error.model_not_found': 'Model "{model}" does not exist ({path} is missing).',
-  'cli.hint.model_not_found': 'Create it first: sv make:model {model}',
+  'cli.hint.model_not_found': 'Create it first: node strut make:model {model}',
   'cli.error.owned_file': '{path} is tracked in .strutvane/lock.json and is never overwritten.',
-  'cli.hint.owned_file': 'Use `sv upgrade` to merge template changes into owned files.',
+  'cli.hint.owned_file': 'Use `node strut upgrade` to merge template changes into owned files.',
   'cli.error.file_exists': '{detail}',
   'cli.hint.file_exists':
     'Pass --force to overwrite generated files, or --dry-run --diff to compare.',
   'cli.error.registry_errors':
     'The registry has {count, plural, one {# error} other {# errors}}; nothing was written.',
-  'cli.hint.registry_errors': 'Fix the files listed above, then run `sv registry:build` again.',
+  'cli.hint.registry_errors':
+    'Fix the files listed above, then run `node strut registry:build` again.',
   'cli.error.registry_stale': '{path} is out of date.',
-  'cli.hint.registry_stale': 'Run `sv registry:build` and commit the result.',
+  'cli.hint.registry_stale': 'Run `node strut registry:build` and commit the result.',
   'cli.error.env_problems': '{count, plural, one {# env problem} other {# env problems}} found.',
   'cli.error.env_invalid':
     'Invalid environment: {count, plural, one {# problem} other {# problems}}.',
   'cli.hint.env_invalid':
-    'Fix: set these keys in your .env file (see .env.example for every key and its meaning), then run the command again. `sv env:check` compares the two.',
+    'Fix: set these keys in your .env file (see .env.example for every key and its meaning), then run the command again. `node strut env:check` compares the two.',
   'cli.error.env_example_missing': '{path} does not exist, so there is nothing to compare with.',
   'cli.hint.env_example_missing': 'Create .env.example listing every variable the app reads.',
   'cli.error.key_exists': 'APP_KEY is already set in {path}.',
@@ -77,22 +78,22 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.error.incompatible_package':
     '{name}@{version} requires Strutvane {range}, but this CLI is {cli}.',
   'cli.hint.incompatible_package':
-    'Upgrade both together (sv upgrade), or install a matching version.',
+    'Upgrade both together (node strut upgrade), or install a matching version.',
   'cli.error.missing_compat':
     '{name}@{version} does not declare which Strutvane versions it supports (strutvane.compat), so it is not loaded.',
   'cli.hint.missing_compat':
     'Ask the plugin author to add "strutvane": { "compat": "^0.1.0" } (the supported range) to its package.json.',
   'cli.error.incompatible_plugins':
     'Unknown command "{name}". These plugins were refused as incompatible: {plugins}.',
-  'cli.hint.incompatible_plugins': 'Run `sv doctor` for details.',
-  'cli.error.framework_required': '`sv {command}` is provided by @strutvane/framework.',
-  'cli.hint.framework_required': 'Install it with: sv add framework',
+  'cli.hint.incompatible_plugins': 'Run `node strut doctor` for details.',
+  'cli.error.framework_required': '`node strut {command}` is provided by @strutvane/framework.',
+  'cli.hint.framework_required': 'Install it with: node strut add framework',
   'cli.error.framework_command_missing':
-    'The installed @strutvane/framework does not provide `sv {command}`.',
+    'The installed @strutvane/framework does not provide `node strut {command}`.',
   'cli.hint.framework_command_missing':
-    'Run `sv doctor` to see why its commands were not loaded (e.g. a version mismatch), then `sv upgrade`.',
+    'Run `node strut doctor` to see why its commands were not loaded (e.g. a version mismatch), then `node strut upgrade`.',
   'cli.error.production_guard':
-    '`sv {command}` is destructive and APP_ENV is {env}; it runs without confirmation only in local, test, testing or development.',
+    '`node strut {command}` is destructive and APP_ENV is {env}; it runs without confirmation only in local, test, testing or development.',
   'cli.hint.production_guard':
     'Set APP_ENV for this project, or pass --force --i-understand if you really mean it.',
   'cli.error.command_failed': '`{command}` failed with exit code {code}.',

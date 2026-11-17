@@ -1,5 +1,5 @@
 /**
- * `sv about`: versions of the CLI, Node and every installed Strutvane package (docs/09 §2).
+ * `node strut about`: versions of the CLI, Node and every installed Strutvane package (docs/09 §2).
  *
  * The first thing to paste into a bug report, so it works outside a project too.
  *
@@ -32,7 +32,7 @@ export const aboutCommand: AnyCommand = defineCommand({
   name: 'about',
   description: 'Show versions of the CLI, Node.js and installed Strutvane packages',
   requiresProject: false,
-  examples: ['sv about', 'sv about --json'],
+  examples: ['node strut about', 'node strut about --json'],
   run(ctx) {
     const { project, out } = ctx
     const packages: AboutPackage[] =

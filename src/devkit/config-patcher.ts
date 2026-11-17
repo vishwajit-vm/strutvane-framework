@@ -388,7 +388,7 @@ export function createConfigPatcher(
       if (!(await fs.exists(path))) {
         throw new DevkitError(
           'config_not_found',
-          `${path} not found; is this a Strutvane project? (run sv init)`,
+          `${path} not found; is this a Strutvane project? (run node strut init)`,
         )
       }
       const file = normalise(await fs.read(path))

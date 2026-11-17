@@ -1,5 +1,5 @@
 /**
- * Help text for `sv help`, `sv help <command>`, `sv <command> --help` and namespace listings.
+ * Help text for `node strut help`, `node strut help <command>`, `node strut <command> --help` and namespace listings.
  *
  * Help is generated from the same declarations the parser uses, so it can never drift from what
  * the CLI actually accepts.
@@ -35,7 +35,7 @@ function indent(lines: readonly string[]): string[] {
   return lines.map((l) => (l === '' ? '' : `  ${l}`))
 }
 
-/** A summary of one command for listings and `sv help --json`. */
+/** A summary of one command for listings and `node strut help --json`. */
 export interface CommandSummary {
   readonly name: string
   readonly description: string
@@ -57,7 +57,7 @@ export function summarize(
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }
 
-/** `sv help`: every command, grouped by namespace. */
+/** `node strut help`: every command, grouped by namespace. */
 export function renderGlobalHelp(
   commands: readonly AnyCommand[],
   version: string,
@@ -72,7 +72,7 @@ export function renderGlobalHelp(
   const lines = [
     `${style.bold('strutvane')} ${version}: the Strutvane command line`,
     '',
-    `${style.bold('Usage:')} sv <command> [arguments] [flags]`,
+    `${style.bold('Usage:')} node strut <command> [arguments] [flags]`,
     '',
   ]
   const keys = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a < b ? -1 : 1))
@@ -88,13 +88,13 @@ export function renderGlobalHelp(
   ])
   lines.push(...indent(formatTable(['', ''], flagRows).slice(1)), '')
   lines.push(
-    'Run `sv help <command>` for details. Colon names also work with spaces: `sv make model`.',
+    'Run `node strut help <command>` for details. Colon names also work with spaces: `node strut make model`.',
   )
   lines.push(`Reference: ${DOCS_URL}`)
   return `${lines.join('\n')}\n`
 }
 
-/** `sv help <command>` / `sv <command> --help`. */
+/** `node strut help <command>` / `node strut <command> --help`. */
 export function renderCommandHelp(command: AnyCommand, style: Style, source?: string): string {
   const lines = [style.bold(command.name), '', command.description]
   if (command.details !== undefined) lines.push('', ...command.details.trim().split('\n'))
@@ -122,7 +122,7 @@ export function renderCommandHelp(command: AnyCommand, style: Style, source?: st
   lines.push(
     '',
     style.dim(
-      'Global flags: --json --dry-run --diff --yes --force --cwd <path> --no-color (sv help)',
+      'Global flags: --json --dry-run --diff --yes --force --cwd <path> --no-color (node strut help)',
     ),
   )
   if (command.examples !== undefined && command.examples.length > 0) {
@@ -133,7 +133,7 @@ export function renderCommandHelp(command: AnyCommand, style: Style, source?: st
   return `${lines.join('\n')}\n`
 }
 
-/** `sv make`: the commands in one namespace. */
+/** `node strut make`: the commands in one namespace. */
 export function renderGroupHelp(
   group: string,
   commands: readonly AnyCommand[],
@@ -145,6 +145,6 @@ export function renderGroupHelp(
     '',
     ...indent(formatTable(['', ''], rows).slice(1)),
     '',
-    `Run \`sv help ${group}:<command>\` for details.`,
+    `Run \`node strut help ${group}:<command>\` for details.`,
   ].join('\n')}\n`
 }

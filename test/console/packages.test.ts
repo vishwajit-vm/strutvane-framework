@@ -1,5 +1,5 @@
 /**
- * `sv add` / `sv remove` with a fixture installer package, and `sv upgrade` on a fixture ejected
+ * `node strut add` / `node strut remove` with a fixture installer package, and `node strut upgrade` on a fixture ejected
  * file. The package manager is a fake spawner that "installs" by writing into node_modules.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'

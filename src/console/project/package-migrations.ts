@@ -1,6 +1,6 @@
 /**
  * Which packages may contribute database migrations (`"strutvane": { "migrations": "./migrations" }`
- * in their package.json), for the framework's `sv migrate` / `migrate:status`.
+ * in their package.json), for the framework's `node strut migrate` / `migrate:status`.
  *
  * **Threat model.** These SQL files run with the database OWNER role, so a contribution is accepted
  * only when the package passes the same gate as contributed code (contributions.ts), plus one
@@ -8,12 +8,12 @@
  * 1. it is a direct dependency of the app (its own package.json) with a contributor name
  *    (`@strutvane/*` or a `strutvane-plugin-*` package): transitive dependencies never count;
  * 2. the app ENABLED it: `strutvane.config.ts` imports from the package (registering its provider,
- *    which is what `sv add` writes). Installing a package is not enough;
+ *    which is what `node strut add` writes). Installing a package is not enough;
  * 3. a third-party (non-`@strutvane`) package declares a `strutvane.compat` range this CLI
  *    satisfies (exit 7 otherwise);
  * 4. the folder resolves, after following symlinks, inside the package's own directory under
  *    `node_modules` (`unsafe_contribution` otherwise).
- * A dependency that declares migrations but is not enabled is ignored (and `sv doctor` says so).
+ * A dependency that declares migrations but is not enabled is ignored (and `node strut doctor` says so).
  *
  * @module
  */

@@ -9,8 +9,7 @@
  *
  * @module
  */
-import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { Application } from '../../../foundation/application.ts'
 import { isBootError } from '../../../foundation/boot-error.ts'
 import type { ArgMap, CommandContext, CommandDefinition, FlagMap } from '../../framework/command.ts'
@@ -21,6 +20,7 @@ import {
   isOwnedByCurrentUser,
   processBoundary,
 } from '../../project/boundary.ts'
+import { isAppRoot } from '../../project/project.ts'
 
 /**
  * What the app commands need from the outside world.
@@ -61,24 +61,8 @@ export const BOOT_FLAGS: {
   },
 }
 
-/** Files that mark an app root. */
-const MARKERS: readonly string[] = [
-  join('bootstrap', 'app.ts'),
-  join('bootstrap', 'app.mts'),
-  join('bootstrap', 'app.js'),
-  join('bootstrap', 'app.mjs'),
-  'strut.js',
-]
-
-/**
- * `true` when `dir` holds an app (`bootstrap/app.ts` or `strut.js`).
- *
- * @example
- * isAppRoot('/srv/blog') // true
- */
-export function isAppRoot(dir: string): boolean {
-  return MARKERS.some((marker) => existsSync(join(dir, marker)))
-}
+/** `true` when a folder holds an app (one rule for the CLI's project lookup and these commands). */
+export { isAppRoot } from '../../project/project.ts'
 
 /**
  * Like {@link appRoot}, but `undefined` instead of an error when there is no app.

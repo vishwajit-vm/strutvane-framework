@@ -14,7 +14,7 @@
  * - `public: true` → anyone, including anonymous callers (an explicit opt-in);
  * - neither → any **authenticated** actor (anonymous callers get 401).
  *
- * The registry compiler (`sv registry:build`) reads these calls statically, so `path`, `name` and
+ * The registry compiler (`node strut registry:build`) reads these calls statically, so `path`, `name` and
  * `permission` must be string literals.
  *
  * @module
@@ -124,7 +124,7 @@ export type RouteHandler<Params = Readonly<Record<string, string>>> = (
 
 /** Options for one route. */
 export interface RouteOptions<Params = Readonly<Record<string, string>>> {
-  /** Stable route name, e.g. `reports.revenue` (shown by `sv routes`). */
+  /** Stable route name, e.g. `reports.revenue` (shown by `node strut routes`). */
   readonly name?: string
   /** Permission required, e.g. `report.revenue`. */
   readonly permission?: string

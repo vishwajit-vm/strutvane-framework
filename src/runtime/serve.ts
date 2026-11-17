@@ -14,7 +14,7 @@
  *
  * - **A dev UI on the same port.** `prepare(server)` runs before listening (Vite attaches its HMR
  *   websocket to the server there), and `fallback` gets the Node request and response for
- *   requests the app marked as unanswered UI requests (`sv dev` passes Vite's middleware).
+ *   requests the app marked as unanswered UI requests (`node strut dev` passes Vite's middleware).
  *
  * The handler receives a second argument, {@link ServeBindings}, with the Node request, the socket
  * peer (`ip`), the resolved client address and `waitUntil`; Hono exposes it as `c.env`
@@ -116,7 +116,7 @@ export interface ServeOptions {
   readonly prepare?: (server: Server) => void | Promise<void>
   /**
    * A Connect-style Node handler for requests the app marked as UI requests it did not answer
-   * (`createHttpApp({ uiFallthrough: true })`; `sv dev` passes Vite's middleware). It owns the
+   * (`createHttpApp({ uiFallthrough: true })`; `node strut dev` passes Vite's middleware). It owns the
    * response, or calls `next()` and the app's own 404 problem is sent. `next(error)` is reported
    * to `onError` and answered with a bare 500.
    */
@@ -524,7 +524,7 @@ export function toListenError(error: unknown, host: string, port: number): unkno
 
 /**
  * Fail fast with a {@link ServerListenError} when `host:port` cannot be bound right now (bind,
- * then release it). `sv dev` checks this before it starts the watched child process, because a
+ * then release it). `node strut dev` checks this before it starts the watched child process, because a
  * child that fails to listen leaves Node's watch mode waiting for file changes instead of exiting.
  * Port 0 (any free port) always passes.
  */

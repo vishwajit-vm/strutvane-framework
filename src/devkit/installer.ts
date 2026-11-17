@@ -1,5 +1,5 @@
 /**
- * The installer runtime behind `sv add <package>` / `sv remove <package>` (docs/04 §7).
+ * The installer runtime behind `node strut add <package>` / `node strut remove <package>` (docs/04 §7).
  *
  * `runInstaller` gives an installer a context whose `fs`, `env`, `deps` and `config` all write to
  * ONE staged file system. That makes every installer:
@@ -75,7 +75,7 @@ const NAME = /^[a-z][a-z0-9-]*$/
 
 /**
  * Declare an installer. Validates its shape early, so a broken installer fails when its package
- * loads, not halfway through a user's `sv add`.
+ * loads, not halfway through a user's `node strut add`.
  */
 export function defineInstaller<T extends DevkitInstaller>(installer: T): T {
   if (typeof installer !== 'object' || installer === null) {

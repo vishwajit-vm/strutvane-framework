@@ -23,11 +23,12 @@ afterAll(cleanupTempDirs)
 
 const DOC = [
   '/**',
-  " * Seeds the database (`sv db:seed`). `sv make:model` registers each new model's seeder here,",
+  " * Seeds the database (`node strut db:seed`). `node strut make:model` registers each new model's seeder here,",
   ' * after the seeders of the models it belongs to.',
   ' */',
 ]
-const COMMENT = '  // `sv make:model` adds `await call(…)` lines here, parents before children.'
+const COMMENT =
+  '  // `node strut make:model` adds `await call(…)` lines here, parents before children.'
 
 const customer: SeederRegistration = {
   seeder: 'CustomerSeeder',
@@ -121,7 +122,7 @@ describe('registerSeeder', () => {
     expect(contentOf(result)).toBe(
       lines(
         '/**',
-        " * Seeds the database (`npm run sv -- db:seed`). `sv make:model` registers each new model's seeder here,",
+        " * Seeds the database (`npm run sv -- db:seed`). `node strut make:model` registers each new model's seeder here,",
         ' * after the seeders of the models it belongs to.',
         ' * The first admin user comes from SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD in .env.',
         ' */',
@@ -382,7 +383,7 @@ describe('make:model and make:seeder register the seeder', () => {
       DATABASE_SEEDER_PATH,
       lines(
         '/**',
-        ' * Seeds the database (`sv db:seed`). Call other seeders from here, in order.',
+        ' * Seeds the database (`node strut db:seed`). Call other seeders from here, in order.',
         ' */',
         "import { defineSeeder } from '@strutvane/framework/database'",
         '',

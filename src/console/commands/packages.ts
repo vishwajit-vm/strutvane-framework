@@ -1,5 +1,5 @@
 /**
- * `sv add <package>` and `sv remove <package>` (docs/09 §2).
+ * `node strut add <package>` and `node strut remove <package>` (docs/09 §2).
  *
  * `add` installs the package with the project's package manager (if needed), then runs its
  * installer through devkit: every file, `.env` entry, dependency and provider registration is
@@ -141,12 +141,12 @@ export const addCommand: AnyCommand = defineCommand({
   name: 'add',
   description: 'Install a package and run its installer (config, env, routes, migrations…)',
   details:
-    'Flags the CLI does not know are passed to the installer, e.g. `sv add auth --methods email`.',
+    'Flags the CLI does not know are passed to the installer, e.g. `node strut add auth --methods email`.',
   args: {
     package: { required: true, description: 'auth, ui, @strutvane/files, strutvane-plugin-x…' },
   },
   allowUnknownFlags: true,
-  examples: ['sv add auth', 'sv add auth --methods email,google --dry-run --diff'],
+  examples: ['node strut add auth', 'node strut add auth --methods email,google --dry-run --diff'],
   async run(ctx) {
     const project = ctx.requireProject()
     const name = packageArgument(ctx.args.package)
@@ -196,7 +196,7 @@ export const removeCommand: AnyCommand = defineCommand({
     },
   },
   allowUnknownFlags: true,
-  examples: ['sv remove auth --dry-run', 'sv remove auth --keep-data'],
+  examples: ['node strut remove auth --dry-run', 'node strut remove auth --keep-data'],
   async run(ctx) {
     const project = ctx.requireProject()
     const name = packageArgument(ctx.args.package)

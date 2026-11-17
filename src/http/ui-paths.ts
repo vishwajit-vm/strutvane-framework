@@ -1,6 +1,6 @@
 /**
- * Which requests the web UI may answer when the app serves it on the API's origin (`sv start`
- * from `dist/web`, `sv dev` through the project's Vite). One rule for both, so production and
+ * Which requests the web UI may answer when the app serves it on the API's origin (`node strut start`
+ * from `dist/web`, `node strut dev` through the project's Vite). One rule for both, so production and
  * development never disagree about what belongs to the API:
  *
  * - only `GET` and `HEAD` (a UI never handles writes);
@@ -26,7 +26,7 @@ export const FRAMEWORK_PATHS: readonly string[] = Object.freeze([
 
 /**
  * Response header that marks "routing found nothing and the UI may answer this" for the Node
- * adapter (`serve({ fallback })`), which then hands the request to Vite's middleware in `sv dev`.
+ * adapter (`serve({ fallback })`), which then hands the request to Vite's middleware in `node strut dev`.
  * The adapter always strips it, so it never reaches a client; a client cannot set response
  * headers, so it cannot forge it either.
  */

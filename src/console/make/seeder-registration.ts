@@ -1,9 +1,9 @@
 /**
  * Registering a model's seeder in `database/seeders/database.seeder.ts`, the only seeder
- * `sv db:seed` runs without `--class`.
+ * `node strut db:seed` runs without `--class`.
  *
- * **Why.** `sv make:model` writes `database/seeders/<model>.seeder.ts`, but a seeder that is not
- * called from the database seeder never runs: `sv db:seed` reported success and seeded nothing.
+ * **Why.** `node strut make:model` writes `database/seeders/<model>.seeder.ts`, but a seeder that is not
+ * called from the database seeder never runs: `node strut db:seed` reported success and seeded nothing.
  * So `make:model` (and `make:seeder --model`) also add the import and an `await call(XSeeder)`
  * line, in dependency order: after the seeders of the models it belongs to (their rows must exist
  * before rows that point to them), and before the seeders of models that belong to it.
@@ -23,13 +23,13 @@
 export const DATABASE_SEEDER_PATH = 'database/seeders/database.seeder.ts'
 
 const CALLBACK_COMMENT =
-  '  // `sv make:model` adds `await call(…)` lines here, parents before children.'
+  '  // `node strut make:model` adds `await call(…)` lines here, parents before children.'
 const IMPORT_DEFINE = "import { defineSeeder } from '@strutvane/framework/database'"
 
 /** The database seeder `create-strutvane` generates (without the optional auth note). */
 export const CANONICAL_DATABASE_SEEDER: string = [
   '/**',
-  " * Seeds the database (`sv db:seed`). `sv make:model` registers each new model's seeder here,",
+  " * Seeds the database (`node strut db:seed`). `node strut make:model` registers each new model's seeder here,",
   ' * after the seeders of the models it belongs to.',
   ' */',
   IMPORT_DEFINE,
@@ -115,7 +115,7 @@ function migrateOldShape(lines: string[]): string[] | undefined {
     out.splice(
       doc,
       1,
-      `${match?.[1] ?? ''} \`sv make:model\` registers each new model's seeder here,`,
+      `${match?.[1] ?? ''} \`node strut make:model\` registers each new model's seeder here,`,
       ' * after the seeders of the models it belongs to.',
     )
   }

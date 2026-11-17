@@ -51,7 +51,12 @@ export function usageLine(command: AnyCommand): string {
       return def.required === true ? `<${inner}>` : `[${inner}]`
     })
     .join(' ')
-  return ['sv', command.name, args, Object.keys(command.flags ?? {}).length > 0 ? '[flags]' : '']
+  return [
+    'node strut',
+    command.name,
+    args,
+    Object.keys(command.flags ?? {}).length > 0 ? '[flags]' : '',
+  ]
     .filter((part) => part !== '')
     .join(' ')
 }

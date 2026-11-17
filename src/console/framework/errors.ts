@@ -222,6 +222,21 @@ function isBootFailure(value: unknown): value is Error & { readonly provider: st
   )
 }
 
+/**
+ * The shape of the framework's `BootError` (`foundation/boot-error.ts`), matched by shape: the
+ * console layer does not import the application layer.
+ */
+function isBootErrorLike(
+  error: unknown,
+): error is Error & { readonly code: string; readonly hint: string } {
+  return (
+    error instanceof Error &&
+    error.name === 'BootError' &&
+    typeof (error as { code?: unknown }).code === 'string' &&
+    typeof (error as { hint?: unknown }).hint === 'string'
+  )
+}
+
 /** Normalise anything thrown into a {@link CliFailure}. Never throws. */
 export function toFailure(error: unknown): CliFailure {
   if (error instanceof CliError) {
@@ -258,6 +273,22 @@ export function toFailure(error: unknown): CliFailure {
       issues: [],
       error,
       unexpected: false,
+    }
+  }
+  // An application's BootError (bad config, a weak key, an unknown middleware…) is the user's
+  // configuration, not a bug: its own code, message and hint, and the validation exit code.
+  if (isBootErrorLike(error)) {
+    return {
+      code: error.code,
+      exitCode: EXIT.VALIDATION,
+      params: {
+        detail: `${error.message}
+  → ${error.hint}`,
+      },
+      issues: [],
+      error,
+      unexpected: false,
+      data: { code: error.code, message: error.message, hint: error.hint },
     }
   }
   if (isBootFailure(error)) {

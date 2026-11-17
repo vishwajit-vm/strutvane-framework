@@ -539,7 +539,7 @@ export function createHttpApp(app: Application, options: HttpAppOptions): HttpAp
       instance: new URL(c.req.url).pathname,
     })
     const response = problemResponse(problem)
-    // `sv dev`: the adapter hands this request to Vite instead (and sends this 404 if Vite
+    // `node strut dev`: the adapter hands this request to Vite instead (and sends this 404 if Vite
     // passes). Only UI requests are marked: API paths keep their problem+json 404.
     if (options.uiFallthrough === true && isUiRequest(c.req.raw, uiExclude))
       response.headers.set(UI_FALLTHROUGH_HEADER, '1')

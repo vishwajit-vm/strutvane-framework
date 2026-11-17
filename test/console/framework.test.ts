@@ -74,7 +74,7 @@ describe('router', () => {
     expect(r.kind === 'found' && r.command.name).toBe('migrate')
   })
 
-  test('unique segment prefixes are accepted (sv mi:st → migrate:status)', () => {
+  test('unique segment prefixes are accepted (node strut mi:st → migrate:status)', () => {
     const r = resolveCommand(table, ['mi:st'])
     expect(r.kind === 'found' && r.command.name).toBe('migrate:status')
     const spaced = resolveCommand(table, ['mi', 'ro'])
@@ -253,8 +253,8 @@ describe('parseCommandLine', () => {
 
   test('helpers', () => {
     expect(camelCase('keep-data-now')).toBe('keepDataNow')
-    expect(usageLine(command)).toBe('sv make:thing <name> [rest...] [flags]')
-    expect(usageLine(cmd('about'))).toBe('sv about')
+    expect(usageLine(command)).toBe('node strut make:thing <name> [rest...] [flags]')
+    expect(usageLine(cmd('about'))).toBe('node strut about')
   })
 })
 
@@ -483,7 +483,7 @@ describe('errors', () => {
       renderMessages(toFailure(new CliError('unknown_command', { params: { name: 'x' } }))),
     ).toEqual({
       message: 'Unknown command "x".',
-      hint: 'Run `sv help` to see every command.',
+      hint: 'Run `node strut help` to see every command.',
     })
     expect(renderMessages(toFailure(new StrutvaneError('PLUGIN_CODE')))).toEqual({
       message: 'PLUGIN_CODE',
@@ -551,10 +551,10 @@ describe('help', () => {
         template: { type: 'string', choices: ['a', 'b'], default: 'a', description: 'Pick' },
         quick: { type: 'boolean', short: 'q' },
       },
-      examples: ['sv make:thing X'],
+      examples: ['node strut make:thing X'],
     })
     const text = renderCommandHelp(command, style, 'strutvane-plugin-x')
-    expect(text).toContain('Usage: sv make:thing <name> [opt] [flags]')
+    expect(text).toContain('Usage: node strut make:thing <name> [opt] [flags]')
     expect(text).toContain('Aliases: thing')
     expect(text).toContain('opt   (optional)')
     expect(text).toContain('--template <value>  Pick (one of: a, b; default: a)')

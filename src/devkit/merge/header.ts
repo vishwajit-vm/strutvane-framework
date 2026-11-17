@@ -3,7 +3,7 @@
  *
  *   // @strutvane-template framework/controller@1.2.0 (ejected: this file is yours to edit)
  *
- * The header is how `sv upgrade` finds a file the user MOVED or RENAMED: the lock still points to
+ * The header is how `node strut upgrade` finds a file the user MOVED or RENAMED: the lock still points to
  * the old path, but the header travels with the content.
  *
  * @module

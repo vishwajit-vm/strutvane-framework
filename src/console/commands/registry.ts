@@ -1,5 +1,5 @@
 /**
- * `sv registry:build` and `sv registry:watch`: the typed registry compiler (ADR-0010).
+ * `node strut registry:build` and `node strut registry:watch`: the typed registry compiler (ADR-0010).
  *
  * The compiler reads convention files statically (never runs app code) and writes the
  * deterministic `.strutvane/registry.gen.ts`. On any error nothing is written (keep last good).
@@ -72,7 +72,7 @@ export const registryBuildCommand: AnyCommand = defineCommand({
       description: 'Fail (exit 6) if the registry is out of date; write nothing',
     },
   },
-  examples: ['sv registry:build', 'sv registry:build --check'],
+  examples: ['node strut registry:build', 'node strut registry:build --check'],
   run(ctx) {
     const root = ctx.requireProject().root
     const compiler = new RegistryCompiler(root)
@@ -122,7 +122,7 @@ export const registryWatchCommand: AnyCommand = defineCommand({
       description: 'Quiet period before a rebuild',
     },
   },
-  examples: ['sv registry:watch'],
+  examples: ['node strut registry:watch'],
   async run(ctx) {
     const root = ctx.requireProject().root
     const debounceMs = Number(ctx.flags.debounce)

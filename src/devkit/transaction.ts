@@ -158,7 +158,7 @@ export async function commitTransaction(
   if (await hasInterruptedTransaction(io, projectRoot)) {
     throw new DevkitError(
       'interrupted_transaction',
-      'a previous change was interrupted; run recovery first (sv recover), then retry',
+      'a previous change was interrupted; run recovery first (node strut recover), then retry',
     )
   }
   const seen = new Set<string>()
@@ -232,7 +232,7 @@ export async function commitTransaction(
       await removeIfEmpty(io, stagingDir(projectRoot))
     } catch (rollbackError) {
       throw new TransactionAbortedError(
-        'the change failed and automatic rollback also failed; run recovery (sv recover)',
+        'the change failed and automatic rollback also failed; run recovery (node strut recover)',
         false,
         { cause: rollbackError },
       )
@@ -253,7 +253,7 @@ export async function commitTransaction(
     await removeIfEmpty(io, stagingDir(projectRoot))
   } catch {
     // The change is applied and complete. The leftover folder holds no journal, so it blocks
-    // nothing; the next recovery (`sv recover`) removes it with the rest of the staging area.
+    // nothing; the next recovery (`node strut recover`) removes it with the rest of the staging area.
   }
 }
 

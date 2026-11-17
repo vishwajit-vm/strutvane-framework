@@ -1,5 +1,5 @@
 /**
- * Process entry for `sv dev`: `node --watch-path=… serve-main.mjs <root> <port> <host>`.
+ * Process entry for `node strut dev`: `node --watch-path=… serve-main.mjs <root> <port> <host>`.
  * Node restarts this process when project files change (Vite, mounted inside it, watches `web/`
  * itself and hot-reloads the UI without a restart).
  *

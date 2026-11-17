@@ -1,7 +1,7 @@
 import { defineMigration } from '@strutvane/framework/database'
 
 /**
- * backfill_invoice_totals: a hand-written migration (data changes or special DDL). `sv migrate` runs up()
+ * backfill_invoice_totals: a hand-written migration (data changes or special DDL). `node strut migrate` runs up()
  * in timestamp order inside its transaction; use db.execute(sql, params) with bound parameters.
  */
 export default defineMigration({

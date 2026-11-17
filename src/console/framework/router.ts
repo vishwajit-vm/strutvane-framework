@@ -1,9 +1,9 @@
 /**
  * Command lookup: canonical colon names, the space alias and unique prefixes (docs/09 §1.2).
  *
- * - `sv make:model Invoice` and `sv make model Invoice` are the same command: up to three leading
+ * - `node strut make:model Invoice` and `node strut make model Invoice` are the same command: up to three leading
  *   words are joined with `:` and tried as a name, longest first.
- * - Unique prefixes are accepted per segment: `sv mi:st` → `migrate:status`. A prefix that fits
+ * - Unique prefixes are accepted per segment: `node strut mi:st` → `migrate:status`. A prefix that fits
  *   several commands is an error listing them, never a guess.
  * - Exact matches always beat prefix matches, so adding a command can never change what an exact
  *   name means.

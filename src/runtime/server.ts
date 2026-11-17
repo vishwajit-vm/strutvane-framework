@@ -5,8 +5,8 @@
  * Two kinds of project: an application (`bootstrap/app.ts`, {@link startApplication}) and a
  * `strutvane.config.ts` project ({@link startServer}); {@link startProject} picks the right one.
  *
- * One port serves everything: the API, and the web UI next to it. `sv start` serves the built UI
- * (`dist/web`, from `sv build`); `sv dev` mounts the project's own Vite in middleware mode
+ * One port serves everything: the API, and the web UI next to it. `node strut start` serves the built UI
+ * (`dist/web`, from `node strut build`); `node strut dev` mounts the project's own Vite in middleware mode
  * (`dev-ui.ts`) for requests the API does not own, with HMR on the same port. Same origin means
  * the UI's `/api/v1` fetches and auth's `trustedOrigins: [APP_URL]` work without a proxy.
  *
@@ -43,11 +43,11 @@ export interface StartServerOptions {
   readonly env?: string
   /**
    * Serve the built UI from this folder next to the API. Default: `<root>/dist/web` when it
-   * contains an `index.html` (the output of `sv build`); `false` serves the API only.
+   * contains an `index.html` (the output of `node strut build`); `false` serves the API only.
    */
   readonly web?: string | false
   /**
-   * Serve the UI through the project's own Vite (`sv dev`): resolved from the project root, run
+   * Serve the UI through the project's own Vite (`node strut dev`): resolved from the project root, run
    * in middleware mode on this server, answering only requests the API does not own. Without a
    * `vite.config.*` or an installed `vite`, the API is served alone and an info line says why.
    * Default `false`.
@@ -254,7 +254,7 @@ export type StopReason = 'SIGINT' | 'SIGTERM' | 'shutdown-message'
 /**
  * The IPC message that asks for a graceful shutdown (the PM2 convention). On Windows an external
  * `SIGTERM` terminates the process without running any handler (ADR-0015), so process managers
- * and `sv` that start the app with an IPC channel send this message instead.
+ * and `node strut` that start the app with an IPC channel send this message instead.
  */
 export const SHUTDOWN_MESSAGE = 'shutdown'
 

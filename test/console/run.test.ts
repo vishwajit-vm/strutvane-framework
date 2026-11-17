@@ -38,7 +38,7 @@ function expectEnvelope(doc: Record<string, unknown>): void {
 }
 
 describe('help and version', () => {
-  test('`sv` and `sv help` list every built-in command', async () => {
+  test('`sv` and `node strut help` list every built-in command', async () => {
     const root = makeProject()
     for (const argv of [[], ['help'], ['--help']]) {
       const r = await cli(argv, { cwd: root })
@@ -49,7 +49,7 @@ describe('help and version', () => {
     }
   })
 
-  test('`sv help <command>` and `sv <command> --help`, also via the space alias', async () => {
+  test('`node strut help <command>` and `node strut <command> --help`, also via the space alias', async () => {
     const root = makeProject()
     for (const argv of [
       ['help', 'make:model'],
@@ -58,7 +58,7 @@ describe('help and version', () => {
     ]) {
       const r = await cli(argv, { cwd: root })
       expect(r.code, argv.join(' ')).toBe(0)
-      expect(r.stdout).toContain('Usage: sv make:model <name> [fields...] [flags]')
+      expect(r.stdout).toContain('Usage: node strut make:model <name> [fields...] [flags]')
       expect(r.stdout).toContain('--soft-deletes')
     }
   })
@@ -73,7 +73,7 @@ describe('help and version', () => {
     expect((one.json().data as { name: string }).name).toBe('routes')
   })
 
-  test('namespace help: `sv make` and `sv help make`', async () => {
+  test('namespace help: `node strut make` and `node strut help make`', async () => {
     const root = makeProject()
     for (const argv of [['make'], ['help', 'make']]) {
       const r = await cli(argv, { cwd: root })
@@ -97,8 +97,8 @@ describe('resolution errors and exit codes', () => {
     const r = await cli(['mak:modle'], { cwd: makeProject() })
     expect(r.code).toBe(EXIT.USAGE)
     expect(r.stderr).toContain('Unknown command "mak:modle"')
-    expect(r.stderr).toContain('Did you mean `sv make:model`?')
-    expect(r.stderr).toContain('hint: Run `sv help`')
+    expect(r.stderr).toContain('Did you mean `node strut make:model`?')
+    expect(r.stderr).toContain('hint: Run `node strut help`')
   })
 
   test('unknown command in --json: the error envelope on stdout, nothing on stderr', async () => {
@@ -440,7 +440,7 @@ describe('framework placeholders and delegation', () => {
     const r = await cli(['migrate'], { cwd: makeProject() })
     expect(r.code).toBe(1)
     expect(r.stderr).toContain('provided by @strutvane/framework')
-    expect(r.stderr).toContain('sv add framework')
+    expect(r.stderr).toContain('node strut add framework')
   })
 
   test('framework installed but not providing the command: framework_command_missing', async () => {

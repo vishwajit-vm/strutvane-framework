@@ -1,5 +1,5 @@
 /**
- * Generators: the engine behind `sv make:*`.
+ * Generators: the engine behind `node strut make:*`.
  *
  * A generator declares its inputs as a Standard Schema validator (Zod by default) and produces
  * files from plain TypeScript functions. There is deliberately **no template engine**: no

@@ -133,7 +133,7 @@ export interface CommandContext<F extends FlagMap = FlagMap, A extends ArgMap = 
    */
   guardDestructive(): void
   /**
-   * The package migration folders `sv migrate` may apply (they run as the database owner):
+   * The package migration folders `node strut migrate` may apply (they run as the database owner):
    * direct dependencies with a contributor name that `strutvane.config.ts` imports, compatible,
    * with the folder's real path inside the package (see `project/package-migrations.ts`). Empty
    * outside a project. Throws `unsafe_contribution` or an incompatibility (exit 7) instead of
@@ -154,9 +154,9 @@ export interface CommandOutcome {
 export interface CommandDefinition<F extends FlagMap = FlagMap, A extends ArgMap = ArgMap> {
   /** Canonical colon-separated name, e.g. `make:model`. Lowercase, kebab-case segments. */
   readonly name: string
-  /** One line, shown in `sv help`. */
+  /** One line, shown in `node strut help`. */
   readonly description: string
-  /** Longer help text (paragraphs), shown in `sv help <command>`. */
+  /** Longer help text (paragraphs), shown in `node strut help <command>`. */
   readonly details?: string
   readonly aliases?: readonly string[]
   readonly args?: A
@@ -178,7 +178,7 @@ export interface CommandDefinition<F extends FlagMap = FlagMap, A extends ArgMap
    * (no prefix abbreviations).
    */
   readonly destructive?: boolean
-  /** Hidden from `sv help` listings (still runnable, still in `sv help <name>`). */
+  /** Hidden from `node strut help` listings (still runnable, still in `node strut help <name>`). */
   readonly hidden?: boolean
   run(ctx: CommandContext<F, A>): CommandOutcome | undefined | Promise<CommandOutcome | undefined>
 }

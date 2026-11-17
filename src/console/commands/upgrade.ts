@@ -1,5 +1,5 @@
 /**
- * `sv upgrade`: bump Strutvane packages, then three-way merge owned (ejected) files (ADR-0012).
+ * `node strut upgrade`: bump Strutvane packages, then three-way merge owned (ejected) files (ADR-0012).
  *
  * 1. With `--to <version>` or `--channel <tag>`, every `@strutvane/*` dependency (and the
  *    `strutvane` launcher) is bumped through the project's package manager.
@@ -139,7 +139,11 @@ export const upgradeCommand: AnyCommand = defineCommand({
       description: 'Run tsc --noEmit afterwards (--no-typecheck to skip)',
     },
   },
-  examples: ['sv upgrade --dry-run', 'sv upgrade --to 0.2.0', 'sv upgrade --channel next'],
+  examples: [
+    'node strut upgrade --dry-run',
+    'node strut upgrade --to 0.2.0',
+    'node strut upgrade --channel next',
+  ],
   async run(ctx) {
     let project = ctx.requireProject()
     const { to, channel } = ctx.flags

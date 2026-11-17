@@ -74,7 +74,7 @@ export const DEFAULT_BOOT_TIMEOUT_MS = 30_000
 /**
  * A provider's `boot()` never settled (a connection that neither succeeds nor fails, a hook that
  * waits forever). Booting is abandoned and the providers that did boot are shut down, so
- * `sv start` reports this and exits instead of hanging silently.
+ * `node strut start` reports this and exits instead of hanging silently.
  */
 export class BootTimeoutError extends Error {
   override readonly name = 'BootTimeoutError'
@@ -98,9 +98,9 @@ export async function bootProject(
   project: LoadedProject,
   options: {
     readonly env?: string
-    /** Serve this built UI folder (e.g. `dist/web`) next to the API (`sv start`). */
+    /** Serve this built UI folder (e.g. `dist/web`) next to the API (`node strut start`). */
     readonly web?: string
-    /** Let unmatched UI requests fall through to the dev server (`sv dev` with Vite). */
+    /** Let unmatched UI requests fall through to the dev server (`node strut dev` with Vite). */
     readonly uiFallthrough?: boolean
     /** Upper bound for booting every provider. Default {@link DEFAULT_BOOT_TIMEOUT_MS}. */
     readonly bootTimeoutMs?: number
