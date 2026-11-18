@@ -85,6 +85,7 @@ export { BootError, isBootError } from './foundation/boot-error.ts'
 export {
   ConfigError,
   type ConfigFiles,
+  type ConfigOf,
   ConfigRepository,
   ConfigRepositoryToken,
   defineConfig,
@@ -329,6 +330,7 @@ export {
 } from './routing/route.ts'
 // The callable route() URL helper; it keeps the v1 route.get/post/… builders (deprecated).
 export { type RouteHelper, route } from './routing/route-helper.ts'
+export type { RoutesOf } from './routing/types.ts'
 export { UrlGenerator, UrlGeneratorToken, url } from './routing/url.ts'
 export { firstAppEnv, normaliseAppEnv } from './runtime/app-env.ts'
 export {

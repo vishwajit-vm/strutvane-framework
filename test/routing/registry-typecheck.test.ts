@@ -138,3 +138,70 @@ describe('the registries an app fills in (separate tsc compile)', () => {
     expect(result.status).toBe(0)
   }, 300_000)
 })
+
+/**
+ * The same block written the way a real app writes it: **everything** imported from the package
+ * entry (`./framework.ts` re-exports `src/index.ts`, standing in for `@strutvane/framework`), and
+ * all three registries augmented there. 0.2.0-next.0 didn't export `ConfigOf` or `RoutesOf`, so an
+ * app could not write the block `foundation/registry.ts` documents (found by the skeleton).
+ */
+const PUBLIC = mkdtempSync(join(tmpdir(), 'strut-public-app-'))
+afterAll(() => rmSync(PUBLIC, { recursive: true, force: true, maxRetries: 5 }))
+const entry = relative(PUBLIC, join(ROOT, 'src', 'index.ts'))
+  .split('\\')
+  .join('/')
+
+const PUBLIC_FILES: Record<string, string> = {
+  'framework.ts': `export * from '${entry}'\n`,
+  'app.ts': `
+import { type ConfigOf, config, defineConfig, defineRoutes, type HttpContext, Route, type RoutesOf, route } from './framework.ts'
+
+export interface Member { readonly id: string; readonly type: 'user'; readonly roles: readonly string[]; readonly attrs: Readonly<Record<string, unknown>>; readonly team: string }
+
+export const web = defineRoutes([Route.get('/', (ctx) => ctx.json({})).name('home')])
+export const api = defineRoutes([Route.get('/posts/{post}', (ctx) => ctx.json({})).name('posts.show')])
+export const settings = {
+  app: defineConfig((env) => ({ name: env.string('APP_NAME', 'Typed'), debug: env.boolean('APP_DEBUG', false) })),
+}
+
+declare module './framework.ts' {
+  interface RouteRegistry extends RoutesOf<[typeof web, typeof api]> {}
+  interface ConfigRegistry extends ConfigOf<typeof settings> {}
+  interface UserRegistry { user: Member }
+}
+
+export function checks(ctx: HttpContext): void {
+  route('home')
+  route('posts.show', { post: 'hello' })
+  // @ts-expect-error: no route has this name
+  route('posts.shwo', { post: 'hello' })
+  const debug: boolean = config('app.debug')
+  // @ts-expect-error: no such config key
+  config('app.nmae')
+  const team: string | undefined = ctx.user?.team
+  void [debug, team]
+}
+`,
+  'tsconfig.json':
+    FILES['tsconfig.json']?.replace(
+      '"files": [\n    "framework.ts",\n    "app.ts",\n    "checks.ts"\n  ]',
+      '"files": [\n    "framework.ts",\n    "app.ts"\n  ]',
+    ) ?? '',
+  'package.json': '{ "type": "module" }\n',
+}
+
+describe('the registries, through the public entry only', () => {
+  it('ConfigOf, RoutesOf and the registries are exported, and augmenting the entry types route() and config()', () => {
+    expect(PUBLIC_FILES['tsconfig.json']).toContain('"app.ts"\n  ]')
+    for (const [name, content] of Object.entries(PUBLIC_FILES))
+      writeFileSync(join(PUBLIC, name), content)
+    const tsc = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
+    const result = spawnSync(
+      process.execPath,
+      [tsc, '-p', join(PUBLIC, 'tsconfig.json'), '--pretty', 'false'],
+      { cwd: PUBLIC, encoding: 'utf8', timeout: 280_000 },
+    )
+    expect(`${result.stdout}${result.stderr}`).toBe('')
+    expect(result.status).toBe(0)
+  }, 300_000)
+})

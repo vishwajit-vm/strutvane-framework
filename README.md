@@ -285,7 +285,19 @@ export default Application.configure({ basePath: dirname(import.meta.dirname) })
   .create()
 ```
 
-- **Exports.** `@strutvane/framework` exports `Application`, `Route`/`defineRoutes`, the `route()`, `config()`, `app()`, `now()` and `redirect()` helpers, middleware and protections (`csrf`, `auth`, `can`, `throttle`, `signed`, `idempotent`), `FormRequest`, `ResourceController`, the exception handler, the security kit (`Keyring`, `Encrypter`, `UrlSigner`, `HttpClient`), maintenance mode, the cache manager and the session store. `route` is callable (`route('posts.show', { post })`) and still carries the deprecated v1 `route.get/post/…` builders.
+- **Exports.** `@strutvane/framework` exports `Application`, `Route`/`defineRoutes`, the `route()`, `config()`, `app()`, `now()` and `redirect()` helpers, middleware and protections (`csrf`, `auth`, `can`, `throttle`, `signed`, `idempotent`), `FormRequest`, `ResourceController`, the exception handler, the security kit (`Keyring`, `Encrypter`, `UrlSigner`, `HttpClient`), maintenance mode, the cache manager and the session store. `route` is callable (`route('posts.show', { post })`) and still carries the deprecated v1 `route.get/post/…` builders. For typed route names, config keys and `ctx.user`, it also exports `RoutesOf`, `ConfigOf` and the `RouteRegistry`, `ConfigRegistry` and `UserRegistry` interfaces an app augments once:
+
+  ```ts
+  // bootstrap/app.ts
+  import type { ConfigOf, RoutesOf } from '@strutvane/framework'
+
+  declare module '@strutvane/framework' {
+    interface RouteRegistry extends RoutesOf<[typeof web, typeof api]> {}
+    interface ConfigRegistry extends ConfigOf<typeof config> {}
+    interface UserRegistry { user: User }
+  }
+  ```
+
 - **Facades** live on `@strutvane/framework/facades` (`Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`; `Mail`, `Queue`, `Bus`, `Notification` and `Hash` say "coming in 0.3"). They resolve from the current app's container, so tests can swap them, and the `Route` facade never shadows the `Route` builder.
 - **The database in requests.** Models work in controllers, route closures, middleware, listeners and commands with no setup, Laravel-style. When the app boots it hands the ORM `.strutvane/schema.json` and the tenancy switch (`config/tenancy.ts`), and binds `DatabaseConnectionToken`: the default connection from `config/database.ts` (`default`, `host`, `port`, `database`, `username`, `socket`, `sslmode`, `ssl_ca`) over `DB_*` in `.env`, with `DB_PASSWORD`/`DB_URL` read from the environment when it connects. It is **opened by the first query** (so `/up`, `route:list` and other work that never queries never needs the database, and a database that is down fails only the requests that use it) and closed by `app.shutdown()`. Every request and command resolves its own app's connection, even with two apps in one process. With tenancy on, the tenant an `http.onRequest` hook resolves (the auth package) scopes every model query of that request; a request without one can't read tenant tables (fail closed). With `APP_ENV=testing`, `database.test_database` replaces the database name. To use another connection (a test double, a replica), bind `DatabaseConnectionToken` in a provider's `register()` or on `app.container` before boot. On MySQL and MariaDB the app's connection compiles inserts without `RETURNING` (the row is read back by key), so one grammar fits every server version.
 - **Serving.** `node strut start` (and `dev`) boots `bootstrap/app.ts` before the port opens (`startApplication()`); a broken route or a weak key never starts serving. The Node adapter hands the app the socket peer and `waitUntil`, so deferred work runs after the response and a graceful stop waits for it.
