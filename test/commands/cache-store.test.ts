@@ -139,9 +139,14 @@ describe('the file cache store', () => {
 
   it('counts correctly when several processes increment the same key at once', async () => {
     const dir = join(appFolder(), FILE_CACHE_FOLDER)
+    // This checks that no increment is lost, not the lock's timings (tested below). The lock has
+    // no fairness: a waiter can lose every race while the other three run all their increments.
+    // On a loaded Windows machine, where every lock-file create and delete is slow, that once took
+    // longer than the 5 s default and the child exited with cache_unavailable. So the limits here
+    // are generous (a stale takeover would lose an update, which is exactly what this checks).
     const script = `import { pathToFileURL } from 'node:url'
 const { FileCacheStore } = await import(pathToFileURL(${JSON.stringify(join(ROOT, 'src', 'cache', 'file-store.ts'))}).href)
-const cache = new FileCacheStore({ directory: ${JSON.stringify(dir)}, clock: { now: () => Date.now() } })
+const cache = new FileCacheStore({ directory: ${JSON.stringify(dir)}, clock: { now: () => Date.now() }, lock: { timeoutMs: 120_000, staleMs: 120_000 } })
 for (let i = 0; i < 25; i++) await cache.increment('throttle:login', 1, 600)`
     await Promise.all(
       Array.from({ length: 4 }, () => run(process.execPath, ['--input-type=module', '-e', script])),
