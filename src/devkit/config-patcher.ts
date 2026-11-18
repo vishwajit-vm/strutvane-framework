@@ -55,7 +55,7 @@ const IDENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/
  * (`@scope/name/sub`) without `.`/`..` segments, or a relative path. Quotes, spaces, URLs and
  * anything else that could break out of the string literal are refused.
  */
-function isSafeSpecifier(specifier: string): boolean {
+export function isSafeSpecifier(specifier: string): boolean {
   if (!SPECIFIER.test(specifier)) return false
   if (specifier.startsWith('.')) return true
   return specifier.split('/').every((segment) => segment !== '.' && segment !== '..')
@@ -84,16 +84,20 @@ export function providerLocalName(specifier: string): string {
 }
 
 // ─── The slice of the Babel AST we read ───────────────────────────────────────────────────────
+// Exported (not from the devkit entry) for app-patcher.ts, which edits the v2 app files the same way.
 
-interface AstNode {
+/** @internal */
+export interface AstNode {
   readonly type: string
   readonly start: number
   readonly end: number
 }
-interface Identifier extends AstNode {
+/** @internal */
+export interface Identifier extends AstNode {
   readonly name: string
 }
-interface ImportDeclaration extends AstNode {
+/** @internal */
+export interface ImportDeclaration extends AstNode {
   readonly source: AstNode & { readonly value: string }
   readonly specifiers: readonly (AstNode & { readonly local: Identifier })[]
 }
@@ -102,8 +106,8 @@ interface ObjectProperty extends AstNode {
   readonly key: AstNode & { readonly name?: string; readonly value?: unknown }
   readonly value: AstNode
 }
-/** An ArrayExpression's `elements` or an ObjectExpression's `properties` (holes dropped). */
-interface ListNode extends AstNode {
+/** An ArrayExpression's `elements` or an ObjectExpression's `properties` (holes dropped). @internal */
+export interface ListNode extends AstNode {
   readonly items: readonly AstNode[]
 }
 
@@ -118,18 +122,21 @@ interface ConfigShape {
 
 const WRAPPERS = new Set(['TSSatisfiesExpression', 'TSAsExpression', 'ParenthesizedExpression'])
 
-function child(node: AstNode, key: string): AstNode | undefined {
+/** @internal */
+export function child(node: AstNode, key: string): AstNode | undefined {
   const value = (node as unknown as Record<string, unknown>)[key]
   return typeof value === 'object' && value !== null ? (value as AstNode) : undefined
 }
 
-function unwrap(node: AstNode | undefined): AstNode | undefined {
+/** @internal */
+export function unwrap(node: AstNode | undefined): AstNode | undefined {
   let current = node
   while (current !== undefined && WRAPPERS.has(current.type)) current = child(current, 'expression')
   return current
 }
 
-function asList(node: AstNode, key: 'elements' | 'properties'): ListNode {
+/** @internal */
+export function asList(node: AstNode, key: 'elements' | 'properties'): ListNode {
   const items = (node as unknown as Record<string, unknown>)[key]
   const list = Array.isArray(items) ? (items as (AstNode | null)[]) : []
   return {
@@ -214,14 +221,16 @@ function uniqueName(source: string, shape: ConfigShape, wanted: string): string 
 
 // ─── Text edits at AST offsets ────────────────────────────────────────────────────────────────
 
-interface TextEdit {
+/** @internal */
+export interface TextEdit {
   readonly start: number
   readonly end: number
   readonly text: string
 }
 
 /** Apply non-overlapping edits from the end of the file backwards, so offsets stay valid. */
-function applyEdits(source: string, edits: readonly TextEdit[]): string {
+/** @internal */
+export function applyEdits(source: string, edits: readonly TextEdit[]): string {
   let out = source
   for (const e of [...edits].sort((a, b) => b.start - a.start)) {
     out = out.slice(0, e.start) + e.text + out.slice(e.end)
@@ -243,7 +252,11 @@ function lineEnd(code: string, offset: number): number {
  * Babel reports offsets on LF text without a BOM, so edits are made on that form and the result is
  * re-encoded in the file's own conventions (CRLF stays CRLF, a BOM stays).
  */
-function normalise(source: string): { readonly text: string; restore(code: string): string } {
+/** @internal */
+export function normalise(source: string): {
+  readonly text: string
+  restore(code: string): string
+} {
   const shape = shapeOf(source)
   const text = toLines(source).join('\n') + (shape.finalNewline ? '\n' : '')
   return {
@@ -274,7 +287,12 @@ function wholeLines(code: string, start: number, end: number): TextEdit {
  * Add `text` as the last item of an array or object literal, following its layout: one item per
  * line (same indentation and trailing-comma habit) or inline. `whenEmpty` replaces `[]` / `{}`.
  */
-function appendItem(code: string, list: ListNode, text: string, whenEmpty: string): TextEdit[] {
+export function appendItem(
+  code: string,
+  list: ListNode,
+  text: string,
+  whenEmpty: string,
+): TextEdit[] {
   const last = list.items[list.items.length - 1]
   if (last === undefined) {
     const inner = code.slice(list.start + 1, list.end - 1)
@@ -299,7 +317,7 @@ function appendItem(code: string, list: ListNode, text: string, whenEmpty: strin
 }
 
 /** Remove one item from an array literal, with its separator (and its line if alone on it). */
-function removeItem(code: string, list: ListNode, index: number): TextEdit[] {
+export function removeItem(code: string, list: ListNode, index: number): TextEdit[] {
   const item = list.items[index] as AstNode
   const next = list.items[index + 1]
   const previous = list.items[index - 1]
@@ -321,7 +339,7 @@ function removeItem(code: string, list: ListNode, index: number): TextEdit[] {
 }
 
 /** Remove an import declaration, including its line when it is alone on it. */
-function removeStatement(code: string, node: AstNode): TextEdit {
+export function removeStatement(code: string, node: AstNode): TextEdit {
   const alone =
     startsLine(code, node.start) && code.slice(node.end, lineEnd(code, node.end)).trim() === ''
   return alone
@@ -329,8 +347,16 @@ function removeStatement(code: string, node: AstNode): TextEdit {
     : { start: node.start, end: node.end, text: '' }
 }
 
-/** The import line, in the style of the file's existing imports (quotes, semicolons). */
-function importLine(code: string, shape: ConfigShape, local: string, specifier: string): string {
+/**
+ * The import line, in the style of the file's existing imports (quotes, semicolons). `clause` is
+ * what follows `import`: a default name (`authProvider`) or named ones (`{ HealthServiceProvider }`).
+ */
+export function importLine(
+  code: string,
+  shape: Pick<ConfigShape, 'imports' | 'firstStatement'>,
+  clause: string,
+  specifier: string,
+): string {
   const model = shape.imports[shape.imports.length - 1]
   let quote: string
   let semi: string
@@ -346,11 +372,14 @@ function importLine(code: string, shape: ConfigShape, local: string, specifier: 
     const first = shape.firstStatement
     semi = first !== undefined && code[first.end - 1] === ';' ? ';' : ''
   }
-  return `import ${local} from ${quote}${specifier}${quote}${semi}`
+  return `import ${clause} from ${quote}${specifier}${quote}${semi}`
 }
 
 /** Insert the import after the last import, or before the first statement (after header comments). */
-function insertImport(shape: ConfigShape, line: string): TextEdit {
+export function insertImport(
+  shape: Pick<ConfigShape, 'imports' | 'firstStatement'>,
+  line: string,
+): TextEdit {
   const lastImport = shape.imports[shape.imports.length - 1]
   if (lastImport !== undefined) {
     return { start: lastImport.end, end: lastImport.end, text: `\n${line}` }

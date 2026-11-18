@@ -5,6 +5,7 @@ import * as devkit from '../../src/devkit/index.ts'
 test('runtime exports', () => {
   expect(Object.keys(devkit).sort()).toEqual(
     [
+      'CONFIG_INDEX_FILE',
       'DevkitError',
       'GeneratorInputError',
       'LOCK_PATH',
@@ -15,6 +16,7 @@ test('runtime exports', () => {
       'checkIdempotent',
       'commitTransaction',
       'createBiomeCliFormatter',
+      'createAppPatcher',
       'createConfigPatcher',
       'createDepsEditor',
       'createEnvEditor',
@@ -31,6 +33,7 @@ test('runtime exports', () => {
       'hasInterruptedTransaction',
       'isSecretEnvFile',
       'planRecovery',
+      'PROVIDERS_FILE',
       'REDACTED',
       'redactEnvLine',
       'lineKey',

@@ -12,6 +12,7 @@
  * @module
  */
 import type { InstallContext, Installer, InstallLogger } from '../contracts/index.ts'
+import { type AppPatcher, createAppPatcher } from './app-patcher.ts'
 import { type ConfigPatcher, createConfigPatcher } from './config-patcher.ts'
 import { createDepsEditor, type DepsEditor } from './deps-editor.ts'
 import { createEnvEditor, type EnvEditor } from './env-editor.ts'
@@ -28,6 +29,11 @@ export interface DevkitInstallContext extends InstallContext {
   readonly env: EnvEditor
   readonly deps: DepsEditor
   readonly config: ConfigPatcher
+  /**
+   * Edits a v2 app's `bootstrap/providers.ts` and `config/index.ts` (`config` above edits v1's
+   * `strutvane.config.ts`). Never throws for an unfamiliar file: it prints what to add by hand.
+   */
+  readonly app: AppPatcher
 }
 
 /** An installer written against devkit (its hooks receive the richer context). */
@@ -140,6 +146,7 @@ export async function runInstaller(
     env: createEnvEditor(fs),
     deps: createDepsEditor(fs),
     config: createConfigPatcher(fs),
+    app: createAppPatcher(fs, { log }),
     log,
   }
 

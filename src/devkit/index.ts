@@ -2,7 +2,8 @@
  * `@strutvane/framework/devkit`: the SDK behind `node strut add`, `node strut make:*` and `node strut upgrade`.
  *
  * - **Installers** (`defineInstaller`, `runInstaller`): transactional, previewable, idempotency-checked
- *   package setup: config files, `.env` + `.env.example`, `package.json`, `strutvane.config.ts`.
+ *   package setup: config files, `.env` + `.env.example`, `package.json`, `strutvane.config.ts`,
+ *   and a v2 app's `bootstrap/providers.ts` + `config/index.ts` (`createAppPatcher`, `context.app`).
  * - **Generators** (`defineGenerator`, `runGenerator`): typed inputs (Standard Schema), plain
  *   TypeScript templates, staged writes.
  * - **Upgrades** (`planUpgrade`, `applyUpgrade`): a normalising three-way merge that never loses a
@@ -11,6 +12,16 @@
  *
  * @packageDocumentation
  */
+export {
+  type AppListEntry,
+  type AppPatcher,
+  type AppPatcherFs,
+  type AppPatcherOptions,
+  type AppPatchResult,
+  CONFIG_INDEX_FILE,
+  createAppPatcher,
+  PROVIDERS_FILE,
+} from './app-patcher.ts'
 export {
   type ConfigPatcher,
   type ConfigPatcherFs,
