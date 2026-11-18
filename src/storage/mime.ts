@@ -86,6 +86,19 @@ export const ACTIVE_CONTENT: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * Whether a stored content type is active content, however it is spelled: parameters
+ * (`text/html; charset=utf-8`), case (`Text/HTML`) and whitespace are ignored, so a declared type
+ * can never slip past {@link ACTIVE_CONTENT} and be served inline.
+ *
+ * @example
+ * isActiveContent('text/html; charset=utf-8') // true
+ */
+export function isActiveContent(contentType: string): boolean {
+  const essence = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
+  return ACTIVE_CONTENT.has(essence) || essence.endsWith('+xml') || essence === ''
+}
+
+/**
  * Whether `mime` matches an allow-list entry (`application/pdf`, `image/*`, `*\/*`).
  *
  * Wildcards never match {@link ACTIVE_CONTENT}: `image/*` is meant as "pictures", and an SVG

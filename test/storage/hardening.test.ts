@@ -192,6 +192,25 @@ describe('signed file links', () => {
     })
   })
 
+  it('active content stays an attachment however its type is spelled (parameters, case, +xml)', async () => {
+    const link = (key: string) =>
+      new URL(signUrl('http://x.test/storage/files', 'files', key, 60, { secret: SECRET, now }))
+    const spellings = [
+      'text/html; charset=utf-8',
+      'Text/HTML',
+      ' image/svg+xml ',
+      'application/rss+xml',
+      '',
+    ]
+    for (const [index, contentType] of spellings.entries()) {
+      const key = `docs/active-${index}.bin`
+      await disk.put(key, '<script>alert(1)</script>', { contentType })
+      const served = await serveSignedFile(new Request(link(key)), { disk, secret: SECRET, now })
+      expect(served.headers.get('content-type'), contentType).toBe('application/octet-stream')
+      expect(served.headers.get('content-disposition'), contentType).toMatch(/^attachment/)
+    }
+  })
+
   it('createHttpApp mounts signed links with problem responses', async () => {
     await disk.put('docs/b.txt', 'via app', { contentType: 'text/plain' })
     const t = await createTestApp({

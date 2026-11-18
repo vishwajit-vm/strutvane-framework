@@ -18,7 +18,7 @@ import type { StorageDisk } from '../contracts/index.ts'
 import { ForbiddenError, NotFoundError, StrutvaneError } from '../core/index.ts'
 import { FileNotFoundError } from './body.ts'
 import { assertSafeKey } from './keys.ts'
-import { ACTIVE_CONTENT } from './mime.ts'
+import { isActiveContent } from './mime.ts'
 import { verifySignedUrl } from './signing.ts'
 
 /** Options for {@link serveSignedFile}. */
@@ -63,7 +63,7 @@ export async function serveSignedFile(
   if (!valid) throw new ForbiddenError()
   const info = await options.disk.stat(key)
   if (!info) throw new NotFoundError()
-  const active = ACTIVE_CONTENT.has(info.contentType)
+  const active = isActiveContent(info.contentType)
   const name = (key.split('/').pop() ?? 'file').replace(/[^a-z0-9._=-]/g, '_')
   const headers = new Headers({
     'Content-Type': active ? 'application/octet-stream' : info.contentType,
