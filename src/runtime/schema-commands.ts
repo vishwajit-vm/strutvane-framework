@@ -48,7 +48,7 @@ import type { Replay } from '../schema/replay.ts'
 import { schemaSnapshot } from '../schema/snapshot.ts'
 import { realRoot } from '../support/real-path.ts'
 import { firstAppEnv } from './app-env.ts'
-import { migrationLockTimeoutMs } from './migrations.ts'
+import { migrationLockTimeoutMs, migrationReplayTimeoutMs } from './migrations.ts'
 import { importDefault, loadDotEnv } from './project.ts'
 import { isSeeder, type Seeder } from './seeders.ts'
 
@@ -146,11 +146,19 @@ function requireForce(ctx: CommandContextLike, appEnv: string | undefined, comma
   ])
 }
 
-/** Replay the migrations in the sandbox (an empty replay when there is no folder yet). */
-export async function replayProject(root: string): Promise<Replay> {
+/**
+ * Replay the migrations in the sandbox (an empty replay when there is no folder yet), with the
+ * default timeout or `timeoutMs` (see {@link migrationReplayTimeoutMs}).
+ */
+export async function replayProject(root: string, timeoutMs?: number): Promise<Replay> {
   const dir = join(root, MIGRATIONS_DIR)
   if (!existsSync(dir)) return { migrations: [], state: EMPTY_SCHEMA }
-  return replayInSandbox(dir)
+  return replayInSandbox(dir, timeoutMs === undefined ? {} : { timeoutMs })
+}
+
+/** The replay timeout a command runs with: `--replay-timeout`, `DB_MIGRATION_REPLAY_TIMEOUT` or 10 s. */
+function replayTimeout(ctx: CommandContextLike): number {
+  return migrationReplayTimeoutMs(commandEnv(ctx), ctx.flags['replay-timeout'])
 }
 
 /** Regenerate `.strutvane/` from a replay; returns the files that changed. */
@@ -286,7 +294,7 @@ export async function migrateV2(
   const { root, appEnv } = project(ctx)
   const pretend = ctx.flags['pretend'] === true
   if (!pretend) requireForce(ctx, appEnv, 'migrate')
-  const replay = await replayProject(root)
+  const replay = await replayProject(root, replayTimeout(ctx))
   return withMigrationConnection(root, ctx, async (connection) => {
     const result = await migrate(connection, replay, {
       ...(ctx.flags['step'] === true ? { step: true } : {}),
@@ -318,7 +326,7 @@ export async function statusV2(
   ctx: CommandContextLike,
 ): Promise<{ readonly exitCode?: number; readonly data?: unknown }> {
   const { root } = project(ctx)
-  const replay = await replayProject(root)
+  const replay = await replayProject(root, replayTimeout(ctx))
   return withMigrationConnection(root, ctx, async (connection) => {
     const status = await migrationStatus(connection, replay)
     ctx.out.table(
@@ -343,7 +351,7 @@ async function maintenance(
   if (!pretend) requireForce(ctx, appEnv, command)
   const step = countFlag('step', ctx.flags['step'])
   const batch = countFlag('batch', ctx.flags['batch'])
-  const replay = await replayProject(root)
+  const replay = await replayProject(root, replayTimeout(ctx))
   return withMigrationConnection(root, ctx, async (connection) => {
     const common = {
       onEvent: reporter(ctx),
@@ -395,7 +403,7 @@ export async function seedV2(
   const { root, appEnv } = project(ctx)
   requireForce(ctx, appEnv, 'db:seed')
   const className = str(ctx.flags['class'])
-  const replay = await replayProject(root)
+  const replay = await replayProject(root, replayTimeout(ctx))
   const settings = databaseSettings(commandEnv(ctx), root)
   const connection = await openDatabase(settings)
   try {
@@ -422,6 +430,16 @@ const isolatedFlag = {
   type: 'boolean',
   description: "Don't wait when another migrate holds the lock: report it and do nothing",
 } as const
+const replayTimeoutFlag = {
+  type: 'string',
+  description:
+    'How long replaying the migrations may take (30s, 2min; default 10s or DB_MIGRATION_REPLAY_TIMEOUT)',
+} as const
+
+/** The flags of `migrate:status` for migration-first projects. */
+export const STATUS_V2_FLAGS: NonNullable<ContributedCommand['flags']> = {
+  'replay-timeout': replayTimeoutFlag,
+}
 
 /** The flags of `migrate` for migration-first projects. */
 export const MIGRATE_V2_FLAGS: NonNullable<ContributedCommand['flags']> = {
@@ -436,6 +454,7 @@ export const MIGRATE_V2_FLAGS: NonNullable<ContributedCommand['flags']> = {
   seed: seedFlag,
   force: forceFlag,
   isolated: isolatedFlag,
+  'replay-timeout': replayTimeoutFlag,
 }
 
 /** The flags of `db:seed` for migration-first projects. */
@@ -443,6 +462,7 @@ export const SEED_V2_FLAGS: NonNullable<ContributedCommand['flags']> = {
   class: { type: 'string', description: 'Run one seeder, e.g. PostSeeder' },
   tenant: { type: 'string', description: 'Seed inside this tenant (a UUID)' },
   force: forceFlag,
+  'replay-timeout': replayTimeoutFlag,
 }
 
 function maintenanceCommand(
@@ -454,7 +474,12 @@ function maintenanceCommand(
     name,
     description,
     destructive: true,
-    flags: { force: forceFlag, isolated: isolatedFlag, ...flags },
+    flags: {
+      force: forceFlag,
+      isolated: isolatedFlag,
+      'replay-timeout': replayTimeoutFlag,
+      ...flags,
+    },
     run: (ctx) => maintenance(ctx, name),
   }
 }
@@ -481,9 +506,10 @@ export const schemaCommands: readonly ContributedCommand[] = Object.freeze([
     name: 'sync',
     description:
       'Regenerate .strutvane/ (types, resources.json, schema.json, SQL) from the migrations',
+    flags: { 'replay-timeout': replayTimeoutFlag },
     async run(ctx) {
       const { root } = project(ctx)
-      const written = syncArtifacts(root, await replayProject(root))
+      const written = syncArtifacts(root, await replayProject(root, replayTimeout(ctx)))
       if (written.length === 0) ctx.out.success('.strutvane/ is up to date.')
       for (const file of written) ctx.out.success(`Updated ${file}`)
       return { data: { written } }

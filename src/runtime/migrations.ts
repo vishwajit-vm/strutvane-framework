@@ -17,7 +17,7 @@
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative } from 'node:path'
-import { type EnvSource, EnvValidationError } from '../core/index.ts'
+import { type EnvSource, EnvValidationError, ValidationError } from '../core/index.ts'
 import { connectDatabase, type DatabaseConfig } from '../database/connect.ts'
 import type { Database, Dialect } from '../database/types.ts'
 import {
@@ -34,6 +34,7 @@ import {
   migrationStatus,
 } from '../migrations/migrator.ts'
 import { planMigration, type RenameResolver } from '../migrations/planner.ts'
+import { DEFAULT_SANDBOX_TIMEOUT_MS, SANDBOX_TIMEOUT_BOUNDS_MS } from '../migrations/sandbox.ts'
 import { createModelRegistry } from '../model/registry.ts'
 import { type AppDatabaseConfig, databaseConfigFrom } from './database-config.ts'
 import { conventionFiles, importDefault, type LoadedProject } from './project.ts'
@@ -70,6 +71,47 @@ export function migrationLockTimeoutMs(env: EnvSource): number {
       },
     ])
   return Number(match[1]) * (UNIT_MS[match[2] ?? 'ms'] ?? 1)
+}
+
+/**
+ * How long the migration replay sandbox may run, in ms: `--replay-timeout` when given, else
+ * `DB_MIGRATION_REPLAY_TIMEOUT`, else {@link DEFAULT_SANDBOX_TIMEOUT_MS} (10 s). Same syntax as
+ * `DB_MIGRATION_LOCK_TIMEOUT` (`30000`, `30s`, `2min`), within {@link SANDBOX_TIMEOUT_BOUNDS_MS}
+ * (1 s to 10 min; no "forever": the timeout is what stops a migration file that hangs). A bad flag
+ * is a usage error naming the flag; a bad `.env` value an {@link EnvValidationError} naming the key.
+ *
+ * @example
+ * migrationReplayTimeoutMs({ DB_MIGRATION_REPLAY_TIMEOUT: '30s' }) // 30000
+ * migrationReplayTimeoutMs({}, '2min')                            // 120000
+ */
+export function migrationReplayTimeoutMs(env: EnvSource, flag?: unknown): number {
+  if (flag !== undefined && flag !== false) {
+    const ms = typeof flag === 'string' ? replayDuration(flag) : undefined
+    if (ms !== undefined) return ms
+    throw new ValidationError([
+      {
+        path: ['--replay-timeout'],
+        code: 'invalid_flag',
+        message: `--replay-timeout ${REPLAY_RULE}`,
+      },
+    ])
+  }
+  const raw = env['DB_MIGRATION_REPLAY_TIMEOUT']
+  if (raw === undefined || raw.trim() === '') return DEFAULT_SANDBOX_TIMEOUT_MS
+  const ms = replayDuration(raw)
+  if (ms !== undefined) return ms
+  throw new EnvValidationError([{ key: 'DB_MIGRATION_REPLAY_TIMEOUT', message: REPLAY_RULE }])
+}
+
+const REPLAY_RULE = `must be a duration from ${SANDBOX_TIMEOUT_BOUNDS_MS.min / 1000}s to ${SANDBOX_TIMEOUT_BOUNDS_MS.max / 60_000}min, such as 30s, 30000 (milliseconds) or 2min`
+
+/** A duration within the sandbox bounds, in ms, or `undefined`. */
+function replayDuration(text: string): number | undefined {
+  const match = DURATION.exec(text.trim())
+  if (!match) return undefined
+  const ms = Number(match[1]) * (UNIT_MS[match[2] ?? 'ms'] ?? 1)
+  const { min, max } = SANDBOX_TIMEOUT_BOUNDS_MS
+  return ms >= min && ms <= max ? ms : undefined
 }
 
 /**

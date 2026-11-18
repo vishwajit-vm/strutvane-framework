@@ -48,6 +48,30 @@ import {
 /** How long a replay may take before the child is killed (ms). */
 export const DEFAULT_SANDBOX_TIMEOUT_MS = 10_000
 
+/**
+ * The bounds a replay timeout must stay within: at least 1 s (a replay starts a Node process,
+ * which alone takes a few hundred ms on a busy machine), at most 10 minutes (the timeout exists to
+ * stop a hung migration file; "forever" would defeat it).
+ */
+export const SANDBOX_TIMEOUT_BOUNDS_MS: { readonly min: number; readonly max: number } =
+  Object.freeze({ min: 1_000, max: 600_000 })
+
+/**
+ * Refuse a replay timeout outside {@link SANDBOX_TIMEOUT_BOUNDS_MS} (or not a whole number), before
+ * any process starts.
+ *
+ * @example
+ * assertSandboxTimeout(30_000) // fine
+ * assertSandboxTimeout(0)      // throws RangeError
+ */
+export function assertSandboxTimeout(timeoutMs: number): void {
+  const { min, max } = SANDBOX_TIMEOUT_BOUNDS_MS
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < min || timeoutMs > max)
+    throw new RangeError(
+      `The migration replay timeout must be a whole number of milliseconds from ${min} to ${max}, not ${String(timeoutMs)}.`,
+    )
+}
+
 /** The child's heap limit (MB): far above what replaying schema operations needs. */
 const CHILD_HEAP_MB = 512
 
@@ -102,7 +126,11 @@ export class SandboxError extends Error {
  * await replayInSandbox(dir, { timeoutMs: 20_000 })
  */
 export interface SandboxOptions {
-  /** Kill the replay after this many ms. Default {@link DEFAULT_SANDBOX_TIMEOUT_MS}. */
+  /**
+   * Kill the replay after this many ms. Default {@link DEFAULT_SANDBOX_TIMEOUT_MS}; must be within
+   * {@link SANDBOX_TIMEOUT_BOUNDS_MS}. The CLI sets it from `--replay-timeout` or
+   * `DB_MIGRATION_REPLAY_TIMEOUT`.
+   */
   readonly timeoutMs?: number
 }
 
@@ -146,9 +174,11 @@ export async function replayInSandbox(
   migrationsDir: string,
   options: SandboxOptions = {},
 ): Promise<Replay> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS
+  assertSandboxTimeout(timeoutMs)
   const manifest = approveMigrations(migrationsDir)
   if (manifest.entries.length === 0) return replayRecorded([])
-  const message = await runReplayWorker(manifest, options.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS)
+  const message = await runReplayWorker(manifest, timeoutMs)
   if (!message.ok) {
     // The child's words are the migration's words: printable text only, and the file name only
     // when it is one of the migrations we sent.
@@ -431,7 +461,7 @@ export function runReplayWorker(
         fail(
           'replay_timeout',
           `Replaying the migrations took longer than ${timeoutMs} ms, so it was stopped.`,
-          'A migration probably loops forever or waits for something at the top level. Migrations must only call the schema builder.',
+          'A migration probably loops forever or waits for something at the top level (migrations must only call the schema builder). On a very busy or slow machine, allow more time: --replay-timeout=30s or DB_MIGRATION_REPLAY_TIMEOUT=30s in .env.',
         ),
       timeoutMs,
     )

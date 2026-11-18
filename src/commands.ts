@@ -33,6 +33,7 @@ import {
   MIGRATE_V2_FLAGS,
   migrateV2,
   SEED_V2_FLAGS,
+  STATUS_V2_FLAGS,
   schemaCommands,
   seedV2,
   statusV2,
@@ -477,7 +478,7 @@ export function runChild(
 /** Every contributed command. Migration-first projects get the v2 database commands. */
 export const commands: readonly ContributedCommand[] = Object.freeze([
   dispatchByProject(migrateCommand, migrateV2, MIGRATE_V2_FLAGS),
-  dispatchByProject(statusCommand, statusV2),
+  dispatchByProject(statusCommand, statusV2, STATUS_V2_FLAGS),
   dispatchByProject(seedCommand, seedV2, SEED_V2_FLAGS),
   ...schemaCommands,
   startCommand,
