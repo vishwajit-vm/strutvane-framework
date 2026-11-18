@@ -16,6 +16,7 @@
 import type { Actor, PermissionProvider } from '../contracts/index.ts'
 import {
   type Application,
+  type Clock,
   createApp,
   HooksToken,
   IdGeneratorToken,
@@ -53,6 +54,16 @@ export interface TestAppOptions {
   readonly basePath?: string
   /** Extra `createHttpApp` options (e.g. `trustProxy`, `openapi`, `signedFiles`). */
   readonly http?: Omit<HttpAppOptions, 'resources' | 'registry' | 'database'>
+  /**
+   * The app's clock (default: the system clock). Pass a `TestClock` to test anything that
+   * depends on elapsed time (expiry, TTLs) without waiting, and without failing on a slow machine.
+   *
+   * @example
+   * const clock = createTestClock()
+   * const t = await createTestApp({ resources: [Order], clock, http: { idempotency: { ttlMs: 50 } } })
+   * clock.advance(51) // every stored idempotent response has now expired
+   */
+  readonly clock?: Clock
 }
 
 /** A response as seen by tests. */
@@ -129,6 +140,7 @@ export async function createTestApp(options: TestAppOptions): Promise<TestApp> {
   const app = createApp({
     config: {},
     providers: [frameworkProvider({ database: db, models: registry.all })],
+    ...(options.clock !== undefined ? { clock: options.clock } : {}),
   })
   const permissions =
     options.permissions === undefined || options.permissions === 'allow'

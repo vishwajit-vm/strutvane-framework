@@ -9,6 +9,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Actor } from '../../src/contracts/index.ts'
+import { type Clock, createTestClock } from '../../src/core/clock.ts'
 import type { HttpAppOptions } from '../../src/http/create-http-app.ts'
 import {
   IDEMPOTENCY_TTL_MS,
@@ -38,10 +39,12 @@ interface Problem {
 
 async function boot(
   http: Omit<HttpAppOptions, 'resources' | 'registry' | 'database'> = {},
+  clock?: Clock,
 ): Promise<{ app: TestApp; charges: () => number }> {
   let charges = 0
   t = await createTestApp({
     resources: [Order],
+    ...(clock !== undefined ? { clock } : {}),
     http: {
       routes: [
         route.post('/payments', {
@@ -225,11 +228,15 @@ describe('Idempotency-Key: a retry never runs the action twice', () => {
   })
 
   it('stored responses expire after the TTL (idempotency.ttlMs)', async () => {
-    const { app, charges } = await boot({ idempotency: { ttlMs: 50 } })
+    // A test clock, not the wall clock: on a loaded machine two requests can be more than 50 ms
+    // apart, which expired the key before the retry and made this test flaky.
+    const clock = createTestClock()
+    const { app, charges } = await boot({ idempotency: { ttlMs: 50 } }, clock)
     const a = app.actingAs(alice)
     await pay(a, 'ttl-1')
+    clock.advance(49) // the last millisecond it is still stored (it expires at +ttlMs)
     expect((await pay(a, 'ttl-1')).headers.get('idempotent-replayed')).toBe('true')
-    await new Promise((r) => setTimeout(r, 120))
+    clock.advance(1)
     const after = await pay(a, 'ttl-1')
     expect(after.headers.get('idempotent-replayed')).toBeNull()
     expect(charges()).toBe(2)
