@@ -27,9 +27,14 @@ Branch `v2/logging`, cut from `main` at 6dfc239 (0.2.0-next.0). Source of the po
 - Tests: `test/logging/` (ported suites + `app.test.ts`, `log-commands.test.ts`,
   `injection.test.ts`); `logger.perf.test.ts` runs under `npm run test:perf`.
 
-## Half-done / next
-- The gate 3× in a row (see "Gate status" below), then publint/attw/package check/audit and
-  `npm run test:perf`.
+## Half-done / next (stopped for the usage limit, 2026-11-18)
+- Nothing half-written in the code: every change is committed. What is missing is evidence.
+- Next, in order: the gate 3× in a row on a quiet machine (see "Gate status": no green run yet),
+  then `npm run test:perf`, `check-code-rules` + `check-deps` (both passed on 2c60013),
+  `npm pack` + `check-package`, publint `--strict`, attw `--profile esm-only` (the new `./log`
+  subpath is not checked yet), `npm audit --omit=dev --audit-level=high`.
+- Look at coverage for `src/logging/**` and `src/console/commands/app/logs.ts` in the first green
+  run (no run reached the coverage report yet).
 - `test/logging` is its own Vitest project (serial, after the framework project): its deadline and
   child-process suites failed only under CPU contention when they ran in parallel with the
   database suites.
@@ -71,3 +76,9 @@ npm audit --omit=dev --audit-level=high
 - Run 2 (2b3af55): 45 failed, all timeouts in the database/pglite/console suites while another
   agent's test run (its own DB containers) held the CPU at 99%; no logging test failed. Not a
   code failure, but it breaks the 3× streak: rerun on a quiet machine.
+- Run 3 (49b9a9f): 22 failed, again timeouts and "failed to start forks worker" in the database,
+  ORM and console suites (110 min; machine overloaded); no logging test failed.
+- Run 4 (49b9a9f, machine quiet): stopped by the coordinator (usage limit) before it finished;
+  its vitest process was killed and its three DB containers (`…-16292-…`) were removed.
+- The changed logging suites alone, serially (`--no-file-parallelism`): 7 files, 68 passed, 1
+  skipped.
