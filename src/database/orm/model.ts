@@ -47,6 +47,7 @@ import {
   OrmUsageError,
   TenantMismatchError,
 } from './errors.ts'
+import { currentModelEvents, type ModelEventVerb, modelEventName } from './events.ts'
 import { uuidv7 } from './keys.ts'
 import {
   type BelongsTo,
@@ -494,8 +495,13 @@ export class ModelBase {
    * await post.save()
    */
   async save(): Promise<this> {
-    if (this.#persisted) await this.#update()
-    else await this.#insert()
+    if (this.#persisted) {
+      const changed = await this.#update()
+      if (changed.length > 0) await this.#announce('updated', { changed })
+    } else {
+      await this.#insert()
+      await this.#announce('created', {})
+    }
     return this
   }
 
@@ -509,7 +515,9 @@ export class ModelBase {
     const info = this.#assertPersisted('delete')
     if (!info.softDeletes) return this.forceDelete()
     defineColumn(this, SYSTEM_COLUMNS.deletedAt, new Date())
-    await this.save()
+    // #update, not save(): a soft delete is announced as `deleted`, never as `updated`.
+    await this.#update()
+    await this.#announce('deleted', { soft: true })
   }
 
   /**
@@ -529,6 +537,7 @@ export class ModelBase {
     )
     if (rowsAffected === 0) throw new ModelNotFoundError(info.name, attribute(this, 'id'))
     this.#persisted = false
+    await this.#announce('deleted', { soft: false })
   }
 
   /**
@@ -545,7 +554,9 @@ export class ModelBase {
         `"${info.name}" has no deleted_at column, so there is nothing to restore. Add t.softDeletes() in a migration to enable it.`,
       )
     defineColumn(this, SYSTEM_COLUMNS.deletedAt, null)
-    return this.save()
+    // Restoring a row that isn't deleted changes nothing, so nothing is announced.
+    if ((await this.#update()).length > 0) await this.#announce('restored', {})
+    return this
   }
 
   /**
@@ -813,11 +824,38 @@ export class ModelBase {
     return rows.map((row) => String(row['slug']))
   }
 
-  async #update(): Promise<void> {
+  /**
+   * Emit a model event (`post.created`, …) after the write commits, when the running app has a
+   * listener for it (see `events.ts`). Builds nothing when nobody listens.
+   */
+  async #announce(
+    verb: ModelEventVerb,
+    extra: { readonly changed?: readonly string[]; readonly soft?: boolean },
+  ): Promise<void> {
+    const events = currentModelEvents()
+    if (events === undefined) return
+    const runtime = this.runtime()
+    const info = runtime.info()
+    const type = modelEventName(info.name, verb)
+    if (!events.wants(type)) return
+    const payload = Object.freeze({
+      table: info.name,
+      model: this.constructor.name,
+      key: attribute(this, 'id'),
+      record: Object.freeze(this.toJSON()),
+      ...(extra.changed === undefined ? {} : { changed: Object.freeze([...extra.changed]) }),
+      ...(extra.soft === undefined ? {} : { soft: extra.soft }),
+    })
+    const tenant = this.#runOptions(info).tenantId
+    await runtime.connection().afterCommit(() => events.dispatch(type, payload, tenant))
+  }
+
+  /** Write the dirty columns; returns the columns that changed (none: nothing was written). */
+  async #update(): Promise<string[]> {
     const runtime = this.runtime()
     const info = runtime.info()
     const dirty = this.getDirty()
-    if (Object.keys(dirty).length === 0) return
+    if (Object.keys(dirty).length === 0) return []
     if ('id' in dirty)
       throw new OrmUsageError(
         'primary_key_changed',
@@ -845,6 +883,7 @@ export class ModelBase {
     // Zero rows: deleted meanwhile, or (with tenancy) never ours. Both are "not found".
     if (row === undefined) throw new ModelNotFoundError(info.name, attribute(this, 'id'))
     this.#assignRow(row)
+    return Object.keys(dirty)
   }
 
   /** Model values → database values for the given columns (model casts, then built-in casts). */

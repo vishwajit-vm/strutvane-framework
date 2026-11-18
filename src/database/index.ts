@@ -4,9 +4,10 @@
  *
  * @module
  */
-export { Connection, type QueryEvent } from './db/connection.ts'
+export { type AfterCommitCallback, Connection, type QueryEvent } from './db/connection.ts'
 export type { Driver, DriverSession, QueryResult, Row } from './db/driver.ts'
 export {
+  afterCommit,
   defaultConnection,
   runWithConnection,
   transaction,
@@ -35,6 +36,14 @@ export {
   TenantMismatchError,
   TenantRequiredError,
 } from './orm/errors.ts'
+export {
+  currentModelEvents,
+  type ModelEventDispatcher,
+  type ModelEventPayload,
+  type ModelEventVerb,
+  modelEventName,
+  runWithModelEvents,
+} from './orm/events.ts'
 export { loadMany, Model, ModelBase, type ModelClass, type ModelInstance } from './orm/model.ts'
 export type { CursorPage, Page } from './orm/pagination.ts'
 export type { BelongsTo, BelongsToMany, HasMany } from './orm/relations.ts'

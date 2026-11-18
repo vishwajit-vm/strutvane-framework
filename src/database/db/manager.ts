@@ -14,7 +14,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { OrmUsageError } from '../orm/errors.ts'
-import type { Connection } from './connection.ts'
+import type { AfterCommitCallback, Connection } from './connection.ts'
 
 let current: Connection | undefined
 const scoped = new AsyncLocalStorage<() => Connection>()
@@ -70,4 +70,18 @@ export function defaultConnection(): Connection {
  */
 export function transaction<T>(fn: () => Promise<T>): Promise<T> {
   return defaultConnection().transaction(fn)
+}
+
+/**
+ * Run `callback` once the current transaction on the default connection commits (at once outside
+ * a transaction; never after a rollback). Laravel's `DB::afterCommit`.
+ *
+ * @example
+ * await transaction(async () => {
+ *   await order.save()
+ *   await afterCommit(() => notify(order))
+ * })
+ */
+export function afterCommit(callback: AfterCommitCallback): Promise<void> {
+  return defaultConnection().afterCommit(callback)
 }
