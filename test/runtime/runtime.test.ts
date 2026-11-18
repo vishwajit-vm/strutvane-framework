@@ -1,6 +1,6 @@
 // The project runtime: loading a generated project, booting it, serving it over real HTTP,
 // migrations and seeders, and the CLI command contributions.
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -172,7 +172,9 @@ describe('loadProject', () => {
     expect(p.models.map((m) => m.definition.name)).toEqual(['Invoice'])
     expect(p.routes.map((r) => `${r.method} ${r.path}`)).toContain('get /hello')
     expect(p.providers).toHaveLength(1)
-    expect(p.config['app']).toMatchObject({ name: 'demo', preset: 'api', root })
+    // The loader resolves the project root to its real path (macOS temp folders live under a
+    // symlink: /var -> /private/var), so compare against the real path, not the one we created.
+    expect(p.config['app']).toMatchObject({ name: 'demo', preset: 'api', root: realpathSync(root) })
     expect(process.env['STRUTVANE_FIXTURE_FROM_DOTENV']).toBe('yes')
     delete process.env['STRUTVANE_FIXTURE_FROM_DOTENV']
   })
