@@ -33,6 +33,7 @@ import type { TestProject } from 'vitest/node'
 
 const run = promisify(execFile)
 const READY_TIMEOUT_MS = 240_000
+const DOCKER_PROBE_TIMEOUT_MS = 60_000
 
 /** A server's admin URL (no database in the path), or why it isn't available. */
 export type ServerInfo = { readonly url: string } | { readonly skipped: string }
@@ -271,12 +272,16 @@ export function redact(text: string, secret: string): string {
 async function dockerUnusable(): Promise<string | undefined> {
   let os: string
   try {
+    // Generous: a busy Docker Desktop can take tens of seconds to answer, and a timeout here
+    // silently skips every real-server suite (outside Linux CI and `require`).
     const { stdout } = await run('docker', ['version', '--format', '{{.Server.Os}}'], {
-      timeout: 15_000,
+      timeout: DOCKER_PROBE_TIMEOUT_MS,
     })
     os = stdout.trim()
-  } catch {
-    return 'Docker is not available'
+  } catch (error) {
+    return (error as { killed?: unknown }).killed === true
+      ? `Docker did not answer within ${DOCKER_PROBE_TIMEOUT_MS / 1000}s`
+      : 'Docker is not available'
   }
   return os === 'linux'
     ? undefined

@@ -12,6 +12,19 @@
 3. Node 24 has no `--allow-net`: the replay sandbox closes the network with in-process barriers
    there. Revisit when the minimum Node version moves.
 
+## fix/ci-cross-platform (Windows and macOS CI for 0.2.0-next.0)
+- **Done:**
+  - The real-server global setup (`test/helpers/db-servers.ts`) needs Docker with Linux
+    containers. A server that can't start is skipped, with the reason in the test title.
+    `STRUTVANE_TEST_DOCKER=require` and Linux CI still fail loudly.
+  - `realRoot()` resolves the project root once, which fixes the macOS `/var` → `/private/var`
+    failures. Linked-root suites cover this on every OS (a junction on Windows).
+  - The idempotency TTL test uses `createTestApp({ clock })`.
+  - The Biome reflow tests get 90 s per call.
+- **Left:** push the branch, confirm the Windows and macOS CI jobs, then merge into `main`. On
+  Windows the real-server suites are skipped by design: GitHub's Windows runners only have
+  Windows containers.
+
 ## How to verify
 ```bash
 npm ci
