@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, test } from 'vitest'
 import { type CommandContextLike, commands } from '../../../src/commands.ts'
 import { HTTP_HOOKS, type HttpRequestHookPayload } from '../../../src/contracts/http-hooks.ts'
-import { HooksToken } from '../../../src/core/tokens.ts'
+import { EventBusToken, HooksToken } from '../../../src/core/tokens.ts'
 import { configureOrm, registerSchema, sql } from '../../../src/database/index.ts'
 import { Application } from '../../../src/foundation/application.ts'
 import { defineConfig } from '../../../src/foundation/config.ts'
@@ -233,6 +233,37 @@ describe.each(ENGINES)('an application reads and writes rows over HTTP on $name'
 })
 
 describe('the application connection on SQLite', () => {
+  test("model events reach the app's event bus after commit, with the request's tenant", async () => {
+    const env = { DB_CONNECTION: 'sqlite', DB_DATABASE: 'database/database.sqlite' }
+    const root = appFolder(true)
+    await migrate(root, env)
+    const app = application(root, env)
+    await app.boot()
+    const seen: { type: string; tenantId: string | undefined; name: unknown }[] = []
+    const bus = app.make(EventBusToken)
+    for (const type of ['tag.created', 'task.created'])
+      bus.on(type, (event) => {
+        const payload = event.payload as { record: Record<string, unknown> }
+        seen.push({
+          type: event.type,
+          tenantId: event.tenantId,
+          name: payload.record['name'] ?? payload.record['title'],
+        })
+      })
+    const client = testClient(app).withoutCsrf()
+    ;(await client.postJson('/api/tags', { name: 'events' })).assertStatus(201)
+    ;(
+      await client
+        .withHeaders({ 'x-tenant': A })
+        .postJson('/api/tasks', { project_id: PROJECT, title: 'scoped' })
+    ).assertStatus(201)
+    expect(seen).toEqual([
+      { type: 'tag.created', tenantId: undefined, name: 'events' },
+      { type: 'task.created', tenantId: A, name: 'scoped' },
+    ])
+    await app.shutdown()
+  })
+
   test('two apps in one process each use their own database', async () => {
     const env = { DB_CONNECTION: 'sqlite', DB_DATABASE: 'database/database.sqlite' }
     const first = appFolder(false)

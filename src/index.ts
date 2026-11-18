@@ -15,7 +15,30 @@
  * @packageDocumentation
  */
 
+// Authorization: policies and the gate (deny by default), for apps and add-ons
+export {
+  type Ability,
+  allows,
+  authorize,
+  hasAdminRole,
+  type Policy,
+  PolicyDenial,
+  type PolicyResult,
+} from './auth/gate.ts'
+export {
+  POLICIES_FOLDER,
+  PolicyRegistry,
+  PolicyRegistryToken,
+  type PolicyTarget,
+} from './auth/policies.ts'
 export { type CacheManager, CacheManagerToken, type CacheStore } from './cache/contract.ts'
+export {
+  BUILT_IN_CACHE_DRIVERS,
+  type CacheDriverContext,
+  type CacheDriverFactory,
+  CacheDriverRegistry,
+  CacheDriverRegistryToken,
+} from './cache/drivers.ts'
 export {
   FILE_CACHE_FOLDER,
   FileCacheStore,
@@ -105,6 +128,7 @@ export type {
 export { defer, type HttpContext } from './http/app/context.ts'
 export { ResponseError } from './http/app/errors.ts'
 export { MaintenanceCheckToken } from './http/app/kernel.ts'
+export { MemoryCacheStore } from './http/app/memory-cache.ts'
 export {
   type Middleware,
   type MiddlewareClass,
@@ -129,6 +153,8 @@ export {
 } from './http/app/protections.ts'
 export { Controller, ResourceController } from './http/app/resource-controller.ts'
 export type { ResourceModel } from './http/app/resource-model.ts'
+// The rate limiter's counter store: bind a shared store (Redis) here for limits across servers.
+export { RateLimitStoreToken } from './http/app/throttle.ts'
 // HTTP, OpenAPI and manifest
 export {
   createHttpApp,
@@ -392,7 +418,14 @@ export { HttpClientError, safeFetch } from './security/http-client.ts'
 export { Keyring, KeyringToken, keyProblem } from './security/keyring.ts'
 export { Redirector, safeRedirectTarget } from './security/redirect.ts'
 export { type ResolvedSecurity, SecurityToken } from './security/settings.ts'
-export { UrlSigner, UrlSignerToken } from './security/signer.ts'
+export {
+  MemoryUsedSignatureStore,
+  type MemoryUsedSignatureStoreOptions,
+  UrlSigner,
+  UrlSignerToken,
+  type UsedSignatureStore,
+  UsedSignatureStoreToken,
+} from './security/signer.ts'
 export { type SessionStore, SessionStoreToken } from './session/contract.ts'
 export { FileSessionStore, SESSION_FOLDER } from './session/file-store.ts'
 export { FileNotFoundError } from './storage/body.ts'
@@ -401,8 +434,14 @@ export { createLocalDisk, type LocalDiskOptions } from './storage/local-disk.ts'
 // Storage and uploads
 export { createStorageManager, type StorageManager } from './storage/manager.ts'
 export { createMemoryDisk, type MemoryDiskOptions } from './storage/memory-disk.ts'
-export { ACTIVE_CONTENT, detectMime, mimeMatches } from './storage/mime.ts'
+export { ACTIVE_CONTENT, detectMime, isActiveContent, mimeMatches } from './storage/mime.ts'
 export { type MultipartLimits, type MultipartResult, parseMultipart } from './storage/multipart.ts'
+export {
+  type PublicDiskSettings,
+  type PublicMount,
+  publicMounts,
+  servePublicFile,
+} from './storage/public-files.ts'
 export {
   type SignedFileOptions,
   serveSignedFile,

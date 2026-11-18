@@ -3,6 +3,14 @@
  *
  * @packageDocumentation
  */
+// The v2 feature-test client for an Application (`testClient(app).actingAs(user).getJson(…)`).
+// Its classes are exported as AppTestClient/AppTestResponse: TestClient and TestResponse name the
+// v1 createTestApp() types below.
+export {
+  TestClient as AppTestClient,
+  TestResponse as AppTestResponse,
+  testClient,
+} from './app-client.ts'
 export {
   createFake,
   type DefinedFactory,

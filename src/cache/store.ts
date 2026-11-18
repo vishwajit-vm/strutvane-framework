@@ -16,8 +16,9 @@
  * - `file`: `storage/framework/cache` (or `path`), shared by every process on one machine, with
  *   atomic `add`/`increment` across processes (`FileCacheStore`).
  *
- * Both names always exist (a config can repoint them); the database and `@strutvane/redis` stores
- * come in 0.3. Stores are created on first use, so an app that never touches the file store never
+ * Both names always exist (a config can repoint them). Packages add drivers (`@strutvane/redis`'s
+ * `redis`) through the {@link CacheDriverRegistry} (`cache/drivers.ts`), and a store then names
+ * that driver. Stores are created on first use, so an app that never touches the file store never
  * creates its folder. A bad config (unknown driver, a default that names no store) stops boot with
  * a friendly error instead of failing on the first cache call.
  *
@@ -29,20 +30,21 @@ import { BootError } from '../foundation/boot-error.ts'
 import { MemoryCacheStore } from '../http/app/memory-cache.ts'
 import { closestMatch } from '../support/str.ts'
 import type { CacheManager, CacheStore } from './contract.ts'
+import type { CacheDriverFactory } from './drivers.ts'
 import { FILE_CACHE_FOLDER, FileCacheStore } from './file-store.ts'
 
 export { MemoryCacheStore } from '../http/app/memory-cache.ts'
 export { FILE_CACHE_FOLDER, FileCacheStore } from './file-store.ts'
 
 /**
- * The drivers a store can use.
+ * The drivers a store can use: the built-in `memory` and `file`, or one a package registered.
  *
  * @example
  * const driver: CacheDriver = 'file'
  */
-export type CacheDriver = 'memory' | 'file'
+export type CacheDriver = 'memory' | 'file' | (string & {})
 
-const DRIVERS: readonly CacheDriver[] = ['memory', 'file']
+const DRIVERS: readonly string[] = ['memory', 'file']
 
 /**
  * One store in `config/cache.ts`.
@@ -54,6 +56,8 @@ export interface CacheStoreConfig {
   readonly driver: CacheDriver
   /** File stores only: the folder, relative to the app (or absolute). */
   readonly path?: string
+  /** Settings for a package driver (passed to its factory as they are). */
+  readonly [option: string]: unknown
 }
 
 /**
@@ -81,6 +85,8 @@ export interface CacheManagerOptions {
   readonly clock: Clock
   /** The `cache` config tree (unchecked: it is validated here). Omitted means the defaults. */
   readonly config?: unknown
+  /** Drivers packages registered (`CacheDriverRegistry.factories`). */
+  readonly drivers?: ReadonlyMap<string, CacheDriverFactory>
 }
 
 /**
@@ -124,22 +130,31 @@ export class StoreCacheManager implements CacheManager {
  * manager.store('file') // FileCacheStore in storage/framework/cache
  */
 export function createCacheManager(options: CacheManagerOptions): CacheManager {
-  const config = readConfig(options.config)
+  const drivers = options.drivers ?? new Map<string, CacheDriverFactory>()
+  const config = readConfig(options.config, drivers)
   const stores: Record<string, CacheStoreConfig> = {
     memory: { driver: 'memory' },
     file: { driver: 'file' },
     ...config.stores,
   }
   const factories = new Map<string, () => CacheStore>()
-  for (const [name, store] of Object.entries(stores))
-    factories.set(name, () =>
-      store.driver === 'memory'
-        ? new MemoryCacheStore({ clock: options.clock })
-        : new FileCacheStore({
-            directory: folder(options.basePath, store.path ?? FILE_CACHE_FOLDER),
-            clock: options.clock,
-          }),
-    )
+  for (const [name, store] of Object.entries(stores)) {
+    const custom = drivers.get(store.driver)
+    factories.set(name, () => {
+      if (store.driver === 'memory') return new MemoryCacheStore({ clock: options.clock })
+      if (store.driver === 'file')
+        return new FileCacheStore({
+          directory: folder(
+            options.basePath,
+            typeof store.path === 'string' ? store.path : FILE_CACHE_FOLDER,
+          ),
+          clock: options.clock,
+        })
+      // readConfig only lets registered drivers through, so `custom` exists here.
+      if (custom === undefined) throw unknownDriver(name, store.driver, drivers)
+      return custom(store, { store: name, basePath: options.basePath, clock: options.clock })
+    })
+  }
   return new StoreCacheManager(factories, config.default ?? 'memory')
 }
 
@@ -148,7 +163,7 @@ function folder(basePath: string, path: string): string {
 }
 
 /** Check the config tree (it came from app code, typed or not). */
-function readConfig(value: unknown): CacheConfig {
+function readConfig(value: unknown, drivers: ReadonlyMap<string, CacheDriverFactory>): CacheConfig {
   if (value === undefined) return {}
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     throw invalidConfig('config/cache.ts must export an object such as { default, stores }.')
@@ -166,17 +181,32 @@ function readConfig(value: unknown): CacheConfig {
       typeof entry === 'object' && entry !== null ? (entry as { driver?: unknown }).driver : entry
     const path =
       typeof entry === 'object' && entry !== null ? (entry as { path?: unknown }).path : undefined
-    if (!DRIVERS.includes(driver as CacheDriver))
-      throw new BootError(
-        'unknown_cache_driver',
-        `The "${store}" cache store uses the driver ${JSON.stringify(driver) ?? 'undefined'}, which doesn't exist.`,
-        'Use "memory" or "file". Database and Redis stores come in 0.3 (@strutvane/redis).',
-      )
-    if (path !== undefined && (typeof path !== 'string' || path.trim() === ''))
+    if (typeof driver !== 'string' || (!DRIVERS.includes(driver) && !drivers.has(driver)))
+      throw unknownDriver(store, driver, drivers)
+    if (driver === 'file' && path !== undefined && (typeof path !== 'string' || path.trim() === ''))
       throw invalidConfig(`cache.stores.${store}.path must be a folder path.`)
-    stores[store] = { driver: driver as CacheDriver, ...(path === undefined ? {} : { path }) }
+    // A package driver gets its whole entry (connection names, prefixes…) as written.
+    const options =
+      typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}
+    stores[store] = { ...options, driver }
   }
   return { ...(name === undefined ? {} : { default: name }), stores }
+}
+
+function unknownDriver(
+  store: string,
+  driver: unknown,
+  drivers: ReadonlyMap<string, CacheDriverFactory>,
+): BootError {
+  const known = [...DRIVERS, ...drivers.keys()]
+  const suggestion = typeof driver === 'string' ? closestMatch(driver, known) : undefined
+  return new BootError(
+    'unknown_cache_driver',
+    `The "${store}" cache store uses the driver ${JSON.stringify(driver) ?? 'undefined'}, which doesn't exist.`,
+    suggestion !== undefined
+      ? `Did you mean "${suggestion}"?`
+      : `Use one of: ${known.join(', ')}. Other drivers come from packages (node strut install:redis adds "redis").`,
+  )
 }
 
 function invalidConfig(message: string): BootError {

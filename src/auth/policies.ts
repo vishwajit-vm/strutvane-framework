@@ -18,11 +18,13 @@ import { isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Resolver } from '../core/container.ts'
 import { type Token, token } from '../core/container.ts'
+import { ForbiddenError } from '../core/errors/errors.ts'
 import { BootError } from '../foundation/boot-error.ts'
 import { buildUnchecked, type Injectable } from '../foundation/inject.ts'
+import type { AuthUser } from '../foundation/registry.ts'
 import { realRoot } from '../support/real-path.ts'
 import { kebabCase } from '../support/str.ts'
-import type { Policy } from './gate.ts'
+import { type Ability, allows, authorize, type Policy, PolicyDenial } from './gate.ts'
 
 /**
  * Where policies are discovered, relative to the app.
@@ -143,6 +145,47 @@ export class PolicyRegistry {
       )
     this.#discovered.set(model.name, policy)
     return policy
+  }
+
+  /**
+   * May `user` do `ability` (to `model`)? The model's policy decides (explicit, else discovered in
+   * `app/policies` on first use); **no policy means no** (deny by default). Add-ons use this to
+   * respect the app's policies without importing them (search's `.for(user)`, exports, …).
+   *
+   * @example
+   * await app.make(PolicyRegistryToken).allows(Post, 'view', user, post)
+   */
+  async allows<TModel>(
+    target: PolicyTarget,
+    ability: Ability | (string & {}),
+    user: AuthUser | null,
+    model?: TModel,
+  ): Promise<boolean> {
+    const policy = await this.discover(target)
+    return policy === undefined ? false : allows(policy as Policy<TModel>, ability, user, model)
+  }
+
+  /**
+   * Like {@link PolicyRegistry.allows}, but throws a 403 `forbidden` (the reason, kept as the
+   * error's cause, is logged and never sent to the client).
+   *
+   * @example
+   * await app.make(PolicyRegistryToken).authorize(Post, 'update', ctx.user, post)
+   */
+  async authorize<TModel>(
+    target: PolicyTarget,
+    ability: Ability | (string & {}),
+    user: AuthUser | null,
+    model?: TModel,
+  ): Promise<void> {
+    const policy = await this.discover(target)
+    if (policy === undefined)
+      throw new ForbiddenError({
+        cause: new PolicyDenial(
+          `${target.name} has no policy, so ${ability} is denied (Strutvane denies by default). Create app/policies/${kebabCase(target.name)}.policy.ts.`,
+        ),
+      })
+    await authorize(policy as Policy<TModel>, ability, user, model)
   }
 
   #instantiate(exported: unknown): Policy<unknown> | undefined {

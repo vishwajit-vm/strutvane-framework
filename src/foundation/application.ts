@@ -27,6 +27,7 @@
 
 import { PolicyRegistry, PolicyRegistryToken } from '../auth/policies.ts'
 import { CacheManagerToken } from '../cache/contract.ts'
+import { CacheDriverRegistry, CacheDriverRegistryToken } from '../cache/drivers.ts'
 import { createCacheManager } from '../cache/store.ts'
 import type { AnyCommand } from '../console/framework/command.ts'
 import type { Actor } from '../contracts/actor.ts'
@@ -46,8 +47,9 @@ import {
 } from '../core/application.ts'
 import type { DeepReadonly } from '../core/config.ts'
 import type { Container, Token } from '../core/container.ts'
-import { runWithContext } from '../core/context.ts'
+import { currentContext, runWithContext } from '../core/context.ts'
 import { NotFoundError, StrutvaneError } from '../core/errors/errors.ts'
+import { createMessages, type MessageCatalog } from '../core/messages/catalog.ts'
 import { negotiateLocale } from '../core/messages/locale.ts'
 import {
   ClockToken,
@@ -61,6 +63,7 @@ import {
 import type { Connection } from '../database/db/connection.ts'
 import { runWithConnection } from '../database/db/manager.ts'
 import { OrmUsageError } from '../database/orm/errors.ts'
+import { type ModelEventDispatcher, runWithModelEvents } from '../database/orm/events.ts'
 import { runWithTenant } from '../database/orm/tenancy.ts'
 import { ExceptionHandler, ExceptionsConfig } from '../exceptions/handler.ts'
 import { ExceptionHandlerToken } from '../exceptions/report.ts'
@@ -125,6 +128,7 @@ import {
   matchRoute,
 } from '../routing/router.ts'
 import { UrlGenerator, UrlGeneratorToken } from '../routing/url.ts'
+import { type AppFilesystemsConfig, storageFromConfig } from '../runtime/storage-config.ts'
 import { checkBootGuards } from '../security/boot-guards.ts'
 import { Encrypter, EncrypterToken } from '../security/encrypter.ts'
 import { HttpClient, HttpClientToken } from '../security/http.ts'
@@ -140,7 +144,10 @@ import {
 } from '../security/signer.ts'
 import { SessionStoreToken } from '../session/contract.ts'
 import { FileSessionStore } from '../session/file-store.ts'
+import { createStorageManager } from '../storage/manager.ts'
+import { type PublicMount, publicMounts, servePublicFile } from '../storage/public-files.ts'
 import { closestMatch } from '../support/str.ts'
+import { StorageManagerToken } from '../tokens.ts'
 import { BootError, isBootError } from './boot-error.ts'
 import type { CacheUse } from './bootstrap-cache.ts'
 import {
@@ -169,6 +176,7 @@ import { buildUnchecked } from './inject.ts'
 import { ListenerRegistry } from './listeners.ts'
 import { spoofedMethod } from './method-spoofing.ts'
 import { NavigationRegistry } from './navigation.ts'
+import { PackageMessages } from './package-messages.ts'
 import { type AnyProvider, isProviderClass, type ServiceProvider } from './provider.ts'
 
 /**
@@ -398,6 +406,26 @@ export class Application implements CoreApplication<object> {
   #forceDebug = false
   /** The ORM's tenant column once boot read the tenancy switch; `undefined` = single-tenant. */
   #tenantColumn: string | undefined
+  /** The merged environment (process env, `.env`, the `env` option), read once at boot. */
+  #env: EnvSource | undefined
+  /** Message catalogs packages added with {@link Application.addMessages}. */
+  readonly #packageMessages = new PackageMessages()
+  /** Model events (`post.created`, …) go to this app's event bus, after commit. */
+  readonly #modelEvents: ModelEventDispatcher = {
+    wants: (type) => this.make(EventBusToken).listenerCount(type) > 0,
+    dispatch: async (type, payload, tenantId) => {
+      const actor = currentContext()?.actor
+      await this.make(EventBusToken).emit(type, payload, {
+        ...(tenantId === undefined ? {} : { tenantId }),
+        ...(actor !== null &&
+        actor !== undefined &&
+        typeof actor.id === 'string' &&
+        typeof actor.type === 'string'
+          ? { actor: { id: actor.id, type: actor.type } }
+          : {}),
+      })
+    },
+  }
 
   constructor(blueprint: Blueprint) {
     this.#blueprint = blueprint
@@ -412,6 +440,11 @@ export class Application implements CoreApplication<object> {
         { name: KERNEL_CHECKS, register: () => undefined, boot: () => this.#bootChecks() },
       ],
     })
+    // Before any provider runs, so both can be used (or rebound) in register().
+    this.#core.container.singleton(MessagesToken, () =>
+      this.#packageMessages.over(createMessages()),
+    )
+    this.#core.container.value(CacheDriverRegistryToken, new CacheDriverRegistry())
   }
 
   /**
@@ -584,7 +617,12 @@ export class Application implements CoreApplication<object> {
    * (opened on the first query), never another app's in the same process.
    */
   #scope<TResult>(work: () => TResult): TResult {
-    return runInApplication(this, () => runWithConnection(() => this.#connection(), work))
+    return runInApplication(this, () =>
+      runWithConnection(
+        () => this.#connection(),
+        () => runWithModelEvents(this.#modelEvents, work),
+      ),
+    )
   }
 
   /** The app's connection, for the ORM; a friendly error before the kernel bound it. */
@@ -594,6 +632,37 @@ export class Application implements CoreApplication<object> {
       'no_connection',
       "The database connection is bound when the app boots, so models can't query before that (for example in a provider's register()). Query from boot(), a request or a command; `await app.boot()` first in scripts and tests.",
     )
+  }
+
+  /**
+   * Read an environment variable: the merged environment the config files saw (process
+   * environment, `.env`, and the `env` option of `Application.configure`). Works from the start of
+   * boot, so a provider can read a secret in `register()` without putting it in the config tree
+   * (where `config:cache` would write it to disk). `undefined` when unset.
+   *
+   * @example
+   * override register(app: Application): void {
+   *   const password = app.env('REDIS_PASSWORD')
+   * }
+   */
+  env(name: string): string | undefined {
+    const env = this.#env
+    if (env === undefined) throw notBooted('app.env()')
+    return Object.hasOwn(env, name) ? env[name] : undefined
+  }
+
+  /**
+   * Add a package's message catalogs (RFC-0003): its error titles and texts in every language it
+   * ships. Call it in a provider's `register()` or `boot()`. Package messages only fill keys the
+   * app and the framework don't define, so an app can always reword them in its own catalog.
+   *
+   * @example
+   * override register(app: Application): void {
+   *   app.addMessages(REDIS_MESSAGES_EN, REDIS_MESSAGES_PT)
+   * }
+   */
+  addMessages(...catalogs: readonly MessageCatalog[]): void {
+    this.#packageMessages.add(catalogs)
   }
 
   /**
@@ -653,6 +722,7 @@ export class Application implements CoreApplication<object> {
 
   async #boot(): Promise<void> {
     const source = loadEnvSource(this.basePath, this.#blueprint.env)
+    this.#env = source
     const fingerprint = fingerprintOnce(this.basePath)
     // Warnings wait in a buffer: resolving the logger now would stop a provider from replacing it.
     const pending: string[] = []
@@ -671,10 +741,8 @@ export class Application implements CoreApplication<object> {
     const guards = checkBootGuards({
       environment,
       debug,
-      appKey: config.has('app.key') ? String(config.get('app.key')) : source['APP_KEY'],
-      previousKeys: config.has('app.previous_keys')
-        ? String(config.get('app.previous_keys'))
-        : (source['APP_PREVIOUS_KEYS'] ?? ''),
+      appKey: configText(config, 'app.key') ?? source['APP_KEY'],
+      previousKeys: configText(config, 'app.previous_keys') ?? source['APP_PREVIOUS_KEYS'] ?? '',
       forceDebug: this.#forceDebug,
     })
     pending.push(...guards.warnings)
@@ -734,6 +802,7 @@ export class Application implements CoreApplication<object> {
     const keyring = container.make(KeyringToken)
     const clock = container.make(ClockToken)
     this.#bindDefaults(keyring)
+    const publicFiles = this.#bindStorage(config, boot.env)
     // The data layer: the schema and tenancy for the ORM now, the connection on the first query.
     loadSchemaSnapshot(this.basePath)
     this.#tenantColumn = await configureTenancy(this.basePath, config)
@@ -783,6 +852,10 @@ export class Application implements CoreApplication<object> {
       }),
     )
     const stages: KernelStage[] = [trustedHostStage(security)]
+    // Public disks (`/storage/…`) right after the host check: like files a web server serves,
+    // they stay readable during maintenance, and never reach the router or its middleware.
+    if (publicFiles.length > 0)
+      stages.push(async (ctx, next) => (await servePublicFile(ctx.request, publicFiles)) ?? next())
     if (container.has(MaintenanceCheckToken))
       stages.push(
         maintenanceStage(container.make(MaintenanceCheckToken), {
@@ -843,13 +916,16 @@ export class Application implements CoreApplication<object> {
     )
     fill(HttpClientToken, () => new HttpClient())
     fill(MaintenanceCheckToken, () => checkMaintenance)
-    fill(CacheManagerToken, () =>
-      createCacheManager({
+    fill(CacheManagerToken, () => {
+      const drivers = container.make(CacheDriverRegistryToken)
+      drivers.seal()
+      return createCacheManager({
         basePath: this.basePath,
         clock,
         config: this.configRepository.has('cache') ? this.configRepository.get('cache') : undefined,
-      }),
-    )
+        drivers: drivers.factories,
+      })
+    })
     fill(SessionStoreToken, () => new FileSessionStore(this.basePath))
     fill(IdempotencyStoreToken, () => new MemoryIdempotencyStore())
     fill(RateLimitStoreToken, () =>
@@ -858,6 +934,46 @@ export class Application implements CoreApplication<object> {
         : new MemoryCacheStore({ clock }),
     )
     fill(PolicyRegistryToken, () => new PolicyRegistry(this.basePath, container))
+  }
+
+  /**
+   * The storage disks from `config/filesystems.ts` (a default private `local` disk without it),
+   * unless a provider bound its own manager (`@strutvane/files`), and the public disks to serve.
+   * A bad disk config stops the boot, naming the setting.
+   */
+  #bindStorage(config: ConfigRepository, env: EnvSource): readonly PublicMount[] {
+    const container = this.container
+    const raw = config.has('filesystems') ? config.get('filesystems') : undefined
+    if (raw !== undefined && (typeof raw !== 'object' || raw === null || Array.isArray(raw)))
+      throw new BootError(
+        'invalid_filesystems_config',
+        'config/filesystems.ts must export an object such as { default, disks }.',
+        "Example: defineConfig((env) => ({ default: env.string('FILESYSTEM_DISK', 'local'), disks: { local: { driver: 'local', root: 'storage/app' } } }))",
+      )
+    const settings = raw as AppFilesystemsConfig | undefined
+    if (!container.has(StorageManagerToken)) {
+      let storage: ReturnType<typeof storageFromConfig>
+      try {
+        storage = storageFromConfig(settings, {
+          root: this.basePath,
+          appKey: configText(config, 'app.key') ?? env['APP_KEY'],
+        })
+      } catch (error) {
+        throw new BootError(
+          'invalid_filesystems_config',
+          error instanceof Error ? error.message : String(error),
+          'Fix the disk in config/filesystems.ts: drivers are local and memory (cloud disks come from @strutvane/files), and default must name a disk.',
+        )
+      }
+      container.value(StorageManagerToken, createStorageManager(storage))
+    }
+    const manager = container.make(StorageManagerToken)
+    const disks =
+      typeof settings?.disks === 'object' && settings.disks !== null ? settings.disks : {}
+    return publicMounts(
+      disks,
+      manager.names().map((name) => manager.disk(name)),
+    )
   }
 
   /** The core aliases and groups. App aliases can't take a core name (that would swap a protection). */
@@ -1333,6 +1449,17 @@ function notBooted(what: string): BootError {
     `${what} was used before the app booted.`,
     'Call `await app.boot()` first (requests and commands do it for you).',
   )
+}
+
+/**
+ * A config value as text, or `undefined` when the key is absent **or holds no value**. An
+ * `env.optional('APP_PREVIOUS_KEYS')` that is unset yields `undefined`; `String(undefined)` would
+ * turn that into the key list "undefined" and the keyring would refuse to boot.
+ */
+function configText(config: ConfigRepository, path: string): string | undefined {
+  if (!config.has(path)) return undefined
+  const value = config.get(path)
+  return value === undefined || value === null ? undefined : String(value)
 }
 
 /** A friendly boot error from a provider is shown as itself, not wrapped. */
