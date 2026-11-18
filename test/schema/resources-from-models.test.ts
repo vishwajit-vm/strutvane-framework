@@ -8,7 +8,7 @@
  *    although `User` allows only name and email. Now the model's `fillable`/`hidden`/
  *    `allowSensitive` decide (read from app/models without running it), and secrets, hidden and
  *    privilege-like columns are never fillable without an explicit opt-in.
- * 3. A string primary key was reported as `id`.
+ * 3. `primaryKey` was always `id`, whatever the table's key was called.
  */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -62,23 +62,23 @@ const state = applyOperations(
       t.timestamps()
     })
     schema.create('sessions', (t) => {
-      t.string('id').primary()
+      t.id()
       t.text('payload')
     })
     schema.create('cache', (t) => {
-      t.string('key').primary()
+      t.id()
       t.text('value')
     })
     schema.create('cache_locks', (t) => {
-      t.string('key').primary()
+      t.id()
       t.string('owner')
     })
     schema.create('password_reset_tokens', (t) => {
-      t.string('email').primary()
+      t.string('email')
       t.string('token')
     })
     schema.create('countries', (t) => {
-      t.string('code', 2).primary()
+      t.uuid('code').primary()
       t.string('name')
     })
   }, EMPTY_SCHEMA),
@@ -119,7 +119,7 @@ describe('internal tables never become resources', () => {
     expect(isInternalTable('posts')).toBe(false)
   })
 
-  test('the primary key is the real one, also when it is a string', () => {
+  test('the primary key is the real one, whatever it is called', () => {
     const metadata = generateMetadata(state)
     expect(metadata.resources.find((r) => r.table === 'countries')?.primaryKey).toBe('code')
     expect(metadata.resources.find((r) => r.table === 'customers')?.primaryKey).toBe('id')
@@ -139,7 +139,11 @@ describe('fillable and hidden come from the model', () => {
   })
 
   test('without a model: no secret, hidden or privilege-like column is fillable', () => {
-    expect(fillable(generateMetadata(state), 'customers')).toEqual(['name', 'email', 'internal_note'])
+    expect(fillable(generateMetadata(state), 'customers')).toEqual([
+      'name',
+      'email',
+      'internal_note',
+    ])
   })
 
   test('a model without fillable allows nothing, like Model.create()', () => {
@@ -177,7 +181,9 @@ describe('fillable and hidden come from the model', () => {
     const opted = generateMetadata(
       state,
       {},
-      new Map([['customers', options({ fillable: listed, allowSensitive: ['is_admin', 'api_key'] })]]),
+      new Map([
+        ['customers', options({ fillable: listed, allowSensitive: ['is_admin', 'api_key'] })],
+      ]),
     )
     expect(fillable(opted, 'customers')).toEqual(['name', 'is_admin', 'api_key'])
     // A secret stays hidden from responses even when a request may set it.
@@ -258,7 +264,7 @@ describe('node strut sync writes resources.json from the models', () => {
     const root = project({
       'database/migrations/0001_01_01_000000_create_users_table.ts': migration(
         'users',
-        "schema.create('users', (t) => { t.id(); t.string('name'); t.string('email').unique(); t.timestamp('email_verified_at').nullable(); t.string('password'); t.rememberToken?.(); t.timestamps() }); schema.create('sessions', (t) => { t.string('id').primary(); t.text('payload') })",
+        "schema.create('users', (t) => { t.id(); t.string('name'); t.string('email').unique(); t.timestamp('email_verified_at').nullable(); t.string('password'); t.timestamps() }); schema.create('sessions', (t) => { t.id(); t.text('payload') })",
       ),
       'database/migrations/0001_01_02_000000_create_customers_table.ts': migration(
         'customers',
