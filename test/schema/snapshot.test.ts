@@ -198,11 +198,11 @@ describe('hidden, secret, tenant and key columns in the generated shapes', () =>
 
   test('metadata: internal tables have no resource, tenant and hidden columns are never queried', () => {
     const metadata = generateMetadata(state)
-    expect(metadata.internal).toEqual(['jobs'])
-    expect(metadata.resources.map((resource) => resource.table)).toEqual(['teams', 'members'])
+    // `jobs` by its flag, `teams` because identity tables never get a resource (INTERNAL_TABLES).
+    expect(metadata.internal).toEqual(['teams', 'jobs'])
+    expect(metadata.resources.map((resource) => resource.table)).toEqual(['members'])
     const resource = metadata.resources.find((r) => r.table === 'members')
     expect(resource?.tenant).toBe('tenant_id')
-    expect(metadata.resources.find((r) => r.table === 'teams')?.global).toBe(true)
     const field = (name: string) => resource?.fields.find((f) => f.name === name)
     for (const name of ['tenant_id', 'api_key', 'notes', 'password']) {
       expect(field(name), name).toMatchObject({
@@ -212,7 +212,9 @@ describe('hidden, secret, tenant and key columns in the generated shapes', () =>
         listed: false,
       })
     }
-    expect(field('notes')).toMatchObject({ hidden: true, fillable: true })
+    // Hidden and secret columns are never fillable unless a model opts in (allowSensitive).
+    expect(field('notes')).toMatchObject({ hidden: true, fillable: false, input: 'none' })
+    expect(field('password')).toMatchObject({ hidden: true, fillable: false })
     expect(field('api_key')).toMatchObject({ hidden: true, fillable: false, input: 'none' })
     // Unique per tenant still counts as unique for the email field.
     expect(field('email')?.unique).toBe(true)
@@ -229,17 +231,25 @@ describe('hidden, secret, tenant and key columns in the generated shapes', () =>
           (t) => {
             t.id()
             t.foreignId('job_id').constrained('jobs')
+            t.foreignId('member_id').constrained('members')
           },
           { internal: true },
         )
-        schema.table('teams', (t) => void t.foreignId('job_id').nullable().constrained('jobs'))
+        schema.create('projects', (t) => t.id(), { global: true })
+        schema.table('members', (t) => {
+          t.foreignId('job_id').nullable().constrained('jobs')
+          t.foreignId('project_id').nullable().constrained('projects')
+        })
       }, state),
     )
     const metadata = generateMetadata(withLink)
-    expect(metadata.internal).toEqual(['jobs', 'audit'])
-    expect(
-      metadata.resources.find((r) => r.table === 'teams')?.relations.map((r) => r.name),
-    ).toEqual(['members'])
+    expect(metadata.internal).toEqual(['teams', 'jobs', 'audit'])
+    const relations = (table: string) =>
+      metadata.resources.find((r) => r.table === table)?.relations.map((r) => r.name)
+    // No `team` (identity table), no `job` (flagged), no `audits` hasMany; `project` stays.
+    expect(relations('members')).toEqual(['project'])
+    expect(relations('projects')).toEqual(['members'])
+    expect(metadata.resources.find((r) => r.table === 'projects')?.global).toBe(true)
   })
 
   test('at most 10 fields are searched (decision #53)', () => {

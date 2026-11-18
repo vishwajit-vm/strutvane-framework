@@ -35,3 +35,32 @@ npm exec --yes --package=publint@0.3.25 -- publint run ../pack/*.tgz --strict
 npm exec --yes --package=@arethetypeswrong/cli@0.18.5 -- attw ../pack/*.tgz --profile esm-only
 npm audit --omit=dev --audit-level=high
 ```
+
+## fix/release-0.2 (0.2.0-next.0 release blockers from the skeleton; branched from fix/ci-cross-platform)
+Stopped 2026-11-18 at the usage limit; not pushed. Commits: compat 8e88e94, replay timeout 2ec0b7a,
+Application database 2cd9d0b, ConfigOf/RoutesOf e937372, then this WIP commit (resources.json).
+- **Done (committed, targeted suites green; full gate NOT run yet):**
+  1. compat `^0.2.0-next.0`; CLI never refuses itself; hints derive the range from the CLI version
+     (`compatRangeFor`); `test/console/compat.test.ts` (verified red on the old range).
+  2. Application database: lazy `DatabaseConnectionToken` from config/database.ts over DB_*,
+     schema.json + tenancy at boot, `runWithConnection` per request/command, tenant scope per
+     request, closed on shutdown. `test/database/orm/app-database.test.ts` green on SQLite,
+     PostgreSQL, MySQL, MariaDB; `test/database/lazy-driver.test.ts`, `test/foundation/database.test.ts`.
+  4. `ConfigOf`/`RoutesOf` exported; public-entry tsc test (verified red without) + test-d.
+  5. `--replay-timeout` / `DB_MIGRATION_REPLAY_TIMEOUT` (1 s..10 min, default 10 s);
+     `test/runtime/replay-timeout.test.ts`. Changesets for 1, 2, 4, 5; README updated.
+- **Half-done (WIP commit): 3. resources.json.** Implemented: `src/schema/internal-tables.ts`
+  (one list shared with the resource controller; `users`/`teams` are on it per F-01, so they leave
+  resources.json: REPORT this to the coordinator, the skeleton expected `users` as a resource),
+  `src/schema/generate/model-options.ts` (reads app/models with oxc, fails closed on non-literals),
+  metadata takes fillable/hidden/allowSensitive from the model, hidden/secret/privilege never
+  fillable without allowSensitive, real primary key; `isPrivilegeColumn` moved to schema/columns.ts.
+  Existing schema tests + blog golden resources.json updated (177 green).
+  New `test/schema/resources-from-models.test.ts` was written but NEVER RUN: run it, fix (the
+  `sync` case uses `t.rememberToken?.()`, likely invalid: replace with a plain column).
+- **Next:** run that test; changeset for fix 3 + README (resources.json rules); then the gate:
+  `npm run ci` 3x (≈8.5 min each; baseline was green apart from a failure caused by a mid-run
+  edit), once with `STRUTVANE_TEST_DOCKER=off`; code rules, deps, pack + check-package, publint
+  --strict, attw esm-only, `npm audit --omit=dev --audit-level=high` (commands in "How to verify"
+  above). Skeleton follow-ups: delete its `acceptCompatOnce()` + KNOWN BUG test; regenerate its
+  .strutvane (users now internal); add `DB_MIGRATION_REPLAY_TIMEOUT` to its .env.example/config.

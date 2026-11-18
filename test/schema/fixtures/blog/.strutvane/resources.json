@@ -2,169 +2,6 @@
   "version": 1,
   "resources": [
     {
-      "table": "users",
-      "model": "User",
-      "route": "users",
-      "label": {
-        "singular": "User",
-        "plural": "Users"
-      },
-      "primaryKey": "id",
-      "titleField": "name",
-      "timestamps": true,
-      "softDeletes": false,
-      "defaultSort": "-created_at",
-      "perPage": 25,
-      "fields": [
-        {
-          "name": "id",
-          "label": "Id",
-          "kind": "id",
-          "cast": "integer",
-          "nullable": false,
-          "required": false,
-          "fillable": false,
-          "unique": false,
-          "hidden": false,
-          "searchable": "exact",
-          "sortable": true,
-          "listed": true,
-          "input": "none",
-          "filterOperators": [
-            "eq",
-            "ne",
-            "in",
-            "gt",
-            "gte",
-            "lt",
-            "lte"
-          ]
-        },
-        {
-          "name": "name",
-          "label": "Name",
-          "kind": "string",
-          "cast": "string",
-          "nullable": false,
-          "required": true,
-          "fillable": true,
-          "unique": false,
-          "hidden": false,
-          "searchable": "text",
-          "sortable": true,
-          "listed": true,
-          "input": "text",
-          "filterOperators": [
-            "eq",
-            "ne",
-            "in",
-            "contains",
-            "startsWith"
-          ],
-          "maxLength": 255
-        },
-        {
-          "name": "email",
-          "label": "Email",
-          "kind": "string",
-          "cast": "string",
-          "nullable": false,
-          "required": true,
-          "fillable": true,
-          "unique": true,
-          "hidden": false,
-          "searchable": "text",
-          "sortable": true,
-          "listed": true,
-          "input": "text",
-          "filterOperators": [
-            "eq",
-            "ne",
-            "in",
-            "contains",
-            "startsWith"
-          ],
-          "maxLength": 255
-        },
-        {
-          "name": "password",
-          "label": "Password",
-          "kind": "string",
-          "cast": "string",
-          "nullable": true,
-          "required": false,
-          "fillable": false,
-          "unique": false,
-          "hidden": true,
-          "searchable": false,
-          "sortable": false,
-          "listed": false,
-          "input": "none",
-          "filterOperators": [],
-          "maxLength": 255
-        },
-        {
-          "name": "created_at",
-          "label": "Created at",
-          "kind": "timestamp",
-          "cast": "datetime",
-          "nullable": true,
-          "required": false,
-          "fillable": false,
-          "unique": false,
-          "hidden": false,
-          "searchable": false,
-          "sortable": true,
-          "listed": true,
-          "input": "none",
-          "filterOperators": [
-            "eq",
-            "gt",
-            "gte",
-            "lt",
-            "lte",
-            "null"
-          ]
-        },
-        {
-          "name": "updated_at",
-          "label": "Updated at",
-          "kind": "timestamp",
-          "cast": "datetime",
-          "nullable": true,
-          "required": false,
-          "fillable": false,
-          "unique": false,
-          "hidden": false,
-          "searchable": false,
-          "sortable": true,
-          "listed": false,
-          "input": "none",
-          "filterOperators": [
-            "eq",
-            "gt",
-            "gte",
-            "lt",
-            "lte",
-            "null"
-          ]
-        }
-      ],
-      "relations": [
-        {
-          "name": "posts",
-          "kind": "hasMany",
-          "resource": "posts",
-          "foreignKey": "author_id",
-          "ownerKey": "id"
-        }
-      ],
-      "sidebar": {
-        "order": 4,
-        "hidden": false
-      }
-    },
-    {
       "table": "posts",
       "model": "Post",
       "route": "posts",
@@ -521,13 +358,6 @@
       ],
       "relations": [
         {
-          "name": "author",
-          "kind": "belongsTo",
-          "resource": "users",
-          "foreignKey": "author_id",
-          "ownerKey": "id"
-        },
-        {
           "name": "category",
           "kind": "belongsTo",
           "resource": "categories",
@@ -785,5 +615,7 @@
       }
     }
   ],
-  "internal": []
+  "internal": [
+    "users"
+  ]
 }

@@ -18,6 +18,7 @@
  * @module
  */
 import type { UrlRoutable } from '../../routing/types.ts'
+import { isInternalTable } from '../../schema/internal-tables.ts'
 
 /**
  * A plain value a constraint compares with.
@@ -147,35 +148,13 @@ export interface ResourceModel<TRecord extends ResourceRecord = ResourceRecord> 
 
 /**
  * Framework and identity tables an auto resource controller must never serve (security review
- * F-01), even when the schema flag is missing. The flag is the primary rule; this list is the
- * safety net for tables every Laravel-style app shares.
+ * F-01), even when the schema flag is missing. Shared with the metadata generator, so the same
+ * tables never get a sidebar entry either.
  *
  * @example
  * INTERNAL_TABLES.has('sessions') // true
  */
-export const INTERNAL_TABLES: ReadonlySet<string> = new Set([
-  'migrations',
-  'seeders',
-  'users',
-  'sessions',
-  'cache',
-  'cache_locks',
-  'jobs',
-  'job_batches',
-  'failed_jobs',
-  'password_reset_tokens',
-  'personal_access_tokens',
-  'passkeys',
-  'roles',
-  'permissions',
-  'user_roles',
-  'role_permissions',
-  'team_members',
-  'team_invitations',
-  'teams',
-  'audit_events',
-  'strutvane_migrations',
-])
+export { INTERNAL_TABLES } from '../../schema/internal-tables.ts'
 
 /**
  * `true` when a table must never get an auto resource controller: flagged internal, on the list,
@@ -185,9 +164,5 @@ export const INTERNAL_TABLES: ReadonlySet<string> = new Set([
  * isInternalResource(Session.metadata()) // true
  */
 export function isInternalResource(resource: ResourceMetadata): boolean {
-  return (
-    resource.internal === true ||
-    INTERNAL_TABLES.has(resource.table) ||
-    resource.table.startsWith('team_')
-  )
+  return resource.internal === true || isInternalTable(resource.table)
 }

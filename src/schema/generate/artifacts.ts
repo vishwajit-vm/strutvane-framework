@@ -13,6 +13,7 @@ import { SchemaError } from '../errors.ts'
 import type { Replay } from '../replay.ts'
 import { schemaSnapshot } from '../snapshot.ts'
 import { generateMetadata, type ResourceOverrides } from './metadata.ts'
+import type { ModelOptions } from './model-options.ts'
 import { generateModelTypes } from './types.ts'
 
 const DIALECTS: readonly Dialect[] = ['sqlite', 'postgres', 'mysql', 'mariadb']
@@ -26,6 +27,11 @@ const DIALECTS: readonly Dialect[] = ['sqlite', 'postgres', 'mysql', 'mariadb']
 export interface ArtifactOptions {
   /** Passed to the type generator; default `@strutvane/framework/database`. */
   readonly modelModule?: string
+  /**
+   * The app's models by table (`readAppModels(root).tables`): `resources.json` takes `fillable`
+   * and `hidden` from them. Without them, only plain columns are fillable.
+   */
+  readonly models?: ReadonlyMap<string, ModelOptions>
 }
 
 /**
@@ -51,7 +57,7 @@ export function buildArtifacts(
   )
   files.set(
     '.strutvane/resources.json',
-    `${JSON.stringify(generateMetadata(replay.state, overrides), null, 2)}\n`,
+    `${JSON.stringify(generateMetadata(replay.state, overrides, options.models), null, 2)}\n`,
   )
   files.set('.strutvane/schema.json', `${JSON.stringify(schemaSnapshot(replay.state), null, 2)}\n`)
   for (const dialect of DIALECTS) {

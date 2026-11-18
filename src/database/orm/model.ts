@@ -22,7 +22,7 @@
  * knows its table and options.
  */
 
-import { isHiddenColumn, isSecretColumn } from '../../schema/columns.ts'
+import { isHiddenColumn, isPrivilegeColumn, isSecretColumn } from '../../schema/columns.ts'
 import type { Connection } from '../db/connection.ts'
 import type { Row } from '../db/driver.ts'
 import { defaultConnection } from '../db/manager.ts'
@@ -1067,18 +1067,6 @@ export async function loadMany<TModel extends ModelMarker>(
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Column names that usually grant privileges or skip a workflow when a client can set them
- * (security review F-10). Listing one in `fillable` needs a second, explicit acknowledgement.
- */
-function isSensitiveColumn(column: string): boolean {
-  return (
-    /^is_/.test(column) ||
-    /_(at|by)$/.test(column) ||
-    ['role', 'roles', 'plan', 'permissions', 'owner_id', 'user_id'].includes(column)
-  )
-}
-
 /** Names a query builder must never have as methods, or it would be mistaken for a promise. */
 const PROMISE_MEMBERS: ReadonlySet<string> = new Set(['then', 'catch', 'finally'])
 
@@ -1243,7 +1231,7 @@ function buildSettings(
           `or, if users really may send it, also list it in allowSensitive: ['${column}'].`,
       )
     }
-    if (isSensitiveColumn(column) && !acknowledged.has(column)) {
+    if (isPrivilegeColumn(column) && !acknowledged.has(column)) {
       throw new OrmUsageError(
         'sensitive_fillable',
         `${modelName} lists "${column}" as fillable, and it looks privilege- or workflow-related (is_*, *_at, *_by, role, plan…). ` +

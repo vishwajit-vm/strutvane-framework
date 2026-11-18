@@ -8,7 +8,14 @@
  * stand-in for an app's resource config file (level L1 "configure").
  *
  * Hidden and secret columns are never searchable, sortable or filterable, so a request can't learn
- * their values one query at a time. Internal tables (`{ internal: true }`) get no resource at all.
+ * their values one query at a time. Internal tables (`{ internal: true }`, and the framework and
+ * identity tables of `INTERNAL_TABLES`: sessions, cache, jobs, users…) get no resource at all.
+ *
+ * **Mass assignment comes from the model** (`app/models`, read by `readAppModels`): a field is
+ * `fillable` only when the table's model lists it in `fillable`. Without a model, only plain
+ * columns are: never a secret, a hidden column or a privilege-like name (`is_*`, `*_at`, `role`…),
+ * and with a model those still need the model's `allowSensitive`. The model's `hidden` list hides
+ * fields too. So the metadata never invites a request to set what the model would refuse.
  *
  * @module
  */
@@ -24,12 +31,16 @@ import {
   type ColumnDef,
   type ColumnKind,
   isHiddenColumn,
+  isPrivilegeColumn,
   MANAGED_TIMESTAMPS,
+  primaryKeyOf,
   type SchemaState,
   type TableState,
   tenantColumnOf,
 } from '../columns.ts'
-import { isFillable, isRequiredOnCreate, isReturnedByApi } from './semantics.ts'
+import { isInternalTable } from '../internal-tables.ts'
+import type { ModelOptions } from './model-options.ts'
+import { isFillable, isRequiredOnCreate, isReturnedByApi, isWritable } from './semantics.ts'
 
 /**
  * How a value is converted between the database, JSON and forms.
@@ -187,8 +198,8 @@ export interface AppMetadata {
   readonly version: 1
   readonly resources: readonly ResourceMetadata[]
   /**
-   * Tables created with `{ internal: true }`: framework bookkeeping with no resource, so the API
-   * and the UI refuse them by name.
+   * Tables with no resource, so the API and the UI refuse them by name: created with
+   * `{ internal: true }`, or framework and identity tables (`INTERNAL_TABLES`, `team_*`).
    */
   readonly internal: readonly string[]
 }
@@ -230,17 +241,25 @@ const TITLE_CANDIDATES = ['name', 'title', 'label', 'email'] as const
 export function generateMetadata(
   state: SchemaState,
   overrides: ResourceOverrides = {},
+  models: ReadonlyMap<string, ModelOptions> = new Map(),
 ): AppMetadata {
   const resources = state.tables
-    .filter((table) => table.internal !== true)
-    .map((table) => resourceFor(state, table))
-  const internal = state.tables
-    .filter((table) => table.internal === true)
-    .map((table) => table.name)
+    .filter((table) => !isInternal(table))
+    .map((table) => resourceFor(state, table, models.get(table.name)))
+  const internal = state.tables.filter(isInternal).map((table) => table.name)
   return { version: 1, resources: withSidebarOrder(resources, overrides), internal }
 }
 
-function resourceFor(state: SchemaState, table: TableState): ResourceMetadata {
+/** Flagged `{ internal: true }`, or a framework/identity table whatever its flag says. */
+function isInternal(table: TableState): boolean {
+  return table.internal === true || isInternalTable(table.name)
+}
+
+function resourceFor(
+  state: SchemaState,
+  table: TableState,
+  options: ModelOptions | undefined,
+): ResourceMetadata {
   const model = modelNameForTable(table.name)
   const slugColumn = table.columns.find(
     (column) => column.kind === 'slug' && column.slugFrom !== undefined,
@@ -252,7 +271,7 @@ function resourceFor(state: SchemaState, table: TableState): ResourceMetadata {
     model,
     route: table.name.replace(/_/g, '-'),
     label: { singular: humanize(singularize(table.name)), plural: humanize(table.name) },
-    primaryKey: 'id',
+    primaryKey: primaryKeyOf(table)?.name ?? 'id',
     titleField: titleFieldOf(table),
     ...(slugColumn?.slugFrom === undefined
       ? {}
@@ -261,7 +280,7 @@ function resourceFor(state: SchemaState, table: TableState): ResourceMetadata {
     softDeletes: has('deleted_at'),
     defaultSort: has('created_at') ? '-created_at' : '-id',
     perPage: DEFAULT_PER_PAGE,
-    fields: capSearchable(table.columns.map((column) => fieldFor(table, column))),
+    fields: capSearchable(table.columns.map((column) => fieldFor(table, column, options))),
     relations: relationsOf(state, table),
     sidebar: { order: 0, hidden: false },
     ...(tenant === undefined ? {} : { tenant: tenant.name }),
@@ -269,10 +288,15 @@ function resourceFor(state: SchemaState, table: TableState): ResourceMetadata {
   }
 }
 
-function fieldFor(table: TableState, column: ColumnDef): FieldMetadata {
+function fieldFor(
+  table: TableState,
+  column: ColumnDef,
+  model: ModelOptions | undefined,
+): FieldMetadata {
   // The tenant column is never a client concern: it comes from the current tenant.
-  const hidden = !isReturnedByApi(column)
+  const hidden = !isReturnedByApi(column) || model?.hidden.includes(column.name) === true
   const internal = hidden || column.tenant === true
+  const fillable = isMassAssignable(column, hidden, model)
   const tenant = tenantColumnOf(table)?.name
   const unique = table.indexes.some((index) => {
     const own = index.columns.filter((name) => name !== tenant)
@@ -284,14 +308,14 @@ function fieldFor(table: TableState, column: ColumnDef): FieldMetadata {
     kind: column.kind,
     cast: CAST[column.kind],
     nullable: column.nullable,
-    required: isFillable(column) && isRequiredOnCreate(column),
-    fillable: isFillable(column),
+    required: fillable && isRequiredOnCreate(column),
+    fillable,
     unique,
     hidden,
     searchable: internal ? false : SEARCH[column.kind],
     sortable: !internal && column.kind !== 'text' && column.kind !== 'json',
     listed: !internal && isListed(column),
-    input: hidden || !isFillable(column) ? 'none' : inputFor(column),
+    input: hidden || !fillable ? 'none' : inputFor(column),
     filterOperators: internal ? [] : filterOperatorsFor(column),
     ...(column.length === undefined ? {} : { maxLength: column.length }),
     ...(column.precision === undefined ? {} : { precision: column.precision }),
@@ -300,6 +324,30 @@ function fieldFor(table: TableState, column: ColumnDef): FieldMetadata {
     ...('default' in column && column.default !== undefined ? { default: column.default } : {}),
     ...(column.references === undefined ? {} : { references: column.references.table }),
   }
+}
+
+/**
+ * May a request set this column through the generated API? Never a key, the tenant column or a
+ * managed timestamp. A secret, a hidden column or a privilege-like name only when the model opts in
+ * with `allowSensitive`. With a model, only what its `fillable` lists (none when it lists nothing,
+ * exactly as `Model.create()` behaves); without one, every other plain column.
+ */
+function isMassAssignable(
+  column: ColumnDef,
+  hidden: boolean,
+  model: ModelOptions | undefined,
+): boolean {
+  const sensitive = hidden || isPrivilegeColumn(column.name)
+  if (model === undefined) return isFillable(column) && !sensitive
+  if (model.fillable?.includes(column.name) !== true) return false
+  const writable =
+    isFillable(column) || (isWritableSecret(column) && model.allowSensitive.includes(column.name))
+  return writable && (!sensitive || model.allowSensitive.includes(column.name))
+}
+
+/** A secret the ORM may write (not a key or managed column): only fillable with `allowSensitive`. */
+function isWritableSecret(column: ColumnDef): boolean {
+  return !isFillable(column) && isWritable(column)
 }
 
 const CAST: Readonly<Record<ColumnKind, FieldCast>> = {
@@ -418,9 +466,7 @@ function titleFieldOf(table: TableState): string {
 }
 
 function relationsOf(state: SchemaState, table: TableState): RelationMetadata[] {
-  const internal = new Set(
-    state.tables.filter((other) => other.internal === true).map((other) => other.name),
-  )
+  const internal = new Set(state.tables.filter(isInternal).map((other) => other.name))
   const belongsTo: RelationMetadata[] = table.columns.flatMap((column) =>
     column.references === undefined || internal.has(column.references.table)
       ? []

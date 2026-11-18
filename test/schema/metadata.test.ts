@@ -54,14 +54,8 @@ describe('resource-level metadata', () => {
   })
 
   test('relations: belongsTo from each foreign key, hasMany on the other side', async () => {
+    // `users` is an identity table (INTERNAL_TABLES): no resource, so no relation to it either.
     expect((await blogResource('posts')).relations).toEqual([
-      {
-        name: 'author',
-        kind: 'belongsTo',
-        resource: 'users',
-        foreignKey: 'author_id',
-        ownerKey: 'id',
-      },
       {
         name: 'category',
         kind: 'belongsTo',
@@ -70,12 +64,12 @@ describe('resource-level metadata', () => {
         ownerKey: 'id',
       },
     ])
-    expect((await blogResource('users')).relations).toEqual([
+    expect((await blogResource('categories')).relations).toEqual([
       {
         name: 'posts',
         kind: 'hasMany',
         resource: 'posts',
-        foreignKey: 'author_id',
+        foreignKey: 'category_id',
         ownerKey: 'id',
       },
     ])
@@ -85,16 +79,16 @@ describe('resource-level metadata', () => {
     const state = applyOperations(
       EMPTY_SCHEMA,
       recordOperations((schema) => {
-        schema.create('users', (t) => t.id())
+        schema.create('people', (t) => t.id())
         schema.create('posts', (t) => {
           t.id()
-          t.foreignId('author_id').constrained('users')
-          t.foreignId('editor_id').nullable().constrained('users')
+          t.foreignId('author_id').constrained('people')
+          t.foreignId('editor_id').nullable().constrained('people')
         })
       }, EMPTY_SCHEMA),
     )
-    const users = generateMetadata(state).resources.find((resource) => resource.table === 'users')
-    expect(users?.relations.map((relation) => relation.name)).toEqual([
+    const people = generateMetadata(state).resources.find((resource) => resource.table === 'people')
+    expect(people?.relations.map((relation) => relation.name)).toEqual([
       'postsAsAuthor',
       'postsAsEditor',
     ])
@@ -106,15 +100,33 @@ describe('resource-level metadata', () => {
       [...generateMetadata(state, overrides).resources]
         .sort((a, b) => a.sidebar.order - b.sidebar.order)
         .map((resource) => resource.label.plural)
-    expect(order()).toEqual(['Categories', 'Posts', 'Tags', 'Users'])
+    // `users` is an identity table: never in the sidebar.
+    expect(order()).toEqual(['Categories', 'Posts', 'Tags'])
     expect(
       order({
         posts: { sidebarOrder: 1 },
-        users: { label: { singular: 'Member', plural: 'Members' } },
+        tags: { label: { singular: 'Label', plural: 'Labels' } },
       }),
-    ).toEqual(['Posts', 'Categories', 'Members', 'Tags'])
+    ).toEqual(['Posts', 'Categories', 'Labels'])
   })
 })
+
+/** A plain (not internal) table with a secret and a unique column. */
+function accounts(): ResourceMetadata {
+  const state = applyOperations(
+    EMPTY_SCHEMA,
+    recordOperations((schema) => {
+      schema.create('accounts', (t) => {
+        t.id()
+        t.string('email').unique()
+        t.string('password').nullable()
+      })
+    }, EMPTY_SCHEMA),
+  )
+  const resource = generateMetadata(state).resources[0]
+  if (resource === undefined) throw new Error('no accounts resource')
+  return resource
+}
 
 describe('field-level metadata', () => {
   test('required / fillable follow the same rules as the NewPost type', async () => {
@@ -135,11 +147,11 @@ describe('field-level metadata', () => {
         .map((candidate) => candidate.name)
     expect(by('text')).toEqual(['title', 'slug', 'content', 'status', 'subtitle'])
     expect(by('exact')).toEqual(['id', 'price', 'author_id', 'category_id'])
-    expect(field(await blogResource('users'), 'password').searchable).toBe(false)
+    expect(field(accounts(), 'password').searchable).toBe(false)
   })
 
-  test('secrets are hidden everywhere: not returned, searched, sorted, filtered or editable', async () => {
-    expect(field(await blogResource('users'), 'password')).toMatchObject({
+  test('secrets are hidden everywhere: not returned, searched, sorted, filtered or editable', () => {
+    expect(field(accounts(), 'password')).toMatchObject({
       hidden: true,
       fillable: false,
       searchable: false,
@@ -188,6 +200,6 @@ describe('field-level metadata', () => {
       sortable: false,
     })
     expect(field(posts, 'slug').unique).toBe(true)
-    expect(field(await blogResource('users'), 'email').unique).toBe(true)
+    expect(field(accounts(), 'email').unique).toBe(true)
   })
 })

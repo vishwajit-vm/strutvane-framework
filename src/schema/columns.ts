@@ -304,6 +304,25 @@ export function isSensitiveColumn(name: string): boolean {
   return SENSITIVE_SUFFIXES.some((suffix) => lower.endsWith(`_${suffix}`))
 }
 
+/**
+ * Column names that usually grant privileges or skip a workflow when a client can set them
+ * (security review F-10): `is_*`, `*_at`, `*_by`, `role`, `plan`, `owner_id`… A model lists one in
+ * `fillable` only with a second, explicit `allowSensitive`, and resource metadata never makes one
+ * fillable on its own.
+ *
+ * @example
+ * isPrivilegeColumn('email_verified_at') // true
+ * isPrivilegeColumn('is_admin')          // true
+ * isPrivilegeColumn('title')             // false
+ */
+export function isPrivilegeColumn(name: string): boolean {
+  return (
+    /^is_/.test(name) ||
+    /_(at|by)$/.test(name) ||
+    ['role', 'roles', 'plan', 'permissions', 'owner_id', 'user_id'].includes(name)
+  )
+}
+
 /** Whole column names that are secrets. */
 const SENSITIVE_NAMES: ReadonlySet<string> = new Set([
   'password',

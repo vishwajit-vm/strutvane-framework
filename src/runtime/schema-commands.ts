@@ -44,6 +44,7 @@ import {
 import { replayInSandbox } from '../migrations/sandbox.ts'
 import { EMPTY_SCHEMA } from '../schema/columns.ts'
 import { buildArtifacts, writeArtifacts } from '../schema/generate/artifacts.ts'
+import { readAppModels } from '../schema/generate/model-options.ts'
 import type { Replay } from '../schema/replay.ts'
 import { schemaSnapshot } from '../schema/snapshot.ts'
 import { realRoot } from '../support/real-path.ts'
@@ -162,8 +163,15 @@ function replayTimeout(ctx: CommandContextLike): number {
 }
 
 /** Regenerate `.strutvane/` from a replay; returns the files that changed. */
-export function syncArtifacts(root: string, replay: Replay): string[] {
-  return writeArtifacts(root, buildArtifacts(replay))
+export function syncArtifacts(
+  root: string,
+  replay: Replay,
+  warn: (message: string) => void = () => undefined,
+): string[] {
+  // resources.json takes mass assignment from the models (read, never run); see model-options.ts.
+  const models = readAppModels(root)
+  for (const problem of models.problems) warn(problem)
+  return writeArtifacts(root, buildArtifacts(replay, {}, { models: models.tables }))
 }
 
 /** Point the ORM at a replayed schema and the app's tenancy switch (`config/tenancy.ts`, #90). */
@@ -229,7 +237,8 @@ async function afterChange(
   connection: Connection,
   replay: Replay,
 ): Promise<void> {
-  for (const file of syncArtifacts(root, replay)) ctx.out.info(`Updated ${file}`)
+  for (const file of syncArtifacts(root, replay, (message) => ctx.out.warn(message)))
+    ctx.out.info(`Updated ${file}`)
   const drift = schemaDrift(replay.state, await introspect(connection), connection.grammar.dialect)
   for (const line of drift) ctx.out.warn(`Schema drift: ${line}`)
 }
@@ -509,7 +518,11 @@ export const schemaCommands: readonly ContributedCommand[] = Object.freeze([
     flags: { 'replay-timeout': replayTimeoutFlag },
     async run(ctx) {
       const { root } = project(ctx)
-      const written = syncArtifacts(root, await replayProject(root, replayTimeout(ctx)))
+      const written = syncArtifacts(
+        root,
+        await replayProject(root, replayTimeout(ctx)),
+        (message) => ctx.out.warn(message),
+      )
       if (written.length === 0) ctx.out.success('.strutvane/ is up to date.')
       for (const file of written) ctx.out.success(`Updated ${file}`)
       return { data: { written } }
