@@ -109,6 +109,14 @@ describe('make:rule and make:observer', () => {
         extends: join(ROOT, 'tsconfig.base.json').replaceAll('\\', '/'),
         compilerOptions: {
           noEmit: true,
+          // App settings: apps don't set isolatedDeclarations or declaration (they are for
+          // publishing libraries; registry-typecheck.test.ts does the same). This check used to pass
+          // only because the framework sources failed under `types: []`, and tsc skips declaration
+          // diagnostics (TS9010) when there are semantic errors; once the sources compiled cleanly
+          // in this setup (fix/release-0.2), the library-only rule surfaced on the generated files.
+          isolatedDeclarations: false,
+          declaration: false,
+          declarationMap: false,
           types: [],
           typeRoots: [join(ROOT, 'node_modules', '@types').replaceAll('\\', '/')],
           lib: ['ES2024', 'DOM'],
