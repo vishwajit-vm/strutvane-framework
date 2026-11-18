@@ -1,0 +1,5 @@
+---
+"@strutvane/framework": patch
+---
+
+Models now work inside an `Application`'s requests and commands. In 0.2.0-next.0 the v2 `Application` opened no database connection, so ORM models could query from `node strut` commands (seeders) but not from a controller or route. Booting the app now hands the ORM `.strutvane/schema.json` and the tenancy switch (`config/tenancy.ts`) and binds `DatabaseConnectionToken` (exported from `@strutvane/framework`): the default connection from `config/database.ts` over `DB_*`, opened lazily by the first query (requests that never query, such as `/up`, never need the database) and closed on `app.shutdown()`. Each app's requests and commands use that app's own connection; with tenancy on, the request's tenant (from an `http.onRequest` hook) scopes every model query. `APP_ENV=testing` uses `database.test_database` when set. Bind `DatabaseConnectionToken` before boot to use another connection. New in `@strutvane/framework/database`: `openDatabaseLazily(settings)` and `runWithConnection(resolve, work)`.

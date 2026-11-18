@@ -6,7 +6,12 @@
  */
 export { Connection, type QueryEvent } from './db/connection.ts'
 export type { Driver, DriverSession, QueryResult, Row } from './db/driver.ts'
-export { defaultConnection, transaction, useConnection } from './db/manager.ts'
+export {
+  defaultConnection,
+  runWithConnection,
+  transaction,
+  useConnection,
+} from './db/manager.ts'
 export {
   connectMysqlFamily,
   detectMysqlServer,

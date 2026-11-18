@@ -58,6 +58,10 @@ import {
   LoggerToken,
   MessagesToken,
 } from '../core/tokens.ts'
+import type { Connection } from '../database/db/connection.ts'
+import { runWithConnection } from '../database/db/manager.ts'
+import { OrmUsageError } from '../database/orm/errors.ts'
+import { runWithTenant } from '../database/orm/tenancy.ts'
 import { ExceptionHandler, ExceptionsConfig } from '../exceptions/handler.ts'
 import { ExceptionHandlerToken } from '../exceptions/report.ts'
 import { type HttpContext as Ctx, HttpContext, runWithHttpContext } from '../http/app/context.ts'
@@ -153,6 +157,13 @@ import {
   loadConfig,
 } from './config.ts'
 import { runInApplication } from './current.ts'
+import {
+  bindDatabase,
+  configureTenancy,
+  DatabaseConnectionToken,
+  databaseEnv,
+  loadSchemaSnapshot,
+} from './database.ts'
 import { type EnvSource, loadEnvSource } from './env.ts'
 import { buildUnchecked } from './inject.ts'
 import { ListenerRegistry } from './listeners.ts'
@@ -385,6 +396,8 @@ export class Application implements CoreApplication<object> {
   #booting: Promise<void> | undefined
   #registering = false
   #forceDebug = false
+  /** The ORM's tenant column once boot read the tenancy switch; `undefined` = single-tenant. */
+  #tenantColumn: string | undefined
 
   constructor(blueprint: Blueprint) {
     this.#blueprint = blueprint
@@ -563,7 +576,24 @@ export class Application implements CoreApplication<object> {
    * const link = await app.run(() => route('posts.index'))
    */
   run<TResult>(work: () => TResult): TResult {
-    return runInApplication(this, work)
+    return this.#scope(work)
+  }
+
+  /**
+   * Run `work` as this app: helpers and facades find it, and models use its database connection
+   * (opened on the first query), never another app's in the same process.
+   */
+  #scope<TResult>(work: () => TResult): TResult {
+    return runInApplication(this, () => runWithConnection(() => this.#connection(), work))
+  }
+
+  /** The app's connection, for the ORM; a friendly error before the kernel bound it. */
+  #connection(): Connection {
+    if (this.container.has(DatabaseConnectionToken)) return this.make(DatabaseConnectionToken)
+    throw new OrmUsageError(
+      'no_connection',
+      "The database connection is bound when the app boots, so models can't query before that (for example in a provider's register()). Query from boot(), a request or a command; `await app.boot()` first in scripts and tests.",
+    )
   }
 
   /**
@@ -660,10 +690,18 @@ export class Application implements CoreApplication<object> {
     for (const configure of this.#blueprint.middleware) configure(this.#middleware)
     for (const configure of this.#blueprint.exceptions) configure(this.#exceptions)
     this.#registerCoreMiddleware()
-    this.#pending = { pending, fingerprint, config, environment, showDetails, loaded: loaded.use }
+    this.#pending = {
+      pending,
+      fingerprint,
+      config,
+      environment,
+      showDetails,
+      loaded: loaded.use,
+      env: source,
+    }
     try {
       this.#registering = true
-      await runInApplication(this, () => this.#core.boot())
+      await this.#scope(() => this.#core.boot())
     } catch (error) {
       throw unwrapProviderError(error)
     } finally {
@@ -680,6 +718,7 @@ export class Application implements CoreApplication<object> {
         readonly environment: string
         readonly showDetails: boolean
         readonly loaded: CacheUse
+        readonly env: EnvSource
       }
     | undefined
 
@@ -695,6 +734,13 @@ export class Application implements CoreApplication<object> {
     const keyring = container.make(KeyringToken)
     const clock = container.make(ClockToken)
     this.#bindDefaults(keyring)
+    // The data layer: the schema and tenancy for the ORM now, the connection on the first query.
+    loadSchemaSnapshot(this.basePath)
+    this.#tenantColumn = await configureTenancy(this.basePath, config)
+    bindDatabase(container, {
+      basePath: this.basePath,
+      env: () => databaseEnv(config, boot.env, environment),
+    })
     const appUrl = config.string('app.url', 'http://localhost')
     const sessionCookie = container.has(SessionCookieToken)
       ? container.make(SessionCookieToken)
@@ -904,9 +950,10 @@ export class Application implements CoreApplication<object> {
   async #checkController(route: CompiledRoute, where: string): Promise<void> {
     if (route.action.kind !== 'controller') return
     const { controller: controllerClass, method } = route.action
-    const controller = runInApplication(this, () =>
-      buildUnchecked(this.container, controllerClass),
-    ) as Record<string, unknown>
+    const controller = this.#scope(() => buildUnchecked(this.container, controllerClass)) as Record<
+      string,
+      unknown
+    >
     if (typeof controller[method] !== 'function')
       throw new BootError(
         'missing_action',
@@ -1003,7 +1050,7 @@ export class Application implements CoreApplication<object> {
     const state = this.#requestState(request, info, booted)
     const ctx = new HttpContext({ request, state, sessionCookie: booted.sessionCookie })
     const run: RequestRun = { hookHeaders: undefined, route: undefined, terminables: [] }
-    return runInApplication(this, () =>
+    return this.#scope(() =>
       runWithHttpContext(ctx, async () => {
         let response: Response
         try {
@@ -1108,26 +1155,37 @@ export class Application implements CoreApplication<object> {
         actor,
         ...(hooked.tenant === undefined ? {} : { tenant: hooked.tenant }),
       },
-      async () => {
-        if (route === undefined || resolved === undefined) {
-          if (allowed.length > 0)
-            throw new StrutvaneError('method_not_allowed', {
-              status: 405,
-              headers: { Allow: allowed.join(', ') },
-            })
-          throw new NotFoundError()
-        }
-        const routed = ctx.forRoute(
-          { name: route.name, method, uri: route.uri, action: actionLabel(route.action) },
-          matched?.params ?? { fallbackPlaceholder: path },
-          { ...ctx.state, method },
-        )
-        // The routed context becomes current: `Route.current()` and `report()` see the route.
-        return runWithHttpContext(routed, () =>
-          this.#dispatch(route, resolved.references, routed, run),
-        )
-      },
+      () =>
+        this.#asTenant(hooked.tenant?.id, async () => {
+          if (route === undefined || resolved === undefined) {
+            if (allowed.length > 0)
+              throw new StrutvaneError('method_not_allowed', {
+                status: 405,
+                headers: { Allow: allowed.join(', ') },
+              })
+            throw new NotFoundError()
+          }
+          const routed = ctx.forRoute(
+            { name: route.name, method, uri: route.uri, action: actionLabel(route.action) },
+            matched?.params ?? { fallbackPlaceholder: path },
+            { ...ctx.state, method },
+          )
+          // The routed context becomes current: `Route.current()` and `report()` see the route.
+          return runWithHttpContext(routed, () =>
+            this.#dispatch(route, resolved.references, routed, run),
+          )
+        }),
     )
+  }
+
+  /**
+   * With tenancy on, run `work` as the request's tenant, so every model query in it is scoped to
+   * that tenant (and, on PostgreSQL, row-level security sees it). A request without a tenant runs
+   * unscoped: tenant tables then refuse to be queried (fail closed, the ORM's rule).
+   */
+  #asTenant<TResult>(tenantId: string | undefined, work: () => TResult): TResult {
+    if (this.#tenantColumn === undefined || tenantId === undefined) return work()
+    return runWithTenant(tenantId, work)
   }
 
   async #dispatch(

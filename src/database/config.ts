@@ -24,6 +24,7 @@ import { isAbsolute, resolve } from 'node:path'
 import { type EnvProblem, type EnvSource, EnvValidationError } from '../core/index.ts'
 import { pgPoolOptions } from './connect.ts'
 import { Connection } from './db/connection.ts'
+import { lazyDriver } from './db/lazy-driver.ts'
 import { connectMysqlFamily, type MysqlPoolOptions } from './db/mysql-driver.ts'
 import { pgDriver } from './db/pg-driver.ts'
 import { sqliteDriver } from './db/sqlite-driver.ts'
@@ -240,57 +241,103 @@ export async function openDatabase(
   settings: DatabaseSettings,
   options: OpenDatabaseOptions = {},
 ): Promise<Connection> {
-  const tls = tlsOptions(settings)
   switch (settings.connection) {
     case 'sqlite':
       return new Connection(sqliteDriver(settings.filename ?? DEFAULT_SQLITE_FILE))
+    case 'pgsql':
+      return new Connection(pgDriver(pgOptions(settings, options)))
+    case 'mysql':
+    case 'mariadb':
+      return new Connection(await connectMysqlFamily(mysqlOptions(settings, options)))
+  }
+}
+
+/**
+ * The connection an application's models use: built without any I/O, opened by the first
+ * statement (Laravel's lazy connection), so requests and commands that never query (the `/up`
+ * health route, `route:list`) never need the database, and a database that is down fails only the
+ * work that needs it.
+ *
+ * The SQL grammar is fixed before the server answers, so for the MySQL family it is the one every
+ * MySQL and MariaDB version runs: without `RETURNING` (an insert reads its row back by key). That
+ * keeps an XAMPP MariaDB 10.4 configured as `mysql` (#43) working; the server version is still
+ * detected when the pool opens, for its session settings (collation, SQL mode).
+ *
+ * @example
+ * const connection = openDatabaseLazily(databaseSettings(process.env, root))
+ * // nothing is open yet; `await User.first()` opens it
+ */
+export function openDatabaseLazily(settings: DatabaseSettings): Connection {
+  switch (settings.connection) {
+    case 'sqlite': {
+      const file = settings.filename ?? DEFAULT_SQLITE_FILE
+      return new Connection(lazyDriver({ dialect: 'sqlite', open: async () => sqliteDriver(file) }))
+    }
     case 'pgsql': {
-      const migrations = options.forMigrations
-      return new Connection(
-        pgDriver(
-          pgPoolOptions({
-            driver: 'postgres',
-            ...(settings.url !== undefined
-              ? { url: settings.url }
-              : {
-                  host: settings.socket ?? settings.host,
-                  port: settings.port,
-                  database: settings.database,
-                  user: settings.username,
-                  ...(settings.password !== undefined ? { password: settings.password } : {}),
-                }),
-            ...(tls !== undefined ? { ssl: tls } : {}),
-            ...(migrations !== undefined
-              ? {
-                  pool: {
-                    max: 1,
-                    statementTimeoutMs: 0,
-                    queryTimeoutMs: 0,
-                    lockTimeoutMs: migrations.lockTimeoutMs,
-                  },
-                }
-              : {}),
-          }),
-        ),
-      )
+      const pool = pgOptions(settings, {})
+      return new Connection(lazyDriver({ dialect: 'postgres', open: async () => pgDriver(pool) }))
     }
     case 'mysql':
     case 'mariadb': {
-      const pool: MysqlPoolOptions = {
-        ...(settings.url !== undefined
-          ? { uri: settings.url.replace(/^mariadb:/, 'mysql:') }
-          : {
-              ...(settings.socket !== undefined
-                ? { socketPath: settings.socket }
-                : { host: settings.host, port: settings.port }),
-              database: settings.database,
-              user: settings.username,
-              ...(settings.password !== undefined ? { password: settings.password } : {}),
-            }),
-        ...(tls !== undefined ? { ssl: tls } : {}),
-        ...(options.forMigrations !== undefined ? { connectionLimit: 1 } : {}),
-      }
-      return new Connection(await connectMysqlFamily(pool))
+      const pool = mysqlOptions(settings, {})
+      return new Connection(
+        lazyDriver({
+          dialect: settings.connection,
+          insertReturning: false,
+          open: () => connectMysqlFamily(pool),
+        }),
+      )
     }
+  }
+}
+
+/** The node-postgres pool options for the settings. */
+function pgOptions(
+  settings: DatabaseSettings,
+  options: OpenDatabaseOptions,
+): Record<string, unknown> {
+  const tls = tlsOptions(settings)
+  const migrations = options.forMigrations
+  return pgPoolOptions({
+    driver: 'postgres',
+    ...(settings.url !== undefined
+      ? { url: settings.url }
+      : {
+          host: settings.socket ?? settings.host,
+          port: settings.port,
+          database: settings.database,
+          user: settings.username,
+          ...(settings.password !== undefined ? { password: settings.password } : {}),
+        }),
+    ...(tls !== undefined ? { ssl: tls } : {}),
+    ...(migrations !== undefined
+      ? {
+          pool: {
+            max: 1,
+            statementTimeoutMs: 0,
+            queryTimeoutMs: 0,
+            lockTimeoutMs: migrations.lockTimeoutMs,
+          },
+        }
+      : {}),
+  })
+}
+
+/** The mysql2 pool options for the settings. */
+function mysqlOptions(settings: DatabaseSettings, options: OpenDatabaseOptions): MysqlPoolOptions {
+  const tls = tlsOptions(settings)
+  return {
+    ...(settings.url !== undefined
+      ? { uri: settings.url.replace(/^mariadb:/, 'mysql:') }
+      : {
+          ...(settings.socket !== undefined
+            ? { socketPath: settings.socket }
+            : { host: settings.host, port: settings.port }),
+          database: settings.database,
+          user: settings.username,
+          ...(settings.password !== undefined ? { password: settings.password } : {}),
+        }),
+    ...(tls !== undefined ? { ssl: tls } : {}),
+    ...(options.forMigrations !== undefined ? { connectionLimit: 1 } : {}),
   }
 }

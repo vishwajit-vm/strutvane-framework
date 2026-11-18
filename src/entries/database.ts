@@ -40,6 +40,7 @@ export {
   describeDatabase,
   type OpenDatabaseOptions,
   openDatabase,
+  openDatabaseLazily,
 } from '../database/config.ts'
 export {
   type AnyFactory,
