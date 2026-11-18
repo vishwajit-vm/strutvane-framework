@@ -131,7 +131,7 @@ describe('the app logs through its log manager', () => {
     expect(withActor).toMatchObject({ actorId: 'user-7', tenantId: 'tenant-9' })
     expect(withActor?.requestId).toEqual(expect.any(String))
     expect(withActor?.requestId).toBe(withActor?.traceId)
-    expect(withoutActor?.actorId).toBeUndefined()
+    expect(withoutActor?.['actorId']).toBeUndefined()
     expect(withoutActor?.requestId).not.toBe(withActor?.requestId)
     // withContext() reached the record of its own request only.
     expect(byMsg(all, 'with order')?.fields).toMatchObject({ orderId: 42 })
@@ -230,9 +230,9 @@ describe('config/logging.ts and .env', () => {
     })
     const names = readdirSync(logs).sort()
     expect(names).toEqual([
+      'imports',
       expect.stringMatching(/^payments-\d{4}-\d{2}-\d{2}\.log$/),
       expect.stringMatching(/^strutvane-\d{4}-\d{2}-\d{2}\.log$/),
-      'imports',
     ])
     const payments = allRecords(logs).filter((r) => r.msg !== undefined)
     expect(byMsg(payments, 'paid')?.fields).toEqual({ release: '2026.11.17', invoice: 1 })

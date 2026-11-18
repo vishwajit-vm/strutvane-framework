@@ -1061,7 +1061,13 @@ export class Application implements CoreApplication<object> {
     const ctx = new HttpContext({ request, state, sessionCookie: booted.sessionCookie })
     const run: RequestRun = { hookHeaders: undefined, route: undefined, terminables: [] }
     // A fresh log scope per request: `Log.withContext()` adds to this request only (ADR-0022 §7).
-    return runWithLogContext({}, () => this.#handleIn(ctx, request, info, run, booted))
+    // The request id is in the core context from the first stage on, so a record written before
+    // routing (a maintenance stage, a hook, the error report of an early failure) carries it; the
+    // router later adds the actor and the tenant.
+    const ids = { requestId: state.requestId, traceId: state.requestId }
+    return runWithLogContext({}, () =>
+      runWithContext(ids, () => this.#handleIn(ctx, request, info, run, booted)),
+    )
   }
 
   #handleIn(

@@ -27,7 +27,11 @@ import {
 import { createFormatter } from '../../src/logging/format/formatter.ts'
 import { parseLogLine } from '../../src/logging/format/parse.ts'
 import { createLogManager } from '../../src/logging/manager.ts'
-import { checkLiteralTarget, HttpClientError, parseAllowList } from '../../src/security/http-client.ts'
+import {
+  checkLiteralTarget,
+  HttpClientError,
+  parseAllowList,
+} from '../../src/security/http-client.ts'
 import { tempDir } from './helpers.ts'
 
 const cleanups: Array<() => void> = []
@@ -171,9 +175,8 @@ describe('secrets never reach a line', () => {
     for (const text of cases) log.error(text, { detail: text })
     log.info('keys', { password: 'hunter2', nested: { token: 'hunter2' } })
     expect(lines.join('\n')).not.toMatch(/hunter2|4111 1111/)
-    expect(toLoggable({ note: 'postgres://a:hunter2@db' })).toEqual({ // trufflehog:ignore
-      note: 'postgres://a:[REDACTED]@db',
-    })
+    const note = 'postgres://a:hunter2@db' // trufflehog:ignore
+    expect(toLoggable({ note })).toEqual({ note: 'postgres://a:[REDACTED]@db' })
   })
 
   test('the error page hides at least what the logs hide', () => {
@@ -204,16 +207,19 @@ describe('path traversal in log directories', () => {
     expect(logDirectory(elsewhere, ROOT)).toEqual({ dir: elsewhere })
   })
 
-  test.runIf(process.platform === 'win32')('Windows: drive roots, other drives and UNC paths', () => {
-    const root = 'C:\\srv\\app'
-    expect(logDirectory('storage\\logs', root)).toEqual({ dir: 'C:\\srv\\app\\storage\\logs' })
-    expect(logDirectory('..\\..\\Windows', root).problem).toMatch(/climbs out/)
-    expect(logDirectory('C:\\', root).problem).toMatch(/filesystem root/)
-    expect(logDirectory('D:\\logs', root)).toEqual({ dir: 'D:\\logs' })
-    expect(logDirectory('\\\\server\\share\\logs', root)).toEqual({
-      dir: '\\\\server\\share\\logs',
-    })
-  })
+  test.runIf(process.platform === 'win32')(
+    'Windows: drive roots, other drives and UNC paths',
+    () => {
+      const root = 'C:\\srv\\app'
+      expect(logDirectory('storage\\logs', root)).toEqual({ dir: 'C:\\srv\\app\\storage\\logs' })
+      expect(logDirectory('..\\..\\Windows', root).problem).toMatch(/climbs out/)
+      expect(logDirectory('C:\\', root).problem).toMatch(/filesystem root/)
+      expect(logDirectory('D:\\logs', root)).toEqual({ dir: 'D:\\logs' })
+      expect(logDirectory('\\\\server\\share\\logs', root)).toEqual({
+        dir: '\\\\server\\share\\logs',
+      })
+    },
+  )
 
   test('LOG_PATH that climbs out only warns, and the default folder is used', () => {
     const { config, issues } = resolveLoggingConfig(

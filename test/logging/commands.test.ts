@@ -6,7 +6,7 @@
  */
 import { spawn } from 'node:child_process'
 import { readdirSync, utimesSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, test } from 'vitest'
 import { clearLogs, formatLogList, humanSize, listLogs } from '../../src/logging/commands/list.ts'
@@ -299,11 +299,11 @@ describe('list and clear', () => {
     expect(view(sourcesFor(config, 'stack'))).toEqual([[base, ['strutvane']]])
     expect(view(sourcesFor(config, 'audit'))).toEqual([
       [base, ['payments']],
-      ['/other', ['audit']],
+      [resolve('/other'), ['audit']],
     ])
     expect(view(sourcesFor(config))).toEqual([
       [base, ['strutvane', 'payments']],
-      ['/other', ['audit']],
+      [resolve('/other'), ['audit']],
     ])
     expect(() => sourcesFor(config, 'stderr')).toThrow(LogSourceError)
     expect(() => sourcesFor(config, 'stderr')).toThrow(/writes no files/)

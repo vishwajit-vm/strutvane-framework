@@ -17,13 +17,14 @@
  *
  * @module
  */
+
+import { redactString } from '../core/logger/redact-patterns.ts'
 import {
   DEFAULT_SENSITIVE_KEYS,
   DEFAULT_SENSITIVE_WORDS,
   REDACTED,
   sensitiveKeyMatcher,
 } from '../core/logger/serialize.ts'
-import { redactString } from '../core/logger/redact-patterns.ts'
 import { isBootError } from '../foundation/boot-error.ts'
 import type { ExceptionRequestInfo } from '../http/app/errors.ts'
 import {
