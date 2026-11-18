@@ -28,7 +28,11 @@ Branch `v2/logging`, cut from `main` at 6dfc239 (0.2.0-next.0). Source of the po
   `injection.test.ts`); `logger.perf.test.ts` runs under `npm run test:perf`.
 
 ## Half-done / next
-See the bottom of this file for the gate status of the latest run.
+- The gate 3× in a row (see "Gate status" below), then publint/attw/package check/audit and
+  `npm run test:perf`.
+- `test/logging` is its own Vitest project (serial, after the framework project): its deadline and
+  child-process suites failed only under CPU contention when they ran in parallel with the
+  database suites.
 
 ## Decisions for the project lead
 1. Default output changes: apps now log to `storage/logs/strutvane-YYYY-MM-DD.log` (ADR-0022
@@ -61,5 +65,9 @@ npm exec --yes --package=@arethetypeswrong/cli@0.18.5 -- attw ../pack/*.tgz --pr
 npm audit --omit=dev --audit-level=high
 ```
 
-## Gate status
-Not run yet on this branch.
+## Gate status (agent-reported)
+- Run 1 (2c60013): 1 failed (a test expectation in injection.test.ts, fixed in 2b3af55), 3459
+  passed, 17 skipped; 12m44s.
+- Run 2 (2b3af55): 45 failed, all timeouts in the database/pglite/console suites while another
+  agent's test run (its own DB containers) held the CPU at 99%; no logging test failed. Not a
+  code failure, but it breaks the 3× streak: rerun on a quiet machine.
