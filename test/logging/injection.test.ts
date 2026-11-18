@@ -230,7 +230,7 @@ describe('path traversal in log directories', () => {
     expect(issues).toEqual([
       {
         key: 'LOG_PATH',
-        message: expect.stringContaining('climbs out of the project root; using storage/logs'),
+        message: expect.stringMatching(/climbs out of the project root.*; using storage\/logs$/),
       },
     ])
     expect(
