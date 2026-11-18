@@ -82,7 +82,7 @@ export const CLI_MESSAGES_EN: MessageCatalog = defineMessages('en', {
   'cli.error.missing_compat':
     '{name}@{version} does not declare which Strutvane versions it supports (strutvane.compat), so it is not loaded.',
   'cli.hint.missing_compat':
-    'Ask the plugin author to add "strutvane": { "compat": "^0.1.0" } (the supported range) to its package.json.',
+    'Ask the plugin author to add "strutvane": { "compat": "{suggested}" } (the supported range) to its package.json.',
   'cli.error.incompatible_plugins':
     'Unknown command "{name}". These plugins were refused as incompatible: {plugins}.',
   'cli.hint.incompatible_plugins': 'Run `node strut doctor` for details.',

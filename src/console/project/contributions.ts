@@ -3,7 +3,7 @@
  *
  * ```json
  * { "strutvane": { "commands": "./dist/commands.js", "installer": "./dist/installer.js",
- *                  "templates": "./dist/templates.js", "compat": "^0.1.0" } }
+ *                  "templates": "./dist/templates.js", "compat": "^0.2.0" } }
  * ```
  *
  * **Threat model.** These modules run with the user's privileges, so the CLI only ever imports a
@@ -22,8 +22,9 @@ import { pathToFileURL } from 'node:url'
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
 import { printable } from '../framework/printable.ts'
+import { CLI_PACKAGE } from '../version.ts'
 import { type InstalledPackage, strutvaneField } from './project.ts'
-import { satisfies } from './semver.ts'
+import { compatRangeFor, satisfies } from './semver.ts'
 
 /** The contribution points a package can declare. */
 export type ContributionKey = 'commands' | 'installer' | 'templates'
@@ -95,12 +96,22 @@ function isFirstParty(name: string): boolean {
 }
 
 /**
+ * The package that *is* this CLI, at the CLI's own version: its commands are always its own, so a
+ * stale `compat` range in it can never lock the framework out of its own `migrate` (the 0.2.0-next.0
+ * release blocker). The range itself is still tested against the version (test/package-manifest).
+ */
+function isTheCli(pkg: InstalledPackage, cliVersion: string): boolean {
+  return pkg.name === CLI_PACKAGE && pkg.version === cliVersion
+}
+
+/**
  * Check a package's declared `strutvane.compat` range against the CLI version. A plugin (any
  * package outside `@strutvane/`) that declares no range is incompatible: its code is never loaded
  * on the assumption that it might work. The range is returned printable (control characters
  * removed), because it is shown in messages.
  */
 export function checkCompat(pkg: InstalledPackage, cliVersion: string): CompatResult {
+  if (isTheCli(pkg, cliVersion)) return { ok: true }
   const range = strutvaneField(pkg.manifest)?.['compat']
   if (range === undefined) {
     return isFirstParty(pkg.name) ? { ok: true } : { ok: false, range: '', missing: true }
@@ -117,7 +128,13 @@ export function assertCompatible(pkg: InstalledPackage, cliVersion: string): voi
   if (!result.ok) {
     throw new CliError(result.missing === true ? 'missing_compat' : 'incompatible_package', {
       exitCode: EXIT.INCOMPATIBLE,
-      params: { name: pkg.name, version: pkg.version, range: result.range, cli: cliVersion },
+      params: {
+        name: pkg.name,
+        version: pkg.version,
+        range: result.range,
+        cli: cliVersion,
+        suggested: compatRangeFor(cliVersion) ?? '*',
+      },
     })
   }
 }

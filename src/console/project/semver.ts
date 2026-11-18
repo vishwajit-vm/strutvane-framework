@@ -152,3 +152,22 @@ export function satisfies(version: string, range: string, options: SatisfiesOpti
     )
   })
 }
+
+/**
+ * The `strutvane.compat` range that accepts every version of `version`'s release train: the same
+ * minor before 1.0 (`0.2.x`), the same major after, prereleases of the train included. Used to tell
+ * plugin authors what to declare, so the advice follows the CLI's version instead of going stale
+ * at the next release. `undefined` when `version` is not valid semver.
+ *
+ * @example
+ * compatRangeFor('0.2.0-next.3') // '^0.2.0-next.0'
+ * compatRangeFor('1.4.2')        // '^1.0.0'
+ */
+export function compatRangeFor(version: string): string | undefined {
+  const v = parseVersion(version)
+  if (v === undefined) return undefined
+  const base = v.major === 0 ? `0.${v.minor}.0` : `${v.major}.0.0`
+  if (v.prerelease.length === 0) return `^${base}`
+  const tag = v.prerelease[0]
+  return typeof tag === 'string' ? `^${base}-${tag}.0` : `^${base}-0`
+}

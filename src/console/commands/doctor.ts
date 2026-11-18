@@ -28,7 +28,7 @@ import {
   packageManagerCommand,
   readInstalledPackage,
 } from '../project/project.ts'
-import { compareVersions, parseVersion } from '../project/semver.ts'
+import { compareVersions, compatRangeFor, parseVersion } from '../project/semver.ts'
 import { RegistryCompiler } from '../registry/compiler.ts'
 import { verifyContentHash } from '../registry/emit.ts'
 import { CLI_PACKAGE } from '../version.ts'
@@ -307,7 +307,7 @@ async function checkPlugins(project: Project, version: string): Promise<DoctorCh
         fail(
           'plugins',
           `${p.name}@${p.version} declares no strutvane.compat range, so it is not loaded`,
-          'Ask the plugin author to declare the Strutvane versions it supports.',
+          `Ask the plugin author to declare the Strutvane versions it supports, e.g. "strutvane": { "compat": "${compatRangeFor(version) ?? '*'}" } in its package.json.`,
         ),
       )
     } else if (p.kind === 'incompatible') {
