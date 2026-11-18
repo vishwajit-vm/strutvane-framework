@@ -3,7 +3,8 @@
  *
  * Every Strutvane package logs through {@link Logger}, never through `console.*`. `@strutvane/framework/core`
  * provides a minimal default implementation (structured, redacting, stdout), so logging always
- * works; `@strutvane/logs` replaces it with the full one (files, retention, viewer).
+ * works; the framework's logging pipeline (`@strutvane/framework/log`, ADR-0022) replaces it in
+ * an application with the full one (channels, files, retention).
  *
  * @module
  */

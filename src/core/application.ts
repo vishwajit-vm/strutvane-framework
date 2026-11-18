@@ -10,7 +10,7 @@
  *    bounded by a timeout, so a hung connection can never keep the process alive forever.
  *
  * Core binds sensible defaults (clock, ids, logger, messages, error registry, events, hooks)
- * before providers register, so a provider can replace any of them (e.g. `@strutvane/logs`
+ * before providers register, so a provider can replace any of them (e.g. the application
  * rebinds the logger).
  *
  * @module

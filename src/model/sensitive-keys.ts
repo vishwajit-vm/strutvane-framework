@@ -3,7 +3,7 @@
  *
  * The framework never imports a logging package. At boot it registers these keys with core's
  * process-wide redaction registry (`registerSensitiveKeys` from `@strutvane/framework/core`), which both
- * core's fallback logger and `@strutvane/logs` consult on every record, including loggers that
+ * core's fallback logger and the logging pipeline consult on every record, including loggers that
  * were created before the keys were registered.
  *
  * @module
