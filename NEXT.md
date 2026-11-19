@@ -1,3 +1,55 @@
+# v2/gaps: what add-ons and the docs agent hit in 0.2.0-next.1
+
+Branch `v2/gaps` (from `main` 8b896f0, `main` e395315 merged in). Not pushed by the agent; the
+coordinator pushes. Evidence: the NEXT.md files of redis, search, social-login, log-viewer,
+import-export and health (their `v2/*` branches).
+
+## Done (each with tests that fail on 0.2.0-next.1)
+- **A. Extension points** (`test/foundation/extension-points.test.ts`, `test/devkit/app-patcher.test.ts`,
+  `test/database/orm/events.test.ts`, app-level event test in `test/database/orm/app-database.test.ts`):
+  - root exports: `allows`, `authorize`, `hasAdminRole`, `Policy`, `PolicyDenial`, `PolicyRegistry`
+    (+ `registry.allows()`/`authorize()`, deny without a policy), `PolicyRegistryToken`,
+    `RateLimitStoreToken`, `UsedSignatureStoreToken`, `MemoryUsedSignatureStore`, `MemoryCacheStore`;
+    `AuthUser` was already there. `/testing`: `testClient` (+ `AppTestClient`, `AppTestResponse`).
+  - model events `<model>.created/.updated/.deleted/.restored` as **domain events on the app's
+    EventBus, after commit** (dropped on rollback), with tenant + actor; `modelEventName()`;
+    `afterCommit()` / `Connection.afterCommit()` (`/database`).
+  - `app.env(name)` (merged env, readable in `register()`); `app.config()` works there too.
+  - `app.addMessages(...catalogs)`: live package layer under app + built-in messages.
+  - `CacheDriverRegistryToken` (`extend('redis', factory)`), stores pass their whole entry.
+  - devkit `createAppPatcher` / `context.app` for `bootstrap/providers.ts` + `config/index.ts`
+    (AST-located, idempotent, reversible, fail-safe with printed manual lines).
+- **B. Storage** (`test/storage/public-disk.test.ts`, `test/commands/storage-link.test.ts`):
+  `config/filesystems.ts` read at boot, public disks served at their url path (`/storage/...`),
+  `node strut storage:link [--force]`. Also fixed: active content with a parametrised/odd-case type
+  was served inline by signed links (`isActiveContent`, regression test in `hardening.test.ts`).
+- **C. Docs-agent bugs** (`test/commands/docs-agent-bugs.test.ts`, `test/console/make-migration-first.test.ts`):
+  `--force-debug` on start/dev, 415 `{expected}`, `route:list` `throttle:60,1`, Schema/Migration/
+  Sandbox errors keep their hint in the CLI, `make:model/factory/seeder` write v2 shapes,
+  `app.previous_keys: env.optional(...)` unset no longer reads as "undefined".
+- **D.** 5 changesets (4 minor, 1 patch; pre `next`, `changeset version` NOT run), README
+  ("Storage", "For package authors: extension points").
+
+## Integration-map rows the hub needs (docs/17; describe only, the hub owns the map)
+- §3 tokens: `CacheDriverRegistry` (framework; redis adds `redis`), `RateLimitStore` and
+  `UsedSignatureStore` (framework default memory/cache; redis may replace), `PolicyRegistry`
+  (framework; add-ons such as search read the app's policies), `MessageCatalog` row: packages
+  register through `app.addMessages()`.
+- §5 domain events: `<model>.created/.updated/.deleted` emitted by the framework already listed; add
+  `.restored`, and note they are delivered **after commit** (in-process bus; the outbox is later).
+- §6.1 / installers: `context.app` (devkit) edits `bootstrap/providers.ts` and `config/index.ts`.
+
+## Deferred (and why)
+- A richer session-driver contract for redis (`read/write/touch/destroy`): not in this brief; needs
+  an RFC because auth consumes it.
+- Provider-registered commands in the CLI (follow-up 2 below) and request logging (log-viewer's
+  proposal): separate work.
+- Add-on repos still carry their own patch helpers until they move to `context.app`.
+
+## How to verify
+Same as below ("How to verify"): `npm ci`, `npm run ci` 3x, code-rules/deps/package checks,
+publint --strict, attw, `npm audit --omit=dev --audit-level=high`.
+
 # v2/merge-0.2: what is left after the merge
 
 `v2/app-core` and `v2/data-layer` merged into one release candidate for `@strutvane/framework`
