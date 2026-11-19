@@ -8,7 +8,7 @@
 import { ServerListenError } from './runtime/serve.ts'
 import { startProject, stopOnSignals } from './runtime/server.ts'
 
-const [root = process.cwd(), port, hostname] = process.argv.slice(2)
+const [root = process.cwd(), port, hostname, force] = process.argv.slice(2)
 try {
   const started = await startProject({
     root,
@@ -18,6 +18,7 @@ try {
     vite: true,
     ...(port ? { port: Number(port) } : {}),
     ...(hostname ? { hostname } : {}),
+    ...(force === '--force-debug' ? { forceDebug: true } : {}),
   })
   process.stdout.write(`Strutvane dev server: ${started.server.url}\n`)
   await stopOnSignals(started)

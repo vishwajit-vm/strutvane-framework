@@ -53,6 +53,11 @@ export interface StartServerOptions {
    * Default `false`.
    */
   readonly vite?: boolean
+  /**
+   * Applications only: boot even with `APP_DEBUG=true` and `APP_ENV=production` (the
+   * `--force-debug` flag the `debug_in_production` hint names). Default `false`.
+   */
+  readonly forceDebug?: boolean
 }
 
 /** A served project. */
@@ -156,6 +161,8 @@ export interface StartApplicationOptions {
   readonly hostname?: string
   /** Load the app (default: import `bootstrap/app.ts`); tests pass an app they built. */
   readonly load?: (root: string) => Promise<Application>
+  /** Boot even with APP_DEBUG=true in production (`--force-debug`). Default `false`. */
+  readonly forceDebug?: boolean
 }
 
 /** A served application. */
@@ -183,6 +190,7 @@ export async function startApplication(
     options.load ??
     (async (root: string) => (await import('../foundation/load.ts')).loadApplication(root))
   const app = await load(options.root)
+  if (options.forceDebug === true) app.forceDebug()
   await app.boot()
   const logger = app.make(LoggerToken)
   const configured = app.configRepository.has('app.port')
@@ -239,6 +247,7 @@ export function startProject(
       root: options.root,
       ...(options.port === undefined ? {} : { port: options.port }),
       ...(options.hostname === undefined ? {} : { hostname: options.hostname }),
+      ...(options.forceDebug === true ? { forceDebug: true } : {}),
     })
   return startServer(options)
 }

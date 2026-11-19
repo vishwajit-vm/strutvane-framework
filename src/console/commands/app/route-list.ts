@@ -14,6 +14,7 @@
  *
  * @module
  */
+import { referenceFor } from '../../../http/app/middleware.ts'
 import type { CompiledRoute } from '../../../routing/router.ts'
 import { actionLabel } from '../../../routing/router.ts'
 import type { AnyCommand } from '../../framework/command.ts'
@@ -137,7 +138,8 @@ export function routeListCommand(deps: AppCommandDeps): AnyCommand {
               action: actionLabel(route.action),
               middleware: app
                 .routeMiddleware(route)
-                .references.map((reference) => [reference.alias, ...reference.params].join(':')),
+                // The same spelling routes are written with (throttle:60,1), as --security shows.
+                .references.map((reference) => referenceFor(reference.alias, reference.params)),
               fallback: route.fallback === true,
             }),
           ),

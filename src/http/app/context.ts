@@ -450,7 +450,10 @@ export function unauthenticated(): UnauthenticatedError {
  */
 async function readJsonBody(request: Request, state: RequestState): Promise<unknown> {
   if (!isJsonMediaType(request.headers.get('content-type')))
-    throw new StrutvaneError('unsupported_media_type', { status: 415 })
+    throw new StrutvaneError('unsupported_media_type', {
+      status: 415,
+      params: { expected: 'application/json' },
+    })
   const text = await readLimitedText(request, state.limits.maxBytes)
   try {
     return parseJsonSafely(text, state.limits)

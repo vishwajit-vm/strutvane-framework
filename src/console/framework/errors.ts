@@ -226,12 +226,25 @@ function isBootFailure(value: unknown): value is Error & { readonly provider: st
  * The shape of the framework's `BootError` (`foundation/boot-error.ts`), matched by shape: the
  * console layer does not import the application layer.
  */
+/**
+ * The framework's friendly errors that carry their own fix: a `BootError`, and the migration
+ * errors (`SchemaError`, `MigrationError`, `SandboxError`) that `migrate`, `make:migration` and the
+ * replay sandbox throw. They used to fall through to "Unexpected error … report the bug", losing
+ * their hint.
+ */
+const HINTED_ERRORS: ReadonlySet<string> = new Set([
+  'BootError',
+  'SchemaError',
+  'MigrationError',
+  'SandboxError',
+])
+
 function isBootErrorLike(
   error: unknown,
 ): error is Error & { readonly code: string; readonly hint: string } {
   return (
     error instanceof Error &&
-    error.name === 'BootError' &&
+    HINTED_ERRORS.has(error.name) &&
     typeof (error as { code?: unknown }).code === 'string' &&
     typeof (error as { hint?: unknown }).hint === 'string'
   )
@@ -278,11 +291,17 @@ export function toFailure(error: unknown): CliFailure {
   // An application's BootError (bad config, a weak key, an unknown middleware…) is the user's
   // configuration, not a bug: its own code, message and hint, and the validation exit code.
   if (isBootErrorLike(error)) {
+    // Where a migration problem is: the static gate's file:line:col, else the migration file.
+    const where = [
+      (error as { location?: unknown }).location,
+      (error as { migration?: unknown }).migration,
+    ].find((value): value is string => typeof value === 'string' && value !== '')
     return {
       code: error.code,
-      exitCode: EXIT.VALIDATION,
+      // A migration that failed against the database is a failure, not bad input.
+      exitCode: error.name === 'MigrationError' ? EXIT.FAILURE : EXIT.VALIDATION,
       params: {
-        detail: `${error.message}
+        detail: `${where === undefined ? '' : `${where}: `}${error.message}
   → ${error.hint}`,
       },
       issues: [],

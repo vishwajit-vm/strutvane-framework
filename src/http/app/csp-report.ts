@@ -59,7 +59,11 @@ export function cspReportRoutes(): RouteList<unknown> {
 export async function handleCspReport(ctx: HttpContext): Promise<Response> {
   const type =
     (ctx.request.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
-  if (!REPORT_TYPES.has(type)) throw new StrutvaneError('unsupported_media_type', { status: 415 })
+  if (!REPORT_TYPES.has(type))
+    throw new StrutvaneError('unsupported_media_type', {
+      status: 415,
+      params: { expected: [...REPORT_TYPES].join(' or ') },
+    })
   const text = await readLimitedText(ctx.request, MAX_BYTES)
   let parsed: unknown
   try {

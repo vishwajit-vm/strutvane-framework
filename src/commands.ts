@@ -338,6 +338,11 @@ const seedCommand: ContributedCommand = {
 const serverFlags = {
   port: { type: 'string', description: 'Port (default: APP_PORT)' },
   host: { type: 'string', description: 'Interface to bind (default 127.0.0.1)' },
+  // The debug_in_production boot error tells people to pass this flag, so the server takes it.
+  'force-debug': {
+    type: 'boolean',
+    description: 'Start even with APP_DEBUG=true in production (debug pages stay off)',
+  },
 } as const
 
 const startCommand: ContributedCommand = {
@@ -354,6 +359,7 @@ const startCommand: ContributedCommand = {
       ...(appEnv !== undefined ? { env: appEnv } : {}),
       ...(port ? { port: Number(port) } : {}),
       ...(host ? { hostname: host } : {}),
+      ...(ctx.flags['force-debug'] === true ? { forceDebug: true } : {}),
     })
     ctx.out.success(`Listening on ${started.server.url} (APP_ENV=${startedEnv(started)})`)
     // Keep the signal's exit code (143 for SIGTERM, ADR-0015), so a process manager can tell a
@@ -387,7 +393,14 @@ const devCommand: ContributedCommand = {
       .map((p) => join(root, p))
       .filter((p) => existsSync(p))
       .map((p) => `--watch-path=${p}`)
-    const args = [...watch, main, root, str(ctx.flags['port']) ?? '', str(ctx.flags['host']) ?? '']
+    const args = [
+      ...watch,
+      main,
+      root,
+      str(ctx.flags['port']) ?? '',
+      str(ctx.flags['host']) ?? '',
+      ctx.flags['force-debug'] === true ? '--force-debug' : '',
+    ]
     ctx.out.info('Watching app/, config/ and .env for changes.')
     // The child re-reads nothing on its own: it gets the CLI's APP_ENV explicitly.
     const appEnv = commandAppEnv(ctx)
