@@ -131,13 +131,18 @@ function suite(engine: Engine): void {
   })
 
   test('afterCommit after the transaction ended is refused, not silently run', async () => {
-    let late: Promise<void> | undefined
+    // Settled into a value at once: the refusal happens after the transaction, and a rejection
+    // with no handler yet would be reported as unhandled by --unhandled-rejections=strict.
+    let late: Promise<unknown> | undefined
     await transaction(async () => {
-      late = new Promise<void>((resolve) => setTimeout(resolve, 5)).then(() =>
-        connection().afterCommit(() => undefined),
-      )
+      late = new Promise<void>((resolve) => setTimeout(resolve, 5))
+        .then(() => connection().afterCommit(() => undefined))
+        .then(
+          () => 'ran',
+          (error: unknown) => error,
+        )
     })
-    await expect(late).rejects.toThrow(/already finished/)
+    expect(String(await late)).toMatch(/already finished/)
   })
 
   test('save, delete, forceDelete and restore emit created/updated/deleted/restored', async () => {
