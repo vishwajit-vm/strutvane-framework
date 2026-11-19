@@ -300,8 +300,7 @@ export function createAppPatcher(fs: AppPatcherFs, options: AppPatcherOptions = 
     const code = applyEdits(source, edits)
     const check = analyse(code, kind)
     const ok =
-      check !== undefined &&
-      check.imports.some((declaration) => importsEntry(declaration, entry)) &&
+      check?.imports.some((declaration) => importsEntry(declaration, entry)) === true &&
       check.listed.some((item) => item.name === entry.name)
     if (!ok) return manual(kind, entry, true, 'the edit could not be verified')
     await fs.write(file, text.restore(code), { overwrite: true })
