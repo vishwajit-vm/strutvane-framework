@@ -31,12 +31,18 @@ import {
   testGenerator,
 } from '../make/generators.ts'
 import {
+  blankSeederStub,
   DATABASE_SEEDER_FILE,
+  databaseSeederStub,
+  factoryStub,
   isMigrationFirstProject,
   migrationFirstFiles,
   migrationFirstGenerator,
+  policyStub,
+  registerSeederV2,
   SEEDERS_END,
   SEEDERS_START,
+  seederStub,
 } from '../make/migration-first.ts'
 import { type Names, names } from '../make/names.ts'
 import {
@@ -326,6 +332,71 @@ async function promptFields(ctx: CommandContext): Promise<string[]> {
   }
 }
 
+// --- Migration-first (v2) apps ------------------------------------------------------------------
+// make:model, make:factory and make:seeder write the shapes the skeleton uses (Model('posts'),
+// defineFactory, defineSeeder from @strutvane/framework/database), never v1's defineModel files.
+
+/** Read a project file, `undefined` when it doesn't exist. */
+function projectReader(root: string): (path: string) => string | undefined {
+  return (path) => {
+    const file = join(root, path)
+    return existsSync(file) ? readFileSync(file, 'utf8') : undefined
+  }
+}
+
+/** Write planned v2 files (never overwriting owned ones) and report kept files and manual steps. */
+async function writeV2Files(
+  ctx: CommandContext,
+  files: readonly GeneratedFile[],
+  extra: readonly GeneratedFile[],
+  plan: { readonly kept: readonly string[]; readonly manual: readonly string[] },
+): Promise<Awaited<ReturnType<typeof applyGenerator>>> {
+  const data = await applyGenerator(
+    ctx,
+    migrationFirstGenerator,
+    { files: files.map((file) => ({ path: file.path, content: file.content })) },
+    'node strut migrate',
+    extra,
+  )
+  for (const path of plan.kept) ctx.out.info(`Kept ${path} (it already exists).`)
+  if (plan.manual.length > 0) {
+    ctx.out.warn(
+      `${DATABASE_SEEDER_FILE} has no ${SEEDERS_START} ... ${SEEDERS_END} markers, so the seeder was not registered. Add:`,
+    )
+    for (const line of plan.manual) ctx.out.warn(`  ${line}`)
+  }
+  return data
+}
+
+/** The v2 model file must exist for make:factory / make:seeder --model. */
+function requireV2Model(root: string, n: Names): void {
+  const path = `app/models/${n.kebab}.ts`
+  if (!existsSync(join(root, path)))
+    throw new CliError('model_not_found', {
+      exitCode: EXIT.VALIDATION,
+      params: { model: n.pascal, path },
+    })
+}
+
+/** Add the seeder to database.seeder.ts (or say how), like make:migration --seeder. */
+function planV2Registration(
+  read: (path: string) => string | undefined,
+  seeder: string,
+  file: string,
+): { readonly extra: GeneratedFile[]; readonly manual: readonly string[] } {
+  const result = registerSeederV2(
+    read(DATABASE_SEEDER_FILE) ?? databaseSeederStub(),
+    seeder,
+    `./${file}.seeder.ts`,
+  )
+  if (result.status === 'registered')
+    return {
+      extra: [{ path: DATABASE_SEEDER_FILE, content: result.content, overwrite: true }],
+      manual: [],
+    }
+  return { extra: [], manual: result.status === 'unrecognised' ? result.manual : [] }
+}
+
 /**
  * Tenant scoping for a new model. In an app with multi-tenancy (`config/tenancy.ts`), models are
  * tenant-scoped unless `--no-tenant` says otherwise: forgetting the flag must never produce a
@@ -368,6 +439,12 @@ export const makeModelCommand: AnyCommand = defineCommand({
     audit: { type: 'boolean', default: false, description: 'Record changes in the audit log' },
     'soft-deletes': { type: 'boolean', default: false, description: 'Delete by setting deletedAt' },
     timestamps: { type: 'boolean', default: true, description: 'Add createdAt/updatedAt' },
+    migration: {
+      type: 'boolean',
+      default: true,
+      description:
+        'Migration-first apps: also create create_<table>_table (--no-migration to skip)',
+    },
     seed: {
       type: 'string',
       valueName: '<n>',
@@ -378,6 +455,48 @@ export const makeModelCommand: AnyCommand = defineCommand({
   examples: makeModelExamples(process.platform),
   async run(ctx) {
     const n = modelNames(ctx.args.name)
+    const projectRoot = ctx.requireProject().root
+    if (isMigrationFirstProject(projectRoot)) {
+      if (ctx.args.fields.length > 0)
+        throw usageError('invalid_argument', {
+          detail: `In migration-first apps the columns live in the migration, not the model. Run node strut make:model ${n.pascal} (it creates the create_${n.snakePlural}_table migration), then add the columns there (t.string('title'), ...).`,
+          command: ctx.command,
+        })
+      const count = Number(ctx.flags.seed)
+      if (!Number.isInteger(count) || count < 1 || count > 100_000)
+        throw usageError('invalid_flag_value', {
+          detail: '--seed must be a whole number from 1 to 100000.',
+          command: ctx.command,
+        })
+      const table = n.snakePlural
+      const read = projectReader(projectRoot)
+      const plan = migrationFirstFiles(
+        projectRoot,
+        `create_${table}_table`,
+        new Date(ctx.services.clock.now()),
+        { seeder: ctx.flags.seeder, factory: ctx.flags.factory, read },
+      )
+      const seederPath = `database/seeders/${n.kebab}.seeder.ts`
+      const files = plan.files
+        .filter((file) => file.overwrite !== true)
+        .filter((file) => ctx.flags.migration || !file.path.startsWith('database/migrations/'))
+        .map((file) =>
+          file.path === seederPath ? { ...file, content: seederStub(table, count) } : file,
+        )
+      const kept = [...plan.kept]
+      const policyPath = `app/policies/${n.kebab}.policy.ts`
+      if (ctx.flags.policy) {
+        if (existsSync(join(projectRoot, policyPath))) kept.push(policyPath)
+        else files.push({ path: policyPath, content: policyStub(table) })
+      }
+      const data = await writeV2Files(
+        ctx,
+        files,
+        plan.files.filter((file) => file.overwrite === true),
+        { kept, manual: plan.manual },
+      )
+      return { data: { model: n.pascal, table, ...data } }
+    }
     const specs =
       ctx.args.fields.length === 0 && ctx.prompt.interactive
         ? await promptFields(ctx)
@@ -491,6 +610,17 @@ export const makeFactoryCommand: AnyCommand = defineCommand({
   examples: ['node strut make:factory Invoice'],
   async run(ctx) {
     const n = modelNames(ctx.args.model)
+    const projectRoot = ctx.requireProject().root
+    if (isMigrationFirstProject(projectRoot)) {
+      requireV2Model(projectRoot, n)
+      const data = await writeV2Files(
+        ctx,
+        [{ path: `database/factories/${n.kebab}.factory.ts`, content: factoryStub(n.snakePlural) }],
+        [],
+        { kept: [], manual: [] },
+      )
+      return { data }
+    }
     const file = requireModel(ctx, n)
     const { fields } = existingFields(file, paths.model(n))
     const data = await applyGenerator(ctx, factoryGenerator, { model: n.pascal, fields })
@@ -520,6 +650,34 @@ export const makeSeederCommand: AnyCommand = defineCommand({
         detail: '--count must be a whole number from 1 to 100000.',
         command: ctx.command,
       })
+    }
+    const projectRoot = ctx.requireProject().root
+    if (isMigrationFirstProject(projectRoot)) {
+      // `make:seeder InvoiceSeeder` and `make:seeder Invoice` both mean invoice.seeder.ts.
+      const s = names(ctx.args.name.replace(/[-_ ]?seeder$/i, '') || ctx.args.name, 'Seeder name')
+      const read = projectReader(projectRoot)
+      const files: GeneratedFile[] = []
+      const kept: string[] = []
+      let extra: GeneratedFile[] = []
+      let manual: readonly string[] = []
+      if (model === undefined) {
+        files.push({
+          path: `database/seeders/${s.kebab}.seeder.ts`,
+          content: blankSeederStub(s.pascal),
+        })
+      } else {
+        requireV2Model(projectRoot, model)
+        const factoryPath = `database/factories/${model.kebab}.factory.ts`
+        if (existsSync(join(projectRoot, factoryPath))) kept.push(factoryPath)
+        else files.push({ path: factoryPath, content: factoryStub(model.snakePlural) })
+        files.push({
+          path: `database/seeders/${s.kebab}.seeder.ts`,
+          content: seederStub(model.snakePlural, count),
+        })
+        ;({ extra, manual } = planV2Registration(read, `${s.pascal}Seeder`, s.kebab))
+      }
+      const data = await writeV2Files(ctx, files, extra, { kept, manual })
+      return { data }
     }
     // A seeder tied to a model is registered in database.seeder.ts like make:model's.
     const seeding =

@@ -138,3 +138,87 @@ describe('registerSeederV2', () => {
     )
   })
 })
+
+describe('make:model, make:factory and make:seeder write v2 shapes (docs agent, 2026-11-18)', () => {
+  const files = (root: string, paths: readonly string[]) =>
+    paths.map((path) => [path, existsSync(join(root, path))])
+
+  test('make:model: model, migration, factory, seeder (registered) and a deny-by-default policy', async () => {
+    const root = v2Project()
+    const r = await cli(['make:model', 'Post', '--json'], { cwd: root })
+    expect(r.code, r.stdout + r.stderr).toBe(0)
+    expect(read(root, 'app/models/post.ts')).toContain("export class Post extends Model('posts', {")
+    expect(read(root, 'database/migrations/2026_11_14_093000_create_posts_table.ts')).toContain(
+      "schema.create('posts'",
+    )
+    expect(read(root, 'database/factories/post.factory.ts')).toContain('defineFactory(Post,')
+    expect(read(root, 'database/seeders/post.seeder.ts')).toContain('PostFactory.count(10)')
+    expect(read(root, 'database/seeders/database.seeder.ts')).toContain('await call([PostSeeder])')
+    const policy = read(root, 'app/policies/post.policy.ts')
+    expect(policy).toContain('export default class PostPolicy')
+    expect(policy).not.toMatch(/create\(|update\(|delete\(/)
+    for (const path of ['app/models/post.ts', 'database/factories/post.factory.ts'])
+      expect(read(root, path)).not.toContain('defineModel')
+  })
+
+  test('make:model flags: --no-migration --no-factory --no-seeder --no-policy, --seed', async () => {
+    const root = v2Project()
+    const r = await cli(
+      ['make:model', 'Comment', '--no-migration', '--no-factory', '--no-seeder', '--no-policy'],
+      { cwd: root },
+    )
+    expect(r.code, r.stderr).toBe(0)
+    expect(
+      files(root, [
+        'app/models/comment.ts',
+        'database/factories/comment.factory.ts',
+        'database/seeders/comment.seeder.ts',
+        'app/policies/comment.policy.ts',
+      ]),
+    ).toEqual([
+      ['app/models/comment.ts', true],
+      ['database/factories/comment.factory.ts', false],
+      ['database/seeders/comment.seeder.ts', false],
+      ['app/policies/comment.policy.ts', false],
+    ])
+    const seeded = await cli(['make:model', 'Tag', '--seed', '3'], { cwd: root })
+    expect(seeded.code).toBe(0)
+    expect(read(root, 'database/seeders/tag.seeder.ts')).toContain('TagFactory.count(3)')
+  })
+
+  test('make:model refuses field specs: columns belong in the migration', async () => {
+    const root = v2Project()
+    const r = await cli(['make:model', 'Post', 'title:string', '--json'], { cwd: root })
+    expect(r.code).toBe(2)
+    expect(r.json().error?.message).toContain('the columns live in the migration')
+    expect(existsSync(join(root, 'app/models/post.ts'))).toBe(false)
+  })
+
+  test('make:factory needs the model, then writes defineFactory', async () => {
+    const root = v2Project()
+    const missing = await cli(['make:factory', 'Post', '--json'], { cwd: root })
+    expect(missing.json().error?.code).toBe('model_not_found')
+    await cli(['make:model', 'Post', '--no-factory', '--no-seeder'], { cwd: root })
+    const r = await cli(['make:factory', 'Post'], { cwd: root })
+    expect(r.code, r.stderr).toBe(0)
+    expect(read(root, 'database/factories/post.factory.ts')).toContain(
+      "import { Post } from '../../app/models/post.ts'",
+    )
+  })
+
+  test('make:seeder: a blank defineSeeder, or one for a model (factory + registration)', async () => {
+    const root = v2Project()
+    expect((await cli(['make:seeder', 'DemoDataSeeder'], { cwd: root })).code).toBe(0)
+    const blank = read(root, 'database/seeders/demo-data.seeder.ts')
+    expect(blank).toContain('export default defineSeeder({')
+    expect(blank).not.toContain('defineModel')
+    await cli(['make:model', 'Invoice', '--no-factory', '--no-seeder'], { cwd: root })
+    const r = await cli(['make:seeder', 'Invoice', '--model', 'Invoice', '--count', '5'], {
+      cwd: root,
+    })
+    expect(r.code, r.stderr).toBe(0)
+    expect(read(root, 'database/seeders/invoice.seeder.ts')).toContain('InvoiceFactory.count(5)')
+    expect(read(root, 'database/factories/invoice.factory.ts')).toContain('defineFactory(Invoice,')
+    expect(read(root, 'database/seeders/database.seeder.ts')).toContain('InvoiceSeeder')
+  })
+})

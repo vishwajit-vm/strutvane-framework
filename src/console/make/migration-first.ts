@@ -72,7 +72,7 @@ export default defineSeeder({
 }
 
 /** A model's seeder (it uses the model's factory, #35). */
-export function seederStub(table: string): string {
+export function seederStub(table: string, count = 10): string {
   const model = modelNameForTable(table)
   const file = singularize(table).replace(/_/g, '-')
   return `import { defineSeeder } from '@strutvane/framework/database'
@@ -81,9 +81,49 @@ import ${model}Factory from '../factories/${file}.factory.ts'
 /** Seeds the \`${table}\` table. */
 export default defineSeeder({
   async run() {
-    await ${model}Factory.count(10).create()
+    await ${model}Factory.count(${count}).create()
   },
 })
+`
+}
+
+/** A seeder not tied to a model (`make:seeder DemoData`). */
+export function blankSeederStub(name: string): string {
+  return `import { defineSeeder } from '@strutvane/framework/database'
+
+/** ${name}: run it with \`node strut db:seed --class ${name}Seeder\`, or call it from database.seeder.ts. */
+export default defineSeeder({
+  async run() {
+    // Create rows here, for example with a factory: await PostFactory.count(10).create()
+  },
+})
+`
+}
+
+/**
+ * A model's policy (`app/policies/post.policy.ts`, found by name). Deny by default: only
+ * signed-in users may list and view; create, update and delete stay refused until you add them.
+ */
+export function policyStub(table: string): string {
+  const model = modelNameForTable(table)
+  const file = singularize(table).replace(/_/g, '-')
+  const variable = model.charAt(0).toLowerCase() + model.slice(1)
+  return `import type { AuthUser } from '@strutvane/framework'
+import type { ${model} } from '../models/${file}.ts'
+
+/**
+ * Who may do what with \`${table}\`. Strutvane denies by default: a method that is missing (create,
+ * update, delete) refuses. Add them as your rules become clear.
+ */
+export default class ${model}Policy {
+  viewAny(user: AuthUser | null): boolean {
+    return user !== null
+  }
+
+  view(user: AuthUser | null, _${variable}: ${model}): boolean {
+    return user !== null
+  }
+}
 `
 }
 
