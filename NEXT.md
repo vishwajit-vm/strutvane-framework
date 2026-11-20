@@ -20,24 +20,30 @@ commit 01f1f6a). Never merged or pushed by the implementing agent.
 - Tests `test/queue/`: payload 37, lifecycle 31, driver contract 60 (memory + SQLite + PGlite +
   real MySQL 8.4 / MariaDB 11.4 / PostgreSQL 18 with two pools racing). *(agent-reported)*
 
+- App wiring: `src/queue/config.ts` (`config/queue.ts` reader, `QUEUE_CONNECTION`, default `sync`
+  under APP_ENV=testing else `database`, `registerQueueDriver` for add-ons, lazy database driver /
+  failed store / lock store), bound in `Application#bootKernel` (a bad config stops boot).
+- `Connection.afterCommit()` (runs after COMMIT once the session is released; savepoint rollback
+  drops its callbacks) and `afterCommit` dispatch.
+- `app/jobs` discovery (`src/queue/discover.ts`), commands `queue:table`, `queue:work`,
+  `queue:restart`, `queue:failed`, `queue:retry`, `queue:forget`, `queue:flush`, `queue:clear`
+  (`src/console/commands/app/queue.ts`), `Queue` and `Bus` facades (`src/facades/queue.ts`).
+- More tests: worker 11, database stores/afterCommit/two-worker exactly-once on all 5 engines,
+  app + commands 9. *(agent-reported)*
+
 ## Next (in order)
-1. Worker tests (stop() drains the current job, limits, restart signal, timed-out exit) and a
-   real-process SIGTERM test of `queue:work`.
-2. `Connection.afterCommit()` in `src/database/db/connection.ts` (+ savepoint semantics) and wire
-   `transactions` into the manager; tests on every engine.
-3. Config + boot: `config/queue.ts` reader (`QUEUE_CONNECTION`, connections, failed, retryAfter
-   vs timeout check), bind `QueueManager`/`QueueDispatcherToken` in `Application#bindDefaults`,
-   `app/jobs` discovery, `QueueManager.extend()` for add-on drivers, `.env.example` key.
-4. Commands: `queue:table`, `queue:work`, `queue:restart`, `queue:failed`, `queue:retry`,
-   `queue:forget`, `queue:flush`, `queue:clear`; facades `Queue` / `Bus` replace the
-   coming-soon placeholders; `/queue` subpath export + `driver-contract` in `/testing`.
-5. Batches (`job_batches` + `job_batch_jobs`, CAS bookkeeping) and the transactional outbox +
+1. Exports: `/queue` subpath (tsdown entry, package.json exports, smoke-dist), `queueDriverContract`
+   from `/testing`, queue types from the root entry; README section; `.env.example`/skeleton note.
+2. A real-process test: `node strut queue:work` gets SIGTERM mid-job and drains it.
+3. Batches (`job_batches` + `job_batch_jobs`, CAS bookkeeping) and the transactional outbox +
    relay (RFC §7.1, §8).
-6. Per-process worker log file once ADR-0022 logging is on main; class jobs (RFC §1.2).
-7. RFC amendments to make: default payload cap is 64 KiB (portable TEXT), not 256 KiB; dispatch
-   API is `Job.dispatch(data, options)` / `Job.with(data).delay().dispatch()` (no thenable);
-   `maxExceptions` deferred.
-8. README section, changeset (minor, pre `next`), full gate 3×.
+4. Per-process worker log file once ADR-0022 logging is on main; class jobs (RFC §1.2).
+5. RFC amendments: payload cap 64 KiB (portable TEXT), not 256 KiB; dispatch API is
+   `Job.dispatch(data, options)` / `Job.with(data).delay().dispatch()` (no thenable);
+   `maxExceptions` deferred; worker memory default 512 MB (Laravel's 128 is below a booted Node
+   app); `QueueDriversToken`/`registerQueueDriver` instead of `QueueManager.extend`; the DB lock
+   store reads the owner back (MySQL reports found rows, not changed rows).
+6. Changeset (minor, pre `next`), full gate 3×.
 
 ## How to verify
 ```bash

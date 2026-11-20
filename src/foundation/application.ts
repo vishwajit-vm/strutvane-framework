@@ -108,6 +108,7 @@ import {
 } from '../http/session-cookie.ts'
 import { checkMaintenance } from '../maintenance/maintenance.ts'
 import { applicationMessages, registerApplicationErrors } from '../messages.ts'
+import { bindQueue, QueueManagerToken } from '../queue/config.ts'
 import {
   defineRoutes,
   Route,
@@ -741,6 +742,19 @@ export class Application implements CoreApplication<object> {
       basePath: this.basePath,
       env: () => databaseEnv(config, boot.env, environment),
     })
+    // The queue (RFC-0006): built now so a bad config/queue.ts stops boot; drivers, the failed
+    // store and the lock store open the database only on first use.
+    bindQueue(container, {
+      config: config.has('queue') ? config.get('queue') : undefined,
+      env: boot.env,
+      environment,
+      keys: keyring.deriveAll('queue'),
+      clock,
+      logger,
+      database: () => container.make(DatabaseConnectionToken),
+      scope: (work) => this.#scope(work),
+    })
+    container.make(QueueManagerToken)
     const appUrl = config.string('app.url', 'http://localhost')
     const sessionCookie = container.has(SessionCookieToken)
       ? container.make(SessionCookieToken)

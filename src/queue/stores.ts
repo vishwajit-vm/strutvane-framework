@@ -252,16 +252,26 @@ export class DatabaseQueueLockStore implements QueueLockStore {
     const expires = now + ttlSeconds * 1000
     const table = sql.id(this.#table)
     const keyColumn = sql.id('key')
-    const inserted = await this.#db.run(
+    // Insert if absent, or take over an expired lock; then read who owns it. Reading the owner
+    // back (instead of trusting affected-row counts) is what makes this correct on MySQL, whose
+    // driver reports "found" rather than "changed" rows for ON DUPLICATE KEY UPDATE.
+    await this.#db.run(
       isMysqlFamily(this.#db.grammar.dialect)
         ? sql`INSERT INTO ${table} (${keyColumn}, owner, expires_at) VALUES (${key}, ${owner}, ${expires}) ON DUPLICATE KEY UPDATE ${keyColumn} = ${keyColumn}`
         : sql`INSERT INTO ${table} (${keyColumn}, owner, expires_at) VALUES (${key}, ${owner}, ${expires}) ON CONFLICT (${keyColumn}) DO NOTHING`,
     )
-    if (inserted.rowsAffected === 1) return true
-    const taken = await this.#db.run(
+    if (await this.#ownedBy(key, owner)) return true
+    await this.#db.run(
       sql`UPDATE ${table} SET owner = ${owner}, expires_at = ${expires} WHERE ${keyColumn} = ${key} AND expires_at <= ${now}`,
     )
-    return taken.rowsAffected === 1
+    return this.#ownedBy(key, owner)
+  }
+
+  async #ownedBy(key: string, owner: string): Promise<boolean> {
+    const result = await this.#db.run(
+      sql`SELECT owner FROM ${sql.id(this.#table)} WHERE ${sql.id('key')} = ${key}`,
+    )
+    return result.rows[0]?.['owner'] === owner
   }
 
   async release(key: string, owner: string): Promise<boolean> {

@@ -301,13 +301,15 @@ describe('friendly errors', () => {
       () => Http.client(),
       () => Event.bus(),
       () => Log.logger(),
+      () => Queue.manager(),
+      () => Bus.chain([]),
     ]
     for (const call of calls)
       expect(caught(() => runInApplication(scope, call)).code).toBe('facade_not_bound')
   })
 
   it('the 0.3 facades throw facade_not_available from every member', () => {
-    const facades = { Mail, Queue, Bus, Notification, Hash }
+    const facades = { Mail, Notification, Hash }
     for (const [name, facade] of Object.entries(facades)) {
       expect(Object.isFrozen(facade)).toBe(true)
       for (const [member, call] of Object.entries(facade)) {
@@ -323,7 +325,7 @@ describe('friendly errors', () => {
   })
 
   it('every facade is frozen', () => {
-    for (const facade of [Log, Cache, DB, Route, Storage, Http, Event, Crypt, Url])
+    for (const facade of [Log, Cache, DB, Route, Storage, Http, Event, Crypt, Url, Queue, Bus])
       expect(Object.isFrozen(facade)).toBe(true)
   })
 })

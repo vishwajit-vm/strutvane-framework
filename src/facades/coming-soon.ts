@@ -1,6 +1,6 @@
 /**
- * The facades whose subsystems arrive in Strutvane 0.3: `Mail`, `Queue`, `Bus`, `Notification`
- * and `Hash`. They exist now so the names are reserved and typed, and every member throws one
+ * The facades whose subsystems arrive in Strutvane 0.3: `Mail`, `Notification`
+ * and `Hash` (`Queue` and `Bus` arrived with RFC-0006). They exist now so the names are reserved and typed, and every member throws one
  * clear `BootError('facade_not_available')` instead of `undefined is not a function`.
  *
  * Each member returns `never`: code that calls one compiles, and the error says what to use
@@ -51,31 +51,6 @@ export const Mail: ComingSoon<'to' | 'send' | 'queue' | 'raw' | 'fake'> = placeh
   ['to', 'send', 'queue', 'raw', 'fake'],
   "Until 0.3, send mail with your provider's SDK (bound in a service provider) or an SMTP client.",
 )
-
-/**
- * The `Queue` facade (arrives in 0.3). Every member throws `facade_not_available`.
- *
- * @example
- * Queue.push(job) // throws: Queue.push() is not available yet …
- */
-export const Queue: ComingSoon<'push' | 'later' | 'size' | 'fake'> = placeholder(
-  'Queue',
-  ['push', 'later', 'size', 'fake'],
-  'Until 0.3, run the work inline, or after the response with defer(() => …).',
-)
-
-/**
- * The `Bus` facade (arrives in 0.3). Every member throws `facade_not_available`.
- *
- * @example
- * Bus.dispatch(job) // throws: Bus.dispatch() is not available yet …
- */
-export const Bus: ComingSoon<'dispatch' | 'dispatchSync' | 'chain' | 'batch' | 'fake'> =
-  placeholder(
-    'Bus',
-    ['dispatch', 'dispatchSync', 'chain', 'batch', 'fake'],
-    "Until 0.3, call the job's handler directly, or after the response with defer(() => …).",
-  )
 
 /**
  * The `Notification` facade (arrives in 0.3). Every member throws `facade_not_available`.

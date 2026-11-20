@@ -17,6 +17,7 @@ import { eventListCommand } from './event-list.ts'
 import { keyRotateCommand } from './key-rotate.ts'
 import { maintenanceCommands } from './maintenance.ts'
 import { appMakeCommands } from './make.ts'
+import { queueCommands } from './queue.ts'
 import { routeListCommand } from './route-list.ts'
 import { securityCheckCommand } from './security-check.ts'
 import { sessionFlushCommand } from './session-flush.ts'
@@ -39,6 +40,7 @@ export function createAppCommands(deps: AppCommandDeps = DEFAULT_APP_DEPS): read
     keyRotateCommand(),
     ...envCryptCommands(),
     ...maintenanceCommands(deps),
+    ...queueCommands(deps),
     sessionFlushCommand(deps),
     securityCheckCommand(deps),
     routeListCommand(deps),

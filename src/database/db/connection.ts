@@ -52,7 +52,12 @@ interface TransactionState {
    * Shared by every level of one transaction: the tenant set with set_config, and whether the
    * transaction has ended (async work started inside it may still be running afterwards).
    */
-  readonly shared: { tenantId: string | undefined; ended: boolean }
+  readonly shared: {
+    tenantId: string | undefined
+    ended: boolean
+    /** Callbacks for after the outermost COMMIT (see Connection.afterCommit). */
+    afterCommit: (() => Promise<void>)[]
+  }
   /** True while a nested level is open (two parallel savepoints on one connection would interleave). */
   childOpen: boolean
 }
@@ -157,19 +162,19 @@ export class Connection {
     const state: TransactionState = {
       session,
       depth: 1,
-      shared: { tenantId: undefined, ended: false },
+      shared: { tenantId: undefined, ended: false, afterCommit: [] },
       childOpen: false,
     }
     let broken = false
+    let result: T
     try {
       await this.#execute(session, plain('BEGIN'))
       await this.#applyTenant(state, options.tenantId)
-      const result = await this.#transactions.run(state, fn)
+      result = await this.#transactions.run(state, fn)
       // Mark the end *before* COMMIT/ROLLBACK: work still running inside (an un-awaited promise,
       // a sibling in Promise.all) must not slip in after them and run in autocommit mode.
       state.shared.ended = true
       await this.#execute(session, plain('COMMIT'))
-      return result
     } catch (error) {
       state.shared.ended = true
       broken = await this.#rollback(session)
@@ -177,6 +182,10 @@ export class Connection {
     } finally {
       if (pinned === undefined) session.release(broken)
     }
+    // After the connection went back to the pool: a callback that queries (the queue pushing a
+    // job) must not wait for the connection this transaction held (SQLite has only one).
+    await runAfterCommit(state.shared.afterCommit)
+    return result
   }
 
   /**
@@ -205,6 +214,31 @@ export class Connection {
     } finally {
       session.release(broken)
     }
+  }
+
+  /**
+   * Run `callback` once the current transaction has committed (Laravel's `DB::afterCommit`):
+   * the queue uses it so a job dispatched inside a transaction is pushed only when the data it
+   * needs is visible to workers. Outside a transaction the callback runs now. A rollback (of the
+   * transaction, or of the savepoint the callback was registered in) drops it.
+   *
+   * Callbacks run one after another, after COMMIT, and must handle their own errors: one that
+   * throws is ignored, because the transaction has already committed and must not report a
+   * failure.
+   *
+   * @example
+   * await db.transaction(async () => {
+   *   await order.save()
+   *   await db.afterCommit(() => notify(order.id))
+   * })
+   */
+  async afterCommit(callback: () => Promise<void>): Promise<void> {
+    const state = this.#transactions.getStore()
+    if (state === undefined || state.shared.ended) {
+      await runAfterCommit([callback])
+      return
+    }
+    state.shared.afterCommit.push(callback)
   }
 
   /**
@@ -238,6 +272,8 @@ export class Connection {
     // ROLLBACK TO SAVEPOINT also undoes a set_config made inside the savepoint; remember what was
     // set before, so the next tenant statement sets it again instead of running without a tenant.
     const tenantBefore = parent.shared.tenantId
+    // Callbacks registered inside a savepoint that rolls back belong to undone work: drop them.
+    const callbacksBefore = parent.shared.afterCommit.length
     parent.childOpen = true
     try {
       await this.#executeIn(parent, plain(`SAVEPOINT ${name}`))
@@ -250,6 +286,7 @@ export class Connection {
         // Undo only this level, then drop the savepoint; the outer transaction carries on.
         await this.#executeIn(parent, plain(`ROLLBACK TO SAVEPOINT ${name}`))
         parent.shared.tenantId = tenantBefore
+        parent.shared.afterCommit.length = callbacksBefore
         await this.#executeIn(parent, plain(`RELEASE SAVEPOINT ${name}`))
         throw error
       }
@@ -312,6 +349,17 @@ export class Connection {
     }
     for (const listener of this.#listeners) listener(event)
     return result
+  }
+}
+
+/** Run after-commit callbacks in order; a throwing one never stops the rest (see afterCommit). */
+async function runAfterCommit(callbacks: readonly (() => Promise<void>)[]): Promise<void> {
+  for (const callback of callbacks) {
+    try {
+      await callback()
+    } catch {
+      // Ignored by design: the transaction already committed (callbacks report their own errors).
+    }
   }
 }
 

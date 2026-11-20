@@ -62,7 +62,10 @@ export interface WorkerOptions {
   readonly sleep?: number
   /** Override every job's timeout, in seconds. */
   readonly timeout?: number
-  /** Stop between jobs once the resident set exceeds this many megabytes. Default 128. */
+  /**
+   * Stop between jobs once the resident set exceeds this many megabytes. Default 512: Laravel's
+   * 128 is below what a booted Node app with its database driver already uses.
+   */
   readonly memory?: number
   /** Stop after this many jobs (0: no limit). */
   readonly maxJobs?: number
@@ -147,7 +150,7 @@ export class Worker {
    */
   async run(): Promise<WorkerResult> {
     const started = this.#clock.now()
-    const memoryLimit = (this.#options.memory ?? 128) * 1024 * 1024
+    const memoryLimit = (this.#options.memory ?? 512) * 1024 * 1024
     const readMemory = this.#options.memoryUsage ?? ((): number => process.memoryUsage().rss)
     const maxJobs = this.#options.maxJobs ?? 0
     const maxTime = (this.#options.maxTime ?? 0) * 1000

@@ -3,8 +3,8 @@
  * every call (CONSISTENCY #47, #80). Swap one in a test by binding a different value in that
  * app's container; two apps in one process never see each other's services.
  *
- * Available now: `Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`.
- * Arriving in 0.3 (every member throws `facade_not_available`): `Mail`, `Queue`, `Bus`,
+ * Available now: `Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`,
+ * `Queue`, `Bus`. Arriving in 0.3 (every member throws `facade_not_available`): `Mail`,
  * `Notification`, `Hash`.
  *
  * @example
@@ -15,13 +15,14 @@
  * @module
  */
 export { Cache, type CacheFacade } from './cache.ts'
-export { Bus, type ComingSoon, Hash, Mail, Notification, Queue } from './coming-soon.ts'
+export { type ComingSoon, Hash, Mail, Notification } from './coming-soon.ts'
 export { Crypt, type CryptFacade } from './crypt.ts'
 export { DB, type DbFacade } from './db.ts'
 export { Event, type EventFacade } from './event.ts'
 export { type FacadeBinding, notAvailable, resolveFacade } from './facade.ts'
 export { Http, type HttpFacade } from './http.ts'
 export { Log, type LogFacade } from './log.ts'
+export { Bus, type BusFacade, Queue, type QueueFacade } from './queue.ts'
 export { Route, type RouteFacade } from './route.ts'
 export { Storage, type StorageFacade } from './storage.ts'
 export { Url, type UrlFacade } from './url.ts'
