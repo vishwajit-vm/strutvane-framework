@@ -10,6 +10,7 @@
  */
 import { ForbiddenError } from '../core/errors/errors.ts'
 import type { AuthUser } from '../foundation/registry.ts'
+import type { Constraint } from '../http/app/resource-model.ts'
 
 /**
  * What a policy method may return: allowed or not, now or later.
@@ -46,6 +47,82 @@ export interface Policy<TModel> {
   delete?(user: AuthUser | null, model: TModel): PolicyResult
   /** Bring a soft-deleted record back (`POST /posts/{post}/restore`). */
   restore?(user: AuthUser | null, model: TModel): PolicyResult
+  /**
+   * The rows `view` allows, as conditions a list query can run in the database: `true` (every
+   * row), `false` (none) or constraints (ANDed; `anyOf` ORs). `ResourceController.index` ANDs it
+   * into every page, so a list never shows a row `view` would refuse. Required (checked at boot)
+   * whenever `view` looks at the record (`view(user, post)`); it must say exactly what `view` says.
+   */
+  viewScope?(user: AuthUser | null): ViewScope | Promise<ViewScope>
+  /**
+   * The fields this user may read (field-level read rules); `undefined` means every field the
+   * model returns. Applied to lists, single records and included relations alike.
+   */
+  readableFields?(
+    user: AuthUser | null,
+  ): readonly string[] | undefined | Promise<readonly string[] | undefined>
+}
+
+/**
+ * What {@link Policy.viewScope} answers: every row, no row, or the conditions a row must meet.
+ *
+ * @example
+ * const mine: ViewScope = [{ column: 'owner_id', equals: 7 }]
+ */
+export type ViewScope = boolean | readonly Constraint[]
+
+/**
+ * The list scope a policy grants `user`: `'all'`, `'none'` or the constraints to AND into the
+ * query. `before()` decides first; then `viewScope()`; a `view` that ignores the record (`view(user)`)
+ * is asked once; no `view` at all means no rows. A `view` that reads the record without a
+ * `viewScope` can't be turned into a query, so this throws (and boot refuses such a resource):
+ * failing closed is the only answer that never lists a row `view` would refuse.
+ *
+ * @example
+ * await listScope(new PostPolicy(), user) // [{ anyOf: [...] }]
+ */
+export async function listScope<TModel>(
+  policy: Policy<TModel>,
+  user: AuthUser | null,
+): Promise<'all' | 'none' | readonly Constraint[]> {
+  const early = policy.before?.(user, 'view')
+  if (early !== undefined) return early === true ? 'all' : 'none'
+  if (typeof policy.viewScope === 'function') {
+    const scope = await policy.viewScope(user)
+    if (scope === true) return 'all'
+    if (scope === false) return 'none'
+    if (Array.isArray(scope)) return scope
+    throw new TypeError(
+      `${policy.constructor.name}.viewScope() must return true, false or a list of constraints.`,
+    )
+  }
+  if (typeof policy.view !== 'function') return 'none'
+  if (viewReadsRecord(policy)) throw new TypeError(unscopedViewMessage(policy.constructor.name))
+  return (await allows(policy, 'view', user, {} as TModel)) ? 'all' : 'none'
+}
+
+/**
+ * `true` when the policy's `view` takes the record (`view(user, post)`) but has no `viewScope`:
+ * a list can't be filtered by it, so a resource controller must not serve it.
+ *
+ * @example
+ * needsViewScope(new PostPolicy()) // false once PostPolicy defines viewScope()
+ */
+export function needsViewScope(policy: Policy<unknown>): boolean {
+  return (
+    typeof policy.view === 'function' &&
+    viewReadsRecord(policy) &&
+    typeof policy.viewScope !== 'function'
+  )
+}
+
+/** The message (and boot hint) for a `view` that reads the record without a `viewScope`. */
+export function unscopedViewMessage(name: string): string {
+  return `${name}.view() looks at the record, but the policy has no viewScope(), so a list can't be limited to the rows view() allows. Add viewScope(user) returning the same rule as constraints (for example [{ column: 'owner_id', equals: Number(user.id) }]), or true / false.`
+}
+
+function viewReadsRecord(policy: Policy<unknown>): boolean {
+  return typeof policy.view === 'function' && policy.view.length >= 2
 }
 
 /** Abilities that act on one record (the others act on the collection). */
