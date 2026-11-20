@@ -109,6 +109,11 @@ import {
   SessionCookieToken,
   sessionCookieName,
 } from '../http/session-cookie.ts'
+import { appLoggingConfig, asLoggingBootError, createAppLogManager } from '../logging/app.ts'
+import { type LoggingConfigResult, resolveLoggingConfig } from '../logging/config.ts'
+import { runWithLogContext } from '../logging/context.ts'
+import type { LogManager } from '../logging/manager.ts'
+import { LogManagerToken } from '../logging/token.ts'
 import { checkMaintenance } from '../maintenance/maintenance.ts'
 import { applicationMessages, registerApplicationErrors } from '../messages.ts'
 import {
@@ -369,6 +374,8 @@ interface RequestRun {
 const KERNEL = 'strutvane.kernel'
 const KERNEL_CHECKS = 'strutvane.kernel.checks'
 const DEFAULT_HEALTH = '/up'
+/** How long shutdown waits for queued log records to be written (bounded: a hung disk never hangs the exit). */
+const LOG_SHUTDOWN_MS = 2_000
 
 /**
  * A Strutvane application. One per process normally; tests create as many as they like.
@@ -445,6 +452,54 @@ export class Application implements CoreApplication<object> {
       this.#packageMessages.over(createMessages()),
     )
     this.#core.container.value(CacheDriverRegistryToken, new CacheDriverRegistry())
+    // Logging (ADR-0022): the log manager replaces core's stdout fallback as the app's Logger. It
+    // is built on first use (the kernel resolves it at boot, after config/logging.ts is loaded),
+    // a provider or a test may still rebind LoggerToken, and it is closed (drained, bounded) when
+    // the container is disposed: the very last step of shutdown, after every provider stopped,
+    // so their shutdown messages are written too.
+    this.#core.container
+      .singleton(LogManagerToken, () => this.#createLogManager(), {
+        dispose: async (manager) => {
+          await manager.close(LOG_SHUTDOWN_MS)
+        },
+      })
+      .singleton(LoggerToken, (resolver) => resolver.make(LogManagerToken))
+  }
+
+  /**
+   * The resolved `config/logging.ts` (channels with every `.env` default applied) and the `.env`
+   * problems found, without booting the app. The log commands (`log:tail`, `log:list`,
+   * `log:clear`) use it, so they work even when the app can't boot.
+   *
+   * @example
+   * app.loggingConfig().config.channels.daily // { driver: 'daily', dir: '/srv/blog/storage/logs', … }
+   */
+  loggingConfig(): LoggingConfigResult {
+    const config = this.#config ?? this.loadFreshConfig()
+    const env = this.#env ?? loadEnvSource(this.basePath, this.#blueprint.env)
+    const logging = config.has('logging') ? config.get('logging') : undefined
+    const appEnv = config.string('app.env', env['APP_ENV'] ?? 'production')
+    try {
+      return resolveLoggingConfig(appLoggingConfig(logging), {
+        env: { ...env, APP_ENV: appEnv },
+        root: this.basePath,
+      })
+    } catch (error) {
+      throw asLoggingBootError(error)
+    }
+  }
+
+  /** The app's log manager, from `config/logging.ts` and the app's environment. */
+  #createLogManager(): LogManager {
+    const env = this.#env ?? loadEnvSource(this.basePath, this.#blueprint.env)
+    const config = this.#config
+    const appEnv = config?.string('app.env', env['APP_ENV'] ?? 'production')
+    return createAppLogManager({
+      config: config?.has('logging') === true ? config.get('logging') : undefined,
+      env,
+      root: this.basePath,
+      ...(appEnv === undefined ? {} : { appEnv }),
+    })
   }
 
   /**
@@ -1166,6 +1221,23 @@ export class Application implements CoreApplication<object> {
     const state = this.#requestState(request, info, booted)
     const ctx = new HttpContext({ request, state, sessionCookie: booted.sessionCookie })
     const run: RequestRun = { hookHeaders: undefined, route: undefined, terminables: [] }
+    // A fresh log scope per request: `Log.withContext()` adds to this request only (ADR-0022 §7).
+    // The request id is in the core context from the first stage on, so a record written before
+    // routing (a maintenance stage, a hook, the error report of an early failure) carries it; the
+    // router later adds the actor and the tenant.
+    const ids = { requestId: state.requestId, traceId: state.requestId }
+    return runWithLogContext({}, () =>
+      runWithContext(ids, () => this.#handleIn(ctx, request, info, run, booted)),
+    )
+  }
+
+  #handleIn(
+    ctx: Ctx,
+    request: Request,
+    info: RequestInfo,
+    run: RequestRun,
+    booted: BootedState,
+  ): Promise<Response> {
     return this.#scope(() =>
       runWithHttpContext(ctx, async () => {
         let response: Response

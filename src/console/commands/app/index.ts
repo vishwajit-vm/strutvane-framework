@@ -1,6 +1,7 @@
 /**
  * The Laravel-style app commands of `node strut`: the `optimize` family, the application cache,
- * key rotation, env encryption, maintenance mode, `session:flush`, `security:check`, `storage:link`,
+ * key rotation, env encryption, maintenance mode, the log files (`log:tail`, `log:list`,
+ * `log:clear`), `session:flush`, `security:check`, `storage:link`,
  * `route:list` and the `make:command`/`make:rule`/`make:observer` generators.
  *
  * They work on an app (`bootstrap/app.ts`), found at or above the working directory. Commands
@@ -15,6 +16,7 @@ import { cacheStoreCommands } from './cache-store.ts'
 import { envCryptCommands } from './env-crypt.ts'
 import { eventListCommand } from './event-list.ts'
 import { keyRotateCommand } from './key-rotate.ts'
+import { logCommands } from './logs.ts'
 import { maintenanceCommands } from './maintenance.ts'
 import { appMakeCommands } from './make.ts'
 import { routeListCommand } from './route-list.ts'
@@ -40,6 +42,7 @@ export function createAppCommands(deps: AppCommandDeps = DEFAULT_APP_DEPS): read
     keyRotateCommand(),
     ...envCryptCommands(),
     ...maintenanceCommands(deps),
+    ...logCommands(deps),
     sessionFlushCommand(deps),
     securityCheckCommand(deps),
     routeListCommand(deps),

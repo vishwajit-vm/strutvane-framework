@@ -8,13 +8,14 @@
  * @module
  */
 import type { LogError } from '../../contracts/index.ts'
+import { REDACTED, redactString } from './redact-patterns.ts'
 
 /**
  * Key **fragments** that mark a value as sensitive. A key matches when its normalised form
  * (lowercase, without `-`, `_` and whitespace) *contains* a fragment, so `api_key`, `X-API-Key` and
  * `stripeApiKey` all match `apikey`. False positives (e.g. `tokenCount`) are preferred over leaks.
  *
- * `@strutvane/logs` builds its redactor on {@link sensitiveKeyMatcher} with these lists, so the
+ * The logging pipeline (`src/logging`) builds its redactor on {@link sensitiveKeyMatcher} with these lists, so the
  * fallback logger and the full logger hide exactly the same keys.
  */
 export const DEFAULT_SENSITIVE_KEYS: readonly string[] = Object.freeze([
@@ -71,7 +72,8 @@ export const DEFAULT_SENSITIVE_WORDS: readonly string[] = Object.freeze([
   'pan',
 ])
 
-export const REDACTED = '[REDACTED]'
+export { REDACTED }
+
 const MAX_DEPTH = 8
 const MAX_STRING = 8192
 const MAX_ARRAY = 100
@@ -107,7 +109,7 @@ function wordPath(key: string): string {
 /**
  * Keys registered at runtime (e.g. by the framework, for model fields marked `sensitive` or
  * `hidden`). Process-wide on purpose: every logger in the process (core's fallback and
- * `@strutvane/logs`) must hide them, whichever was created first. The set only grows, so a
+ * the logging pipeline) must hide them, whichever was created first. The set only grows, so a
  * registration can never make a logger reveal more.
  */
 const registry: { readonly entries: Set<string>; version: number } = {
@@ -256,9 +258,13 @@ export function toLoggable(
   const visit = (v: unknown, depth: number): unknown => {
     switch (typeof v) {
       case 'string':
-        return v.length > MAX_STRING
-          ? `${v.slice(0, MAX_STRING)}…[truncated ${v.length - MAX_STRING} chars]`
-          : v
+        // Secret patterns (JWTs, URL credentials, card numbers…) are hidden in values too, with
+        // the same rules as the logging pipeline (`redact-patterns.ts`).
+        return redactString(
+          v.length > MAX_STRING
+            ? `${v.slice(0, MAX_STRING)}…[truncated ${v.length - MAX_STRING} chars]`
+            : v,
+        )
       case 'number':
         return Number.isFinite(v) ? v : String(v)
       case 'boolean':

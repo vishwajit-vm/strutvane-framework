@@ -17,6 +17,8 @@
  *
  * @module
  */
+
+import { redactString } from '../core/logger/redact-patterns.ts'
 import {
   DEFAULT_SENSITIVE_KEYS,
   DEFAULT_SENSITIVE_WORDS,
@@ -203,7 +205,9 @@ export function redactHeaders(headers: Headers): [string, string][] {
  * redactText('connect postgres://app:hunter2@db failed') // 'connect postgres://app:[REDACTED]@db failed' // trufflehog:ignore
  */
 export function redactText(text: string): string {
-  return text.replace(URL_PASSWORD, `$1:${REDACTED}@`).replace(JWT, REDACTED)
+  // The page's own rules first (their output is what the debug page tests pin), then every
+  // pattern the logs hide (redact-patterns.ts), so the page never shows more than a log line.
+  return redactString(text.replace(URL_PASSWORD, `$1:${REDACTED}@`).replace(JWT, REDACTED))
 }
 
 function looksLikeCredential(value: string): boolean {

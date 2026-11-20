@@ -302,7 +302,7 @@ export default Application.configure({ basePath: dirname(import.meta.dirname) })
 - **Facades** live on `@strutvane/framework/facades` (`Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`; `Mail`, `Queue`, `Bus`, `Notification` and `Hash` say "coming in 0.3"). They resolve from the current app's container, so tests can swap them, and the `Route` facade never shadows the `Route` builder.
 - **The database in requests.** Models work in controllers, route closures, middleware, listeners and commands with no setup, Laravel-style. When the app boots it hands the ORM `.strutvane/schema.json` and the tenancy switch (`config/tenancy.ts`), and binds `DatabaseConnectionToken`: the default connection from `config/database.ts` (`default`, `host`, `port`, `database`, `username`, `socket`, `sslmode`, `ssl_ca`) over `DB_*` in `.env`, with `DB_PASSWORD`/`DB_URL` read from the environment when it connects. It is **opened by the first query** (so `/up`, `route:list` and other work that never queries never needs the database, and a database that is down fails only the requests that use it) and closed by `app.shutdown()`. Every request and command resolves its own app's connection, even with two apps in one process. With tenancy on, the tenant an `http.onRequest` hook resolves (the auth package) scopes every model query of that request; a request without one can't read tenant tables (fail closed). With `APP_ENV=testing`, `database.test_database` replaces the database name. To use another connection (a test double, a replica), bind `DatabaseConnectionToken` in a provider's `register()` or on `app.container` before boot. On MySQL and MariaDB the app's connection compiles inserts without `RETURNING` (the row is read back by key), so one grammar fits every server version.
 - **Serving.** `node strut start` (and `dev`) boots `bootstrap/app.ts` before the port opens (`startApplication()`); a broken route or a weak key never starts serving. `--force-debug` starts anyway with `APP_DEBUG=true` in production (debug pages stay off), as the `debug_in_production` hint says. The Node adapter hands the app the socket peer and `waitUntil`, so deferred work runs after the response and a graceful stop waits for it.
-- **Commands.** `node strut list` (`help` is an alias) shows the app commands: `optimize`, `config:cache`, `route:cache`, `event:cache` (and their `:clear`), `event:list`, `route:list [--security]`, `cache:clear`, `cache:forget`, `key:rotate`, `env:encrypt`/`env:decrypt`, `down`/`up`, `session:flush`, `security:check [--audit]`, `storage:link [--force]`, `make:command`, `make:rule`, `make:observer`, plus the commands the app registers with `withCommands()`. A `BootError` is reported with its hint and exit code 3.
+- **Commands.** `node strut list` (`help` is an alias) shows the app commands: `optimize`, `config:cache`, `route:cache`, `event:cache` (and their `:clear`), `event:list`, `route:list [--security]`, `cache:clear`, `cache:forget`, `key:rotate`, `env:encrypt`/`env:decrypt`, `down`/`up`, `log:tail`, `log:list`, `log:clear`, `session:flush`, `security:check [--audit]`, `storage:link [--force]`, `make:command`, `make:rule`, `make:observer`, plus the commands the app registers with `withCommands()`. A `BootError` is reported with its hint and exit code 3.
 
 ### Storage
 
@@ -322,6 +322,57 @@ Add-ons (redis, search, health, log-viewer, social-login, import-export…) depe
 - **Model events** (`@strutvane/framework/database`): `save()`, `delete()`, `forceDelete()` and `restore()` emit `post.created`, `post.updated` (`payload.changed`), `post.deleted` (`payload.soft`) and `post.restored` on the app's event bus **after commit** (dropped on rollback), with the tenant and actor; `modelEventName(Post, 'created')` gives the name. The payload is the model's `toJSON()` (no hidden or secret columns) plus `table`, `model` and `key`. Query-builder mass updates emit nothing, as in Eloquent. `afterCommit(fn)` / `connection.afterCommit(fn)` runs any work after the outermost commit.
 - **Installers:** `context.app.addProvider({ specifier: '@strutvane/health/provider', name: 'HealthServiceProvider' })` and `context.app.addConfig({ specifier: './health.ts', name: 'health' })` (and `remove*`) edit `bootstrap/providers.ts` and `config/index.ts` (`createAppPatcher` from `/devkit` outside an installer). Idempotent and reversible; a file in an unfamiliar shape is left alone and the lines to add are printed instead.
 - **Tests:** `testClient(app)` from `@strutvane/framework/testing` (`actingAs`, `withoutCsrf`, `getJson`…; its classes are exported as `AppTestClient` / `AppTestResponse`).
+
+### Logging
+
+Logging is part of the framework, Laravel-style (ADR-0022): channels in `config/logging.ts`, chosen from `.env`, files in `storage/logs/`. The log viewer UI is the separate `@strutvane/log-viewer` package.
+
+```ts
+import { Log, logger, report } from '@strutvane/framework/log' // Log is also on /facades
+
+Log.info('Invoice sent', { invoiceId: invoice.id })     // the default channel (LOG_CHANNEL)
+Log.channel('payments').warning('Card declined')         // one channel
+Log.stack(['daily', 'slack']).critical('Ledger out of balance')
+Log.build({ driver: 'single', path: 'storage/logs/imports', name: 'imports' }).info('Done')
+Log.withContext({ orderId })                             // every record of this request
+Log.shareContext({ release: '2026.11.17' })              // every record, every channel
+logger('Cache warmed')                                   // debug on the default channel
+report(error)                                            // through the exception handler
+```
+
+```ts
+// config/logging.ts (optional: the built-in channels work without it)
+import { defineConfig } from '@strutvane/framework'
+import { defineLoggingConfig } from '@strutvane/framework/log'
+
+export default defineConfig(() =>
+  defineLoggingConfig({
+    channels: {
+      payments: { driver: 'daily', name: 'payments', level: 'info', days: 90 },
+      audit: { driver: 'stack', channels: ['daily', 'payments'] },
+    },
+  }),
+)
+```
+
+| `.env` key | Default | What it does |
+|---|---|---|
+| `LOG_CHANNEL` | `stack` | the default channel |
+| `LOG_STACK` | `daily` | the channels of the built-in `stack`, comma-separated |
+| `LOG_LEVEL` | `debug` in `local`, else `info` | lowest level written (`debug` … `emergency`; `trace`, `warn`, `fatal` work too) |
+| `LOG_DAILY_DAYS` | `14` | days a `daily` channel keeps (whole days; `0` keeps all) |
+| `LOG_FORMAT` | `line` | `line` (`[2026-11-15 10:22:01.123] local.ERROR: Payment failed {"invoice":42}`) or `json` (NDJSON, for shippers) |
+| `LOG_MAX_FILE_SIZE` | `100mb` | size of one file; then a new part (`…-2.log`) starts, never a rename |
+| `LOG_PATH` | `storage/logs` | the log folder (inside the project, or an absolute path) |
+| `LOG_SLACK_WEBHOOK_URL` | none | the `slack` channel's webhook (`https://` only) |
+| `LOG_DEPRECATIONS_CHANNEL` | `null` | where `Log.deprecation()` writes |
+
+- **Drivers:** `single` (`strutvane.log`), `daily` (`strutvane-YYYY-MM-DD.log`), `stack`, `stderr`/`stdout` (containers: `LOG_CHANNEL=stderr`, `LOG_FORMAT=json`), `slack` (`critical` and up by default, at most one message per 10 s with a count of the rest, through the SSRF-guarded client), `null` and `custom` (`via: (context) => transport`). Name channels freely.
+- **Every record** carries the request id, the signed-in user (`actorId`) and the tenant when it is written during a request. Every process other than the main one writes its own files (`…worker-2.log`), so the size cap holds with several writers; `compareLogFiles` orders them, never a string sort.
+- **Always on, never configurable:** redaction (sensitive keys at any depth, and secrets in text: JWTs, bearer tokens, URL passwords, webhook URLs, `password=…`, API keys, card numbers), one record per line (newlines, ANSI and bidirectional controls are escaped), a bounded queue that drops `debug`/`info`/`notice` before errors and says how many, a stderr fallback with one warning per outage, and a bounded drain when the app shuts down (a hung disk never hangs the exit).
+- **Mistakes:** an invalid `config/logging.ts` fails the boot with every problem listed (`invalid_logging_config`); a bad `.env` value (`LOG_LEVEL=loud`, `LOG_PATH=../../etc`) never does: the default is used and one warning names the key.
+- **Commands:** `node strut log:tail [--level=warning] [--channel=payments] [--grep=text] [--since=15m] [-n 50] [--no-follow]`, `log:list [--channel=…]`, `log:clear [--days=N] [--channel=…]` (asks first; `--force` or `--yes` without a terminal). They read the config without booting the app, so they work when it can't start.
+- **Tests:** bind a memory logger with `app.container.value(LoggerToken, memory)`; `Log.info()` and friends write to it (`critical` → `fatal`, `notice` → `info` for a plain `Logger`). The pipeline's benchmark budgets run with `npm run test:perf`.
 
 ### Upgrading to 0.2: lowercase error codes
 

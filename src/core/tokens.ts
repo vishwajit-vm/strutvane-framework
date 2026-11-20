@@ -1,6 +1,6 @@
 /**
  * Well-known container tokens (integration map §3). Packages resolve these instead of importing
- * each other: e.g. `@strutvane/logs` rebinds {@link LoggerToken}, and every package that logs
+ * each other: e.g. the application rebinds {@link LoggerToken} to its log manager, and every package that logs
  * through it automatically uses the full logger.
  *
  * @module
@@ -14,7 +14,7 @@ import type { HookRegistry } from './hooks.ts'
 import type { Messages } from './messages/catalog.ts'
 import type { UuidGenerator } from './uuid.ts'
 
-/** The application logger. Core binds a default; `@strutvane/logs` replaces it. */
+/** The application logger. Core binds a default; an application binds its log manager (ADR-0022). */
 export const LoggerToken: Token<Logger> = token<Logger>('strutvane.logger')
 /** The clock (inject a TestClock in tests). */
 export const ClockToken: Token<Clock> = token<Clock>('strutvane.clock')

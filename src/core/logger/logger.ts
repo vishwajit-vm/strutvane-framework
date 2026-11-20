@@ -2,15 +2,18 @@
  * The default logger shipped by core (RFC-0004 §2): structured JSON lines, level filtering, child
  * bindings, request-context enrichment, redaction and control-character safety.
  *
- * It exists so every package can **always** log, even when `@strutvane/logs` isn't installed.
- * `@strutvane/logs` replaces it (same `Logger` contract) with files, retention and the viewer.
+ * It exists so every package can **always** log, even outside an application (the CLI, scripts).
+ * An application replaces it (same `Logger` contract) with the logging pipeline (`src/logging`).
  *
  * Guarantees:
  * - **Never throws into the caller.** If the sink fails, one warning goes to stderr, the record is
  *   counted as dropped, and the app continues.
  * - **One call = one line.** `JSON.stringify` escapes CR/LF and control characters; U+2028/U+2029
- *   (line separators in some readers) are escaped too.
- * - **No secrets.** Sensitive keys are redacted at any depth before a line is built.
+ *   (line separators in some readers), C1 controls and bidirectional controls are escaped too
+ *   (`escape.ts`).
+ * - **No secrets.** Sensitive keys are redacted at any depth, and secret patterns (JWTs, URL
+ *   credentials, card numbers…) in the message and in values, with the same rules as the logging
+ *   pipeline (`redact-patterns.ts`), before a line is built.
  *
  * @module
  */
@@ -24,6 +27,8 @@ import {
 } from '../../contracts/index.ts'
 import { type Clock, systemClock } from '../clock.ts'
 import { currentContext, type RequestContext } from '../context.ts'
+import { escapeUnsafeText } from './escape.ts'
+import { redactString } from './redact-patterns.ts'
 import {
   DEFAULT_SENSITIVE_KEYS,
   sensitiveKeyMatcher,
@@ -61,13 +66,6 @@ export interface CoreLogger extends Logger {
   readonly dropped: number
   child(bindings: LogFields): CoreLogger
 }
-
-/** U+2028/U+2029 are valid in JSON but act as line breaks in some log readers: escape them. */
-const LINE_SEPARATORS = new RegExp(
-  `[${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]`,
-  'g',
-)
-const escapeSeparator = (ch: string): string => `\\u${ch.charCodeAt(0).toString(16)}`
 
 interface SharedState {
   dropped: number
@@ -146,7 +144,7 @@ export function createLogger(options: LoggerOptions = {}): CoreLogger {
         const record: LogRecord = {
           time: new Date(clock.now()).toISOString(),
           level,
-          msg: typeof msg === 'string' ? msg : String(msg),
+          msg: redactString(typeof msg === 'string' ? msg : String(msg)),
           ...(ctx?.requestId ? { requestId: ctx.requestId } : {}),
           ...(ctx?.traceId ? { traceId: ctx.traceId } : {}),
           ...(ctx?.tenant ? { tenantId: ctx.tenant.id } : {}),
@@ -154,7 +152,7 @@ export function createLogger(options: LoggerOptions = {}): CoreLogger {
           ...(Object.keys(safeFields).length > 0 ? { fields: safeFields } : {}),
           ...(err ? { err } : {}),
         }
-        const line = JSON.stringify(record).replace(LINE_SEPARATORS, escapeSeparator)
+        const line = escapeUnsafeText(JSON.stringify(record))
         sink(line)
       } catch (error) {
         state.dropped++

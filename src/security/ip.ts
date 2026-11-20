@@ -151,6 +151,7 @@ const SPECIAL_RANGES: readonly { readonly name: string; readonly range: string }
   { name: 'private (172.16/12)', range: '172.16.0.0/12' },
   { name: 'IETF protocol assignments', range: '192.0.0.0/24' },
   { name: 'documentation', range: '192.0.2.0/24' },
+  { name: '6to4 relay anycast (deprecated)', range: '192.88.99.0/24' },
   { name: 'private (192.168/16)', range: '192.168.0.0/16' },
   { name: 'benchmarking', range: '198.18.0.0/15' },
   { name: 'documentation', range: '198.51.100.0/24' },

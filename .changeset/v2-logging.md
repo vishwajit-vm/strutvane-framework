@@ -1,0 +1,14 @@
+---
+"@strutvane/framework": minor
+---
+
+Logging is built into the framework (ADR-0022; core train, CONSISTENCY #128). The pipeline of the former `@strutvane/logs` (ADR-0015: context, redaction, one-line serialisation, bounded priority queue, O_APPEND writer, per-process files, rotation, retention, stderr fallback, bounded shutdown flush) moved to `src/logging/` with its tests and benchmark budgets; the log viewer stays in `@strutvane/log-viewer`.
+
+- New subpath `@strutvane/framework/log`: the `Log` facade, `logger()`, `report()`, `defineLoggingConfig`, `LogManagerToken` and the file, format and reading helpers a log viewer needs.
+- `config/logging.ts` with the channels `single`, `daily`, `stack`, `stderr`, `stdout`, `slack`, `null`, `custom` and freely named ones; `.env` keys `LOG_CHANNEL` (`stack`), `LOG_STACK` (`daily`), `LOG_LEVEL` (`debug` in local, else `info`), `LOG_DAILY_DAYS` (14), `LOG_FORMAT` (`line`), `LOG_MAX_FILE_SIZE` (`100mb`), `LOG_PATH` (`storage/logs`), `LOG_SLACK_WEBHOOK_URL`, `LOG_DEPRECATIONS_CHANNEL` (`null`).
+- The application binds the log manager as its `Logger` (`LoggerToken`) and as `LogManagerToken`, opens a log scope per request, adds request id, user id and tenant id to every record, and drains the logs (bounded, 2 s) when it shuts down. **Behaviour change:** by default an app now writes `storage/logs/strutvane-YYYY-MM-DD.log` instead of JSON lines on stdout; set `LOG_CHANNEL=stderr` (and `LOG_FORMAT=json`) for containers.
+- The `Log` facade gains every RFC 5424 level (`emergency` … `debug`, with `trace`/`warn`/`fatal` as aliases), `log(level, …)`, `channel()`, `stack()`, `build()`, `withContext()`, `withoutContext()`, `shareContext()`, `sharedContext()`, `flushSharedContext()`, `deprecation()` and `manager()`. A plain `Logger` bound to `LoggerToken` in a test still receives every call.
+- New commands: `node strut log:tail` (`--level`, `--channel`, `--grep`, `--since`, `-n`, `--no-follow`), `log:list` and `log:clear [--days=N]`; they read the config without booting the app.
+- Stricter redaction everywhere: the secret patterns (JWTs, bearer tokens, URL credentials, webhook URLs, secret query parameters, `password=…` text, prefixed API keys, PEM keys, card numbers) moved to core (`core/logger/redact-patterns.ts`) and now also apply to core's fallback logger and to the error page's message text. Both log formats and the fallback logger escape bidirectional control characters (Trojan Source) as well as newlines, C0/C1 controls and U+2028/U+2029.
+- The SSRF guard also refuses the 6to4 relay anycast range `192.88.99.0/24`. The `slack` channel posts through the framework's `safeFetch` (https only, no redirects, one deadline including DNS).
+- Log directories (`LOG_PATH`, a channel's `path`, `Log.build`) may not climb out of the project root or be a filesystem root; `.env` mistakes fall back to `storage/logs` with a warning, config mistakes fail the boot.
