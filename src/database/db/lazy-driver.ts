@@ -34,6 +34,12 @@ export interface LazyDriverOptions {
   readonly insertReturning?: boolean
   /** Open the real engine. Called on the first `acquire()`, and again only if it failed. */
   readonly open: () => Promise<Driver>
+  /**
+   * Checks to run on the freshly opened engine before any statement uses it (the PostgreSQL
+   * runtime-role check). If it throws, the engine is closed and the error goes to the waiting
+   * statements; the next statement opens and checks again.
+   */
+  readonly afterOpen?: (driver: Driver) => Promise<void>
 }
 
 /**
@@ -50,7 +56,16 @@ export function lazyDriver(options: LazyDriverOptions): Driver & { readonly open
 
   const engine = (): Promise<Driver> => {
     opening ??= options.open().then(
-      (driver) => {
+      async (driver) => {
+        if (options.afterOpen !== undefined) {
+          try {
+            await options.afterOpen(driver)
+          } catch (error) {
+            // Fail closed and leak nothing: the engine that failed its checks is never used.
+            await driver.close().catch(() => undefined)
+            throw error
+          }
+        }
         opened = driver
         return driver
       },
