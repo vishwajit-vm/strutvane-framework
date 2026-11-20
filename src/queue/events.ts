@@ -21,6 +21,7 @@ export type QueueEventType =
   | 'queue.job.failed'
   | 'queue.worker.started'
   | 'queue.worker.stopping'
+  | 'queue.worker.error'
 
 /**
  * One queue event.

@@ -136,6 +136,7 @@ export function registerQueueDriver(
   container: Container,
   name: string,
   factory: QueueDriverFactory,
+  options: { readonly replace?: boolean } = {},
 ): void {
   if (!/^[a-z][a-z0-9-]{0,31}$/.test(name))
     throw new QueueError(
@@ -144,7 +145,16 @@ export function registerQueueDriver(
       'Use a short lowercase name such as "redis".',
     )
   if (!container.has(QueueDriversToken)) container.value(QueueDriversToken, builtInDrivers())
-  container.make(QueueDriversToken).set(name, factory)
+  const drivers = container.make(QueueDriversToken)
+  // A driver sees every signed payload and (database) the app connection: replacing one that is
+  // already registered, built in or not, must be deliberate.
+  if (drivers.has(name) && options.replace !== true)
+    throw new QueueError(
+      'queue_invalid_option',
+      `A queue driver called "${name}" is already registered.`,
+      'Pick another name, or pass { replace: true } if replacing it is intended.',
+    )
+  drivers.set(name, factory)
 }
 
 function builtInDrivers(): Map<string, QueueDriverFactory> {
@@ -181,6 +191,8 @@ function lazyDriver(make: () => QueueDriver): QueueDriver {
     return driver
   }
   return {
+    // Only the built-in database driver is wrapped lazily, and it keeps ids.
+    preservesIds: true,
     push: (queue, payload, options) => get().push(queue, payload, options),
     pop: (queue, options) => get().pop(queue, options),
     ack: (job) => get().ack(job),
@@ -363,8 +375,8 @@ export function createQueueManager(options: CreateQueueManagerOptions): QueueMan
       const connection = options.database()
       return {
         inTransaction: () => connection.inTransaction(),
-        afterCommit: (callback) => {
-          void connection.afterCommit(callback)
+        afterCommit: (callback, onRollback) => {
+          void connection.afterCommit(callback, { onRollback })
         },
       }
     },

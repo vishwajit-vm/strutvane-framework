@@ -60,6 +60,12 @@ export interface PushOptions {
  * class SqsDriver implements QueueDriver { … }
  */
 export interface QueueDriver {
+  /**
+   * `true` when the driver stores every job under `PushOptions.id`: the worker then refuses a job
+   * whose row id differs from its signed id (a copied row). Drivers that make their own ids leave
+   * it unset.
+   */
+  readonly preservesIds?: boolean
   /** Add a job; returns its id. */
   push(queue: string, payload: string, options?: PushOptions): Promise<string>
   /** Reserve the next available job, or `undefined` when the queue has none ready. */

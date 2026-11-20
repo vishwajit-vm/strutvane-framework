@@ -37,6 +37,12 @@ import {
   toIntOrUndefined,
 } from './shared.ts'
 
+/**
+ * The attempt counter stops here: a row edited to a huge value can't overflow `INTEGER` (which
+ * would break every pop on that queue); the worker fails such a job by its attempt limit.
+ */
+const MAX_ATTEMPTS = 1_000_000
+
 /** Claim rounds before `pop` reports "nothing for me" under heavy contention. */
 const ROUNDS = 4
 
@@ -64,6 +70,7 @@ export interface DatabaseQueueOptions {
  * await driver.push('default', payload)
  */
 export class DatabaseQueueDriver implements QueueDriver {
+  readonly preservesIds = true
   readonly #db: Connection
   readonly #table: string
   readonly #retryAfterMs: number
@@ -122,7 +129,7 @@ export class DatabaseQueueDriver implements QueueDriver {
         const reservation = randomBytes(16).toString('base64url')
         const until = now + visibilityMs
         const claimed = await this.#db.run(
-          sql`UPDATE ${table} SET reserved_until = ${until}, reservation = ${reservation}, attempts = attempts + 1 WHERE id = ${id} AND queue = ${queue} AND available_at <= ${now} AND (reserved_until IS NULL OR reserved_until <= ${now})`,
+          sql`UPDATE ${table} SET reserved_until = ${until}, reservation = ${reservation}, attempts = CASE WHEN attempts < ${MAX_ATTEMPTS} THEN attempts + 1 ELSE attempts END WHERE id = ${id} AND queue = ${queue} AND available_at <= ${now} AND (reserved_until IS NULL OR reserved_until <= ${now})`,
         )
         if (claimed.rowsAffected !== 1) continue
         const fetched = await this.#db.run(

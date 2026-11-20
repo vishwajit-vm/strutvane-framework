@@ -39,8 +39,8 @@ for (const engine of ENGINES) {
         locks: (c) => new DatabaseQueueLockStore({ connection, clock: c }),
         transactions: () => ({
           inTransaction: () => connection.inTransaction(),
-          afterCommit: (callback) => {
-            void connection.afterCommit(callback)
+          afterCommit: (callback, onRollback) => {
+            void connection.afterCommit(callback, { onRollback })
           },
         }),
       })

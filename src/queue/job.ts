@@ -138,7 +138,7 @@ export interface RegisteredJob {
   readonly [BRAND]: true
   readonly name: string
   readonly options: ResolvedJobOptions
-  /** The unique lock settings for this data, if the job is unique. */
+  /** The unique lock settings for this data (the app's key; the manager scopes it per tenant). */
   uniqueLock(
     data: unknown,
   ):
@@ -388,7 +388,7 @@ export function defineJob<TData>(config: JobConfig<TData>): JobDefinition<TData>
           'Return a non-empty string of at most 200 characters.',
         )
       return {
-        key: `queue:unique:${name}:${key}`,
+        key,
         for: unique.for,
         until: unique.until ?? 'processing',
       }

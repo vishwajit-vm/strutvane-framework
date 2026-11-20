@@ -275,20 +275,22 @@ for (const engine of ENGINES) {
       test('the batch store: CAS bookkeeping counts each member once and claims once', async () => {
         const clock = createTestClock()
         const batches = new DatabaseBatchRepository({ connection: db.connection, clock })
-        const ids = Array.from({ length: 450 }, (_, i) => `job-${i}`)
+        const ids = Array.from({ length: 230 }, (_, i) => `job-${i}`)
         await batches.create({ id: 'b1', name: 'big', jobIds: ids })
-        expect(await batches.find('b1')).toMatchObject({ total: 450, pending: 450, progress: 0 })
+        expect(await batches.find('b1')).toMatchObject({ total: 230, pending: 230, progress: 0 })
         expect((await batches.recordSuccess('b1', 'job-0')).counted).toBe(true)
         expect((await batches.recordSuccess('b1', 'job-0')).counted).toBe(false)
         expect((await batches.recordFailure('b1', 'job-0')).counted).toBe(false)
         expect((await batches.recordFailure('b1', 'job-1')).status).toMatchObject({
-          pending: 448,
+          pending: 228,
           failed: 1,
         })
         expect(await batches.claimCaught('b1')).toBe(true)
         expect(await batches.claimCaught('b1')).toBe(false)
         expect(await batches.claimFinished('b1')).toBe(false)
-        for (const id of ids.slice(2)) await batches.recordSuccess('b1', id)
+        // Concurrently, in waves: the counters must still end exact (each member counted once).
+        for (let start = 2; start < ids.length; start += 20)
+          await Promise.all(ids.slice(start, start + 20).map((id) => batches.recordSuccess('b1', id)))
         expect(await batches.claimFinished('b1')).toBe(true)
         expect(await batches.claimFinished('b1')).toBe(false)
         expect(await batches.find('b1')).toMatchObject({ pending: 0, failed: 1, finished: true })

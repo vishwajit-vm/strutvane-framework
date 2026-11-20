@@ -14,7 +14,7 @@ import type { Logger } from '../contracts/logger.ts'
 import type { QueueDriver, QueueLockStore, ReservedJob } from '../contracts/queue.ts'
 import { type Clock, systemClock } from '../core/clock.ts'
 import { uuidv7 } from '../core/uuid.ts'
-import { currentTenant } from '../database/orm/tenancy.ts'
+import { currentTenant, runWithTenant } from '../database/orm/tenancy.ts'
 import { assertTenantId } from '../database/types.ts'
 import { closestMatch } from '../support/str.ts'
 import type { BatchRepository, BatchStatus } from './batches.ts'
@@ -38,7 +38,7 @@ import {
 } from './payload.ts'
 import type { JobRegistry } from './registry.ts'
 import { type AttemptOutcome, runAttempt } from './runner.ts'
-import { describeError, type FailedJobStore } from './stores.ts'
+import { describeError, type FailedJob, type FailedJobStore } from './stores.ts'
 import type { QueueDispatcher } from './tokens.ts'
 
 /**
@@ -67,7 +67,8 @@ export interface QueueConnection {
  */
 export interface TransactionHooks {
   inTransaction(): boolean
-  afterCommit(callback: () => Promise<void>): void
+  /** Run `callback` after COMMIT; `onRollback` instead when the work is undone. */
+  afterCommit(callback: () => Promise<void>, onRollback: () => Promise<void>): void
 }
 
 /**
@@ -115,18 +116,20 @@ interface EnvelopeExtras {
 export interface ProcessResult {
   readonly jobId: string
   readonly job: string
-  readonly outcome: 'processed' | 'released' | 'failed' | 'poisoned' | 'lost'
   /**
-   * Set when the handler outlived its timeout and still hasn't stopped: resolves when it does.
-   * The worker stops taking jobs and exits if it doesn't settle within its grace period.
+   * `abandoned`: the handler outlived its timeout and its grace period and is still running. The
+   * job stays reserved (no second worker gets it before `retryAfter`), and the worker must stop
+   * so its supervisor starts a clean process.
    */
-  readonly stillRunning?: Promise<void>
+  readonly outcome: 'processed' | 'released' | 'failed' | 'poisoned' | 'lost' | 'abandoned'
 }
 
 /** Per-call worker overrides. */
 export interface ProcessOptions {
   /** Override every job's timeout (the worker's `--timeout`). */
   readonly timeoutSeconds?: number
+  /** Milliseconds a timed-out handler gets to stop before the job is abandoned. Default 5000. */
+  readonly graceMs?: number
 }
 
 /**
@@ -245,6 +248,8 @@ export class QueueManager implements QueueDispatcher {
   readonly locks: QueueLockStore
   readonly #logger: Logger
   #relayDisabled = false
+  /** After a transient outbox error, no relay before this time (ms). */
+  #relayRetryAt = 0
 
   constructor(options: QueueManagerOptions) {
     for (const connection of options.connections) {
@@ -556,7 +561,8 @@ export class QueueManager implements QueueDispatcher {
     let unique: Envelope['unique']
     if (lock !== undefined) {
       const owner = randomBytes(12).toString('base64url')
-      if (!(await this.locks.acquire(lock.key, owner, lock.for))) {
+      const key = uniqueLockKey(call.job.name, currentTenant(), lock.key)
+      if (!(await this.locks.acquire(key, owner, lock.for))) {
         this.emit({
           type: 'queue.job.skipped',
           connection: connection.name,
@@ -565,7 +571,7 @@ export class QueueManager implements QueueDispatcher {
         })
         return undefined
       }
-      unique = { key: lock.key, owner, until: lock.until }
+      unique = { key, owner, until: lock.until }
     }
     try {
       const envelope = await this.#envelope(call, connection.name, { chain, chainCatch, unique })
@@ -592,7 +598,7 @@ export class QueueManager implements QueueDispatcher {
             })
             await this.#releaseUnique(envelope)
           }
-        })
+        }, () => this.#releaseUnique(envelope))
       } else {
         await push()
       }
@@ -668,20 +674,29 @@ export class QueueManager implements QueueDispatcher {
    * await manager.relayOutbox()
    */
   async relayOutbox(limit = 20): Promise<number> {
-    if (this.#relayDisabled) return 0
+    if (this.#relayDisabled || this.#clock.now() < this.#relayRetryAt) return 0
     const outbox = this.#options.outbox?.()
     if (outbox === undefined) return 0
     let claimed: Awaited<ReturnType<OutboxStore['claim']>>
     try {
       claimed = await outbox.claim(limit, 60)
     } catch (error) {
-      // Usually a missing queue_outbox table (an app that never used the outbox): say it once
-      // and stop trying in this process, instead of an error on every idle tick.
-      this.#relayDisabled = true
-      this.#logger.warn('The outbox relay is off in this process: the outbox could not be read.', {
-        error: describeError(error).message,
-        hint: 'Run node strut queue:table && node strut migrate if you dispatch with viaOutbox.',
-      })
+      const message = describeError(error).message
+      if (MISSING_TABLE.test(message)) {
+        // An app that never created the outbox table: say it once and stop trying in this
+        // process, instead of an error on every idle tick.
+        this.#relayDisabled = true
+        this.#logger.warn('The outbox relay is off in this process: there is no outbox table.', {
+          error: message,
+          hint: 'Run node strut queue:table && node strut migrate if you dispatch with viaOutbox.',
+        })
+      } else {
+        // Anything else (a failover, a deadlock) is transient: try again in 30 seconds.
+        this.#relayRetryAt = this.#clock.now() + 30_000
+        this.#logger.error('The outbox could not be read; the relay tries again in 30 seconds.', {
+          error: message,
+        })
+      }
       return 0
     }
     const { messages, claim } = claimed
@@ -721,7 +736,9 @@ export class QueueManager implements QueueDispatcher {
         return
       }
       // A job that keeps releasing itself must still stop: a release counts as an attempt.
-      const final = outcome.kind === 'failed' ? outcome.final : attempt >= envelope.tries
+      // A timed-out handler may still be running: never start another attempt beside it.
+      const final =
+        outcome.kind === 'failed' ? outcome.final || outcome.timedOut : attempt >= envelope.tries
       if (final) {
         const error =
           outcome.kind === 'failed'
@@ -807,6 +824,14 @@ export class QueueManager implements QueueDispatcher {
     let data: unknown
     try {
       envelope = this.#signer.decode(reserved.payload)
+      // A driver that keeps ids stores each job under its envelope's id: a signed envelope copied
+      // into another row (a replay) carries a different id, and is refused.
+      if (driver.preservesIds === true && envelope.id !== reserved.id)
+        throw new QueueError(
+          'queue_payload_tampered',
+          'A queued job was refused because its row id does not match its signed id (a copied row).',
+          'Jobs are written by the framework only; look for something writing to the jobs table directly.',
+        )
       job = this.jobs.require(envelope.job)
       if (envelope.tenantId !== undefined) assertTenantId(envelope.tenantId)
       data = await job.parse(envelope.data)
@@ -840,8 +865,25 @@ export class QueueManager implements QueueDispatcher {
     const started = this.#clock.now()
     const outcome = await this.#attempt(job, data, envelope, attempt, connection.name, options)
     const base = { jobId: envelope.id, job: envelope.job }
-    const stillRunning =
-      outcome.kind === 'failed' && outcome.timedOut ? { stillRunning: outcome.settled } : {}
+    if (outcome.kind === 'failed' && outcome.timedOut) {
+      // The handler may still be running: keep the job reserved (so no second worker starts it)
+      // until it really stops. Only then is the attempt released or failed.
+      await driver.extend?.(reserved, connection.retryAfter)
+      const graceMs = options.graceMs ?? 5000
+      const stopped = await Promise.race([
+        outcome.settled.then(() => true),
+        new Promise<boolean>((resolve) => {
+          setTimeout(() => resolve(false), graceMs).unref()
+        }),
+      ])
+      if (!stopped) {
+        this.#logger.error(
+          'A job outlived its timeout and did not stop; it stays reserved and comes back after retryAfter. The worker stops so a clean process can take over.',
+          { jobId: envelope.id, job: envelope.job, attempt, retryAfter: connection.retryAfter },
+        )
+        return { ...base, outcome: 'abandoned' }
+      }
+    }
     if (outcome.kind === 'done') {
       await this.#afterSuccess(envelope, connection.name, attempt, started)
       const acked = await this.#ack(driver, reserved, envelope)
@@ -880,7 +922,7 @@ export class QueueManager implements QueueDispatcher {
         delaySeconds: delay,
         errorCode: errorCode(outcome.error),
       })
-      return { ...base, outcome: ok ? 'released' : 'lost', ...stillRunning }
+      return { ...base, outcome: ok ? 'released' : 'lost' }
     }
     await this.#afterFinalFailure(
       envelope,
@@ -892,7 +934,7 @@ export class QueueManager implements QueueDispatcher {
       reserved.payload,
     )
     await this.#ack(driver, reserved, envelope)
-    return { ...base, outcome: 'failed', ...stillRunning }
+    return { ...base, outcome: 'failed' }
   }
 
   async #ack(driver: QueueDriver, reserved: ReservedJob, envelope: Envelope): Promise<boolean> {
@@ -903,6 +945,38 @@ export class QueueManager implements QueueDispatcher {
         { jobId: envelope.id, job: envelope.job },
       )
     return acked
+  }
+
+/**
+   * Report an error a worker survived (it backs off and carries on).
+   *
+   * @example
+   * manager.reportWorkerError('database', error)
+   */
+  reportWorkerError(connection: string, error: unknown): void {
+    this.#logger.error('The queue worker hit an error; it backs off and carries on.', {
+      connection,
+      errorCode: errorCode(error),
+      error: describeError(error).message,
+    })
+    this.emit({ type: 'queue.worker.error', connection, errorCode: errorCode(error) })
+  }
+
+  /**
+   * Record a failed job without ever throwing: a failed store that can't be written (a
+   * missing table, a value the column refuses) must not take the worker down with it.
+   */
+  async #recordFailure(record: FailedJob): Promise<void> {
+    try {
+      await this.failed.log(record)
+    } catch (storeError) {
+      this.#logger.error('A failed job could not be written to the failed-job store.', {
+        jobId: record.id,
+        job: record.job,
+        errorCode: record.error.code ?? record.error.name,
+        storeError: describeError(storeError).message,
+      })
+    }
   }
 
   /** A payload that can't run: straight to the failed store, acknowledged, never retried. */
@@ -919,7 +993,7 @@ export class QueueManager implements QueueDispatcher {
       queue: reserved.queue,
       errorCode: code,
     })
-    await this.failed.log({
+    await this.#recordFailure({
       id: reserved.id,
       connection: connection.name,
       queue: reserved.queue,
@@ -951,13 +1025,18 @@ export class QueueManager implements QueueDispatcher {
     if (next !== undefined) {
       // Pushed before this job is acknowledged, with an id derived from this one: a crash in
       // between makes the second push a no-op on drivers with idempotent pushes.
-      await this.#pushStep(next, rest, envelope, deriveId(envelope.id, 'chain-next'))
+      await this.#followUp(envelope, 'queue_chain_push_failed', () =>
+        this.#pushStep(next, rest, envelope, deriveId(envelope.id, 'chain-next')),
+      )
     }
     if (envelope.unique?.until === 'completed') await this.#releaseUnique(envelope)
-    if (envelope.batch !== undefined) {
-      const recorded = await this.#batches().recordSuccess(envelope.batch.id, envelope.id)
-      if (recorded.counted && recorded.status?.pending === 0)
-        await this.#finishBatch(envelope.batch, envelope.tenantId)
+    const batch = envelope.batch
+    if (batch !== undefined) {
+      await this.#followUp(envelope, 'queue_batch_update_failed', async () => {
+        const recorded = await this.#batches().recordSuccess(batch.id, envelope.id)
+        if (recorded.counted && recorded.status?.pending === 0)
+          await this.#finishBatch(batch, envelope.tenantId)
+      })
     }
     this.emit({
       type: 'queue.job.processed',
@@ -986,7 +1065,7 @@ export class QueueManager implements QueueDispatcher {
       errorCode: errorCode(error),
     })
     if (payload !== undefined) {
-      await this.failed.log({
+      await this.#recordFailure({
         id: envelope.id,
         connection,
         queue: envelope.queue,
@@ -998,19 +1077,25 @@ export class QueueManager implements QueueDispatcher {
     }
     try {
       const controller = new AbortController()
-      await job.onFailure(data, error, {
-        jobId: envelope.id,
-        attempt,
-        queue: envelope.queue,
-        connection,
-        tenantId: envelope.tenantId,
-        signal: controller.signal,
-        log: this.#logger.child({ jobId: envelope.id, job: envelope.job, attempt }),
-        batchId: envelope.batch?.id,
-        batch: () => this.findBatchOf(envelope),
-        release() {},
-        fail() {},
-      })
+      const hook = (): Promise<void> =>
+        job.onFailure(data, error, {
+          jobId: envelope.id,
+          attempt,
+          queue: envelope.queue,
+          connection,
+          tenantId: envelope.tenantId,
+          signal: controller.signal,
+          log: this.#logger.child({ jobId: envelope.id, job: envelope.job, attempt }),
+          batchId: envelope.batch?.id,
+          batch: () => this.findBatchOf(envelope),
+          release() {},
+          fail() {},
+        })
+      // The same app scope and tenant as handle(): a hook that marks a row failed through the
+      // ORM must see the job's tenant, and facades must find the app.
+      const scope = this.#options.scope ?? (<T>(work: () => Promise<T>): Promise<T> => work())
+      const tenantId = envelope.tenantId
+      await scope(() => (tenantId === undefined ? hook() : runWithTenant(tenantId, hook)))
     } catch (hookError) {
       this.#logger.error("A job's failed() hook threw.", {
         jobId: envelope.id,
@@ -1018,10 +1103,17 @@ export class QueueManager implements QueueDispatcher {
         error: describeError(hookError).message,
       })
     }
-    if (envelope.chainCatch !== undefined)
-      await this.#pushStep(envelope.chainCatch, [], envelope, deriveId(envelope.id, 'chain-catch'))
+    const chainCatch = envelope.chainCatch
+    if (chainCatch !== undefined)
+      await this.#followUp(envelope, 'queue_chain_push_failed', () =>
+        this.#pushStep(chainCatch, [], envelope, deriveId(envelope.id, 'chain-catch')),
+      )
     await this.#releaseUnique(envelope)
-    if (envelope.batch !== undefined) await this.#batchFailure(envelope.batch, envelope)
+    const batch = envelope.batch
+    if (batch !== undefined)
+      await this.#followUp(envelope, 'queue_batch_update_failed', () =>
+        this.#batchFailure(batch, envelope),
+      )
     this.emit({
       type: 'queue.job.failed',
       connection,
@@ -1031,6 +1123,33 @@ export class QueueManager implements QueueDispatcher {
       attempt,
       errorCode: errorCode(error),
     })
+  }
+
+  /**
+   * Run a follow-up (the next chain step, the batch bookkeeping) without letting its failure undo
+   * the job that already ran: the job is still acknowledged, and the failure is logged and
+   * reported (a renamed job or a changed schema in a later deploy is the usual cause).
+   */
+  async #followUp(envelope: Envelope, code: string, work: () => Promise<void>): Promise<void> {
+    try {
+      await work()
+    } catch (error) {
+      this.#logger.error('A job finished, but what had to happen after it could not.', {
+        jobId: envelope.id,
+        job: envelope.job,
+        errorCode: code,
+        cause: errorCode(error),
+        error: describeError(error).message,
+      })
+      this.emit({
+        type: 'queue.job.failed',
+        connection: envelope.connection,
+        queue: envelope.queue,
+        jobId: envelope.id,
+        job: envelope.job,
+        errorCode: code,
+      })
+    }
   }
 
   async #pushStep(
@@ -1107,15 +1226,16 @@ export class QueueManager implements QueueDispatcher {
     const record = await this.failed.find(id)
     if (record === undefined) return false
     const envelope = this.#signer.decode(record.payload)
-    const connection = this.connection(record.connection)
+    // Routed by the signed envelope, never by the (unsigned) failed_jobs columns.
+    const connection = this.connection(envelope.connection)
     if (connection.driver === undefined) {
       await this.#runSync(envelope, this.jobs.require(envelope.job))
     } else {
-      await connection.driver.push(record.queue, record.payload, { id: envelope.id })
+      await connection.driver.push(envelope.queue, record.payload, { id: envelope.id })
       this.emit({
         type: 'queue.job.queued',
         connection: connection.name,
-        queue: record.queue,
+        queue: envelope.queue,
         jobId: envelope.id,
         job: envelope.job,
       })
@@ -1136,6 +1256,21 @@ export function deriveId(id: string, purpose: string): string {
   const hex = createHash('sha256').update(`${id}:${purpose}`).digest('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
 }
+
+/**
+ * The lock key of a unique job: per tenant (one tenant's job never blocks, or reveals, another
+ * tenant's), and with the app's key hashed so it always fits the 255-character lock column.
+ *
+ * @example
+ * uniqueLockKey('sync-account', undefined, 'acme') // 'queue:unique:_:sync-account:5f1c…'
+ */
+export function uniqueLockKey(job: string, tenantId: string | undefined, key: string): string {
+  const hashed = createHash('sha256').update(key).digest('hex')
+  return `queue:unique:${tenantId ?? '_'}:${job}:${hashed}`
+}
+
+/** Errors that mean "the table isn't there" on SQLite, PostgreSQL, MySQL and MariaDB. */
+const MISSING_TABLE = /no such table|does not exist|doesn't exist|42P01|ER_NO_SUCH_TABLE/i
 
 function errorCode(error: unknown): string {
   if (isQueueError(error)) return error.code

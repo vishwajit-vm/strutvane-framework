@@ -55,8 +55,12 @@ interface TransactionState {
   readonly shared: {
     tenantId: string | undefined
     ended: boolean
+    /** How the outermost transaction ended, once it has. */
+    outcome: 'open' | 'committed' | 'rolledBack'
+    /** Set once the after-commit callbacks have run: later ones run at once. */
+    drained: boolean
     /** Callbacks for after the outermost COMMIT (see Connection.afterCommit). */
-    afterCommit: (() => Promise<void>)[]
+    afterCommit: AfterCommitEntry[]
   }
   /** True while a nested level is open (two parallel savepoints on one connection would interleave). */
   childOpen: boolean
@@ -162,11 +166,19 @@ export class Connection {
     const state: TransactionState = {
       session,
       depth: 1,
-      shared: { tenantId: undefined, ended: false, afterCommit: [] },
+      shared: {
+        tenantId: undefined,
+        ended: false,
+        outcome: 'open',
+        drained: false,
+        afterCommit: [],
+      },
       childOpen: false,
     }
     let broken = false
-    let result: T
+    let result: T | undefined
+    let failed = false
+    let failure: unknown
     try {
       await this.#execute(session, plain('BEGIN'))
       await this.#applyTenant(state, options.tenantId)
@@ -175,17 +187,26 @@ export class Connection {
       // a sibling in Promise.all) must not slip in after them and run in autocommit mode.
       state.shared.ended = true
       await this.#execute(session, plain('COMMIT'))
+      state.shared.outcome = 'committed'
     } catch (error) {
       state.shared.ended = true
+      state.shared.outcome = 'rolledBack'
       broken = await this.#rollback(session)
-      throw error
+      failed = true
+      failure = error
     } finally {
       if (pinned === undefined) session.release(broken)
     }
     // After the connection went back to the pool: a callback that queries (the queue pushing a
-    // job) must not wait for the connection this transaction held (SQLite has only one).
-    await runAfterCommit(state.shared.afterCommit)
-    return result
+    // job, or releasing its lock) must not wait for the connection this transaction held (SQLite
+    // has only one).
+    if (failed) {
+      await runEntries(state.shared.afterCommit.splice(0), 'onRollback')
+      throw failure
+    }
+    await runEntries(state.shared.afterCommit, 'callback')
+    state.shared.drained = true
+    return result as T
   }
 
   /**
@@ -224,7 +245,9 @@ export class Connection {
    *
    * Callbacks run one after another, after COMMIT, and must handle their own errors: one that
    * throws is ignored, because the transaction has already committed and must not report a
-   * failure.
+   * failure. `onRollback` runs instead when the work is undone (the queue releases a unique
+   * lock there). A callback registered after the transaction rolled back (a sibling in
+   * `Promise.all` still running) is dropped, never run: it belongs to undone work.
    *
    * @example
    * await db.transaction(async () => {
@@ -232,13 +255,17 @@ export class Connection {
    *   await db.afterCommit(() => notify(order.id))
    * })
    */
-  async afterCommit(callback: () => Promise<void>): Promise<void> {
+  async afterCommit(
+    callback: () => Promise<void>,
+    options: { readonly onRollback?: () => Promise<void> } = {},
+  ): Promise<void> {
+    const entry: AfterCommitEntry = { callback, onRollback: options.onRollback }
     const state = this.#transactions.getStore()
-    if (state === undefined || state.shared.ended) {
-      await runAfterCommit([callback])
-      return
-    }
-    state.shared.afterCommit.push(callback)
+    if (state === undefined) return runEntries([entry], 'callback')
+    if (state.shared.outcome === 'rolledBack') return runEntries([entry], 'onRollback')
+    if (state.shared.drained) return runEntries([entry], 'callback')
+    // Still open, or committing: the list is run after COMMIT (or rolled back with it).
+    state.shared.afterCommit.push(entry)
   }
 
   /**
@@ -286,7 +313,7 @@ export class Connection {
         // Undo only this level, then drop the savepoint; the outer transaction carries on.
         await this.#executeIn(parent, plain(`ROLLBACK TO SAVEPOINT ${name}`))
         parent.shared.tenantId = tenantBefore
-        parent.shared.afterCommit.length = callbacksBefore
+        await runEntries(parent.shared.afterCommit.splice(callbacksBefore), 'onRollback')
         await this.#executeIn(parent, plain(`RELEASE SAVEPOINT ${name}`))
         throw error
       }
@@ -352,13 +379,25 @@ export class Connection {
   }
 }
 
-/** Run after-commit callbacks in order; a throwing one never stops the rest (see afterCommit). */
-async function runAfterCommit(callbacks: readonly (() => Promise<void>)[]): Promise<void> {
-  for (const callback of callbacks) {
+/** One `afterCommit` registration. */
+interface AfterCommitEntry {
+  readonly callback: () => Promise<void>
+  readonly onRollback: (() => Promise<void>) | undefined
+}
+
+/**
+ * Run after-commit (or rollback) callbacks in order; a throwing one never stops the rest (see
+ * afterCommit). Entries added while the list runs are run too.
+ */
+async function runEntries(
+  entries: readonly AfterCommitEntry[],
+  which: 'callback' | 'onRollback',
+): Promise<void> {
+  for (const entry of entries) {
     try {
-      await callback()
+      await entry[which]?.()
     } catch {
-      // Ignored by design: the transaction already committed (callbacks report their own errors).
+      // Ignored by design: the transaction already ended (callbacks report their own errors).
     }
   }
 }

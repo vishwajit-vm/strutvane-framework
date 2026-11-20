@@ -9,6 +9,7 @@ import { currentTenant } from '../../src/database/orm/tenancy.ts'
 import { MemoryQueueDriver } from '../../src/queue/drivers/memory.ts'
 import { isQueueError } from '../../src/queue/errors.ts'
 import { defineJob } from '../../src/queue/job.ts'
+import { uniqueLockKey } from '../../src/queue/manager.ts'
 import { harness, runWithDispatcher } from './support.ts'
 
 const TENANT = '0193a000-0000-7000-8000-0000000000aa'
@@ -308,7 +309,7 @@ describe('poison messages', () => {
       backoff: [1],
       timeout: 10,
     })
-    await h.driver.push('default', payload(signed))
+    await h.driver.push('default', payload(signed), { id: '0193a000-0000-7000-8000-000000000123' })
     return h
   }
 
@@ -343,7 +344,7 @@ describe('poison messages', () => {
       timeout: 10,
     })
     h.jobs.register(defineJob({ name: 'victim', async handle(_data: unknown) {} }))
-    await h.driver.push('default', signed)
+    await h.driver.push('default', signed, { id: 'x' })
     expect((await h.manager.processNext('main', ['default']))?.outcome).toBe('poisoned')
     const [record] = await h.failed.all()
     expect(record).toMatchObject({ job: 'victm', error: { code: 'queue_job_unknown' } })
@@ -379,7 +380,7 @@ describe('poison messages', () => {
       backoff: [0],
       timeout: 10,
     })
-    await h.driver.push('default', signed)
+    await h.driver.push('default', signed, { id: 'y' })
     expect((await h.manager.processNext('main', ['default']))?.outcome).toBe('poisoned')
     expect((await h.failed.all())[0]?.error.message).toContain('id must be a string')
   })
@@ -407,7 +408,6 @@ describe('timeouts', () => {
     const result = await h.manager.processNext('main', ['default'])
     expect(result?.outcome).toBe('released')
     expect(aborted).toBe(true)
-    await result?.stillRunning
     expect(h.events.at(-1)).toMatchObject({ errorCode: 'queue_job_timed_out' })
   })
 })
@@ -449,9 +449,9 @@ describe('unique jobs', () => {
     await runWithDispatcher(h.manager, async () => {
       await Job.dispatch({})
     })
-    expect(await h.locks.acquire('queue:unique:unique-completed:one', 'other', 1)).toBe(false)
+    expect(await h.locks.acquire(uniqueLockKey('unique-completed', undefined, 'one'), 'other', 1)).toBe(false)
     await h.manager.processNext('main', ['default'])
-    expect(await h.locks.acquire('queue:unique:unique-completed:one', 'other', 1)).toBe(true)
+    expect(await h.locks.acquire(uniqueLockKey('unique-completed', undefined, 'one'), 'other', 1)).toBe(true)
   })
 
   test('the lock expires by itself after `for` seconds', async () => {

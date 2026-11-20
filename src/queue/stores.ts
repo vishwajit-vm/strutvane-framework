@@ -146,9 +146,9 @@ export class DatabaseFailedJobStore implements FailedJobStore {
   async all(limit = 1000): Promise<readonly FailedJob[]> {
     const capped = Math.max(1, Math.min(10_000, Math.floor(limit)))
     const result = await this.#db.run(
-      sql`SELECT id, connection, queue, job, payload, exception, failed_at FROM ${sql.id(this.#table)} ORDER BY failed_at DESC, id DESC`,
+      sql`SELECT id, connection, queue, job, payload, exception, failed_at FROM ${sql.id(this.#table)} ORDER BY failed_at DESC, id DESC LIMIT ${capped}`,
     )
-    return result.rows.slice(0, capped).map(toFailedJob)
+    return result.rows.map(toFailedJob)
   }
 
   async find(id: string): Promise<FailedJob | undefined> {

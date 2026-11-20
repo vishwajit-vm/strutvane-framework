@@ -150,8 +150,9 @@ function check(value: unknown, path: string, depth: number, seen: Set<object>): 
     throw notPlain(path, `nested deeper than ${MAX_PAYLOAD_DEPTH} levels`, 'Flatten the data.')
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return
   if (typeof value === 'number') {
-    if (Number.isFinite(value)) return
-    throw notPlain(path, String(value), 'Use a finite number, or null.')
+    // -0 is refused too: JSON writes it as 0, so it could not survive the signed round trip.
+    if (Number.isFinite(value) && !Object.is(value, -0)) return
+    throw notPlain(path, Object.is(value, -0) ? '-0' : String(value), 'Use a finite number (not -0), or null.')
   }
   if (typeof value === 'bigint')
     throw notPlain(path, 'a bigint', 'Pass it as a string (String(value)).')
@@ -306,6 +307,10 @@ export class EnvelopeSigner {
     })
     if (!valid) throw tampered('its signature does not match')
     if (!isEnvelope(rest)) throw tampered('it does not have the envelope shape')
+    // The MAC covers the canonical form, and JSON.stringify writes ±Infinity as null and -0 as 0:
+    // a row edited to 1e999 or -0 would still verify, so such numbers are refused here.
+    if (!onlyCanonicalNumbers(rest, 0))
+      throw tampered('it contains a number JSON cannot represent (Infinity, -0) or is nested too deep')
     return rest
   }
 
@@ -323,6 +328,15 @@ function payloadLimit(value: number | undefined): number {
       'Fix maxPayloadBytes in config/queue.ts, or remove it to use the 64 KiB default.',
     )
   return value
+}
+
+/** Every number finite and not -0, and nesting within the limit (what dispatch allows). */
+function onlyCanonicalNumbers(value: unknown, depth: number): boolean {
+  if (depth > MAX_PAYLOAD_DEPTH + 4) return false
+  if (typeof value === 'number') return Number.isFinite(value) && !Object.is(value, -0)
+  if (value === null || typeof value !== 'object') return true
+  const items: readonly unknown[] = Array.isArray(value) ? value : Object.values(value)
+  return items.every((item) => onlyCanonicalNumbers(item, depth + 1))
 }
 
 function tampered(why: string): QueueError {

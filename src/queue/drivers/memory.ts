@@ -29,6 +29,7 @@ interface Stored {
  * await driver.push('default', payload)
  */
 export class MemoryQueueDriver implements QueueDriver {
+  readonly preservesIds = true
   readonly #queues = new Map<string, Map<string, Stored>>()
   readonly #clock: Clock
   readonly #retryAfterMs: number
