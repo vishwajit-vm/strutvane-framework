@@ -33,6 +33,7 @@ import type {
 } from '../contracts/index.ts'
 import { FileNotFoundError, measuring, toStream } from './body.ts'
 import { assertSafeKey, assertSafePrefix, UnsafeKeyError } from './keys.ts'
+import { assertStorableContentType } from './mime.ts'
 import { signUrl } from './signing.ts'
 
 const META_DIR = '.strutvane-meta'
@@ -87,6 +88,7 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
     name,
     async put(key: string, body: FileBody, put: PutOptions = {}): Promise<StoredFile> {
       const target = pathOf(key)
+      assertStorableContentType(put.contentType)
       const tmpDir = join(root, TMP_DIR)
       await mkdir(tmpDir, { recursive: true })
       const tmp = join(tmpDir, `${randomUUID()}.part`)

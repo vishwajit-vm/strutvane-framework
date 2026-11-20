@@ -115,3 +115,88 @@ export function mimeMatches(mime: string, accept: readonly string[]): boolean {
     return false
   })
 }
+
+/**
+ * Types a stored file may be served **inline** as, from the app's own origin: things a browser
+ * only displays (raster images, PDF, plain text, audio, video). Everything else, including every
+ * type nobody thought of yet, is a download. An allow-list, because a deny-list of "active"
+ * types always misses one (a new `+xml`, `text/xsl`, `application/x-shockwave-flash`…).
+ */
+export const INLINE_TYPES: ReadonlySet<string> = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+  'application/pdf',
+  'text/plain',
+])
+
+/** Audio and video families are display-only too (no script in either). */
+const INLINE_FAMILIES = ['audio/', 'video/'] as const
+
+/** A media type token (RFC 9110 `token`): letters, digits and `!#$%&'*+.^_`|~-` minus quotes. */
+const TYPE_ESSENCE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/
+
+/** How a stored file is sent: the `Content-Type` and the `Content-Disposition` kind. */
+export interface ServedType {
+  readonly contentType: string
+  readonly disposition: 'inline' | 'attachment'
+}
+
+/**
+ * How to serve a file stored with `stored` as its type. Inline only for {@link INLINE_TYPES} and
+ * audio/video, sent as the bare type (plus `charset=utf-8` for text, never a stored parameter);
+ * anything else, and any type with a comma, a quote, a control character or no valid essence,
+ * becomes an `application/octet-stream` attachment. The stored string never reaches a header.
+ *
+ * @example
+ * servedType('image/png')                 // { contentType: 'image/png', disposition: 'inline' }
+ * servedType('text/html; charset=utf-8')  // { contentType: 'application/octet-stream', disposition: 'attachment' }
+ * servedType('image/png, text/html')      // attachment: two types in one header
+ */
+export function servedType(stored: string): ServedType {
+  const download: ServedType = { contentType: 'application/octet-stream', disposition: 'attachment' }
+  if (!isStorableContentType(stored)) return download
+  const essence = stored.split(';')[0]?.trim().toLowerCase() ?? ''
+  const inline =
+    INLINE_TYPES.has(essence) || INLINE_FAMILIES.some((family) => essence.startsWith(family))
+  if (!inline || isActiveContent(essence)) return download
+  return {
+    contentType: essence === 'text/plain' ? 'text/plain; charset=utf-8' : essence,
+    disposition: 'inline',
+  }
+}
+
+/**
+ * Whether a content type may be stored: one type (`type/subtype`, optional `; key=value`
+ * parameters), at most 255 characters, and no comma, quote, backslash or control character
+ * (each could split a header or smuggle a second type past a check).
+ *
+ * @example
+ * isStorableContentType('image/png') // true
+ * isStorableContentType('text/plain\r\nSet-Cookie: x=1') // false
+ */
+export function isStorableContentType(value: string): boolean {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
+  if (value.length > 255 || /[,"'\\u0000-\u001f\u007f]/.test(value)) return false
+  const [essence = '', ...parameters] = value.split(';')
+  if (!TYPE_ESSENCE.test(essence.trim().toLowerCase())) return false
+  return parameters.every((parameter) => /^\s*[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+\s*$/i.test(parameter))
+}
+
+/**
+ * Refuse a content type that {@link isStorableContentType} rejects, before anything is written.
+ *
+ * @example
+ * assertStorableContentType(put.contentType)
+ */
+export function assertStorableContentType(value: string | undefined): void {
+  if (value === undefined || isStorableContentType(value)) return
+  throw new TypeError(
+    'contentType must be one media type such as "image/png" (no comma, quote or control character).',
+  )
+}

@@ -183,12 +183,32 @@ export function decorateResponse(
     environment: options.environment,
   })
   copy.headers.set('X-Request-Id', ctx.state.requestId)
-  const xsrf = xsrfCookieFor(
-    security.csrf,
-    ctx.request.headers.get('cookie'),
-    copy.headers.getSetCookie(),
-    ctx.state.secure,
-  )
+  // A response a shared cache may store (`Cache-Control: public`) must never carry a per-visitor
+  // cookie: the cache would hand one visitor's XSRF token to everyone after them.
+  const xsrf = isSharedCacheable(copy.headers)
+    ? undefined
+    : xsrfCookieFor(
+        security.csrf,
+        ctx.request.headers.get('cookie'),
+        copy.headers.getSetCookie(),
+        ctx.state.secure,
+      )
   if (xsrf !== undefined) copy.headers.append('set-cookie', xsrf)
   return copy
+}
+
+/**
+ * `true` when `Cache-Control` lets a shared cache store the response (`public`, or `s-maxage`
+ * without `private`/`no-store`). Directive names are case-insensitive (RFC 9111 §5.2).
+ *
+ * @example
+ * isSharedCacheable(new Headers({ 'cache-control': 'public, max-age=60' })) // true
+ */
+export function isSharedCacheable(headers: Headers): boolean {
+  const directives = (headers.get('cache-control') ?? '')
+    .toLowerCase()
+    .split(',')
+    .map((part) => part.trim().split('=')[0] ?? '')
+  if (directives.includes('private') || directives.includes('no-store')) return false
+  return directives.includes('public') || directives.includes('s-maxage')
 }

@@ -35,6 +35,7 @@ export function createMemoryDisk(options: MemoryDiskOptions = {}): StorageDisk {
     name,
     async put(key: string, body: FileBody, put: PutOptions = {}): Promise<StoredFile> {
       assertSafeKey(key)
+      assertStorableContentType(put.contentType)
       const m = measuring()
       const chunks: Uint8Array[] = []
       const reader = toStream(body).pipeThrough(m.stream).getReader()

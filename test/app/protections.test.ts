@@ -225,6 +225,26 @@ describe('CSRF in every style', () => {
     expect(header).not.toContain('HttpOnly')
   })
 
+  it('never adds the XSRF-TOKEN cookie to a response a shared cache may store', async () => {
+    const cached = (value: string) => (_ctx: HttpContext) =>
+      new Response('cached', { headers: { 'cache-control': value } })
+    const prepared = await customApp({
+      web: defineRoutes([
+        Route.get('/public', cached('public, max-age=600')),
+        Route.get('/shared', cached('S-MaxAge=60')),
+        Route.get('/mixed', cached('Public, max-age=60, PRIVATE')),
+        Route.get('/private', cached('private, max-age=60')),
+      ]),
+    })
+    const cookieOf = async (path: string) =>
+      (await prepared.client.withHeaders(cookie).get(path)).headers.get('set-cookie') ?? ''
+    expect(await cookieOf('/public')).not.toContain('XSRF-TOKEN')
+    expect(await cookieOf('/shared')).not.toContain('XSRF-TOKEN')
+    // private wins over public: only the visitor's own browser stores it.
+    expect(await cookieOf('/mixed')).toContain('XSRF-TOKEN')
+    expect(await cookieOf('/private')).toContain('XSRF-TOKEN')
+  })
+
   it('withoutCsrf() works in tests and is refused outside APP_ENV=testing (CONSISTENCY #60)', async () => {
     const prepared = await customApp({ api: defineRoutes([Route.post('/thing', ok)]) })
     ;(

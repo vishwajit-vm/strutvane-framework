@@ -27,7 +27,7 @@ import { NotFoundError } from '../core/errors/errors.ts'
 import { BootError } from '../foundation/boot-error.ts'
 import { FileNotFoundError } from './body.ts'
 import { assertSafeKey } from './keys.ts'
-import { isActiveContent } from './mime.ts'
+import { servedType } from './mime.ts'
 
 /**
  * A public disk and the URL path it is served under.
@@ -126,12 +126,12 @@ export async function servePublicFile(
   if (key === undefined) throw new NotFoundError()
   const info = await statOrUndefined(mount.disk, key)
   if (info === undefined || info.visibility !== 'public') throw new NotFoundError()
-  const active = isActiveContent(info.contentType)
+  const served = servedType(info.contentType)
   const name = (key.split('/').pop() ?? 'file').replace(/[^a-z0-9._=-]/g, '_')
   const etag = `"${info.sha256}"`
   const headers = new Headers({
-    'Content-Type': active ? 'application/octet-stream' : info.contentType,
-    'Content-Disposition': `${active ? 'attachment' : 'inline'}; filename="${name}"`,
+    'Content-Type': served.contentType,
+    'Content-Disposition': `${served.disposition}; filename="${name}"`,
     'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "default-src 'none'; sandbox",
     'Cache-Control': 'public, max-age=0, must-revalidate',
