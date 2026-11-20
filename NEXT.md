@@ -46,6 +46,20 @@ import-export and health (their `v2/*` branches).
   proposal): separate work.
 - Add-on repos still carry their own patch helpers until they move to `context.app`.
 
+## Gate (2026-11-20, Windows, Node 24, at b5c4317; agent-reported until the coordinator re-runs)
+- `npm ci`, then `npm run ci` 3x in a row: each 3,221 passed / 17 skipped, coverage above
+  90/90/85/90 (run 1: 96.36/90.74/97.28/97.36), no unhandled rejections.
+- An earlier run found an unhandled rejection in the new events test (a test-only race, fixed in
+  b5c4317); nothing was weakened.
+- check-code-rules, check-deps, pack + check-package (187 files), publint 0.3.25 --strict,
+  attw 0.18.5 esm-only: all pass. `npm audit --omit=dev --audit-level=high`: exit 0 (4 moderate,
+  esbuild's dev server, unchanged from main).
+
+## Next
+- Coordinator: re-run the gate, push, review; `changeset version` only at release time.
+- Hub: the integration-map rows above. Add-ons: move their patch helpers to `context.app`, use
+  `app.env()`, `app.addMessages()`, `CacheDriverRegistryToken`, model events and `afterCommit()`.
+
 ## How to verify
 Same as below ("How to verify"): `npm ci`, `npm run ci` 3x, code-rules/deps/package checks,
 publint --strict, attw, `npm audit --omit=dev --audit-level=high`.
