@@ -25,6 +25,7 @@
  * @module
  */
 
+import type { Policy } from '../auth/gate.ts'
 import { PolicyRegistry, PolicyRegistryToken } from '../auth/policies.ts'
 import { CacheManagerToken } from '../cache/contract.ts'
 import { CacheDriverRegistry, CacheDriverRegistryToken } from '../cache/drivers.ts'
@@ -37,6 +38,7 @@ import {
   type HttpResponseHookPayload,
 } from '../contracts/http-hooks.ts'
 import type { Logger } from '../contracts/logger.ts'
+import { MANIFEST_PATH } from '../contracts/manifest.ts'
 import {
   type AppState,
   type Application as CoreApplication,
@@ -81,6 +83,12 @@ import {
   timeoutStage,
   trustedHostStage,
 } from '../http/app/kernel.ts'
+import {
+  apiVersionOf,
+  buildAppManifest,
+  type ManifestResource,
+  readAppMetadata,
+} from '../http/app/manifest.ts'
 import { MemoryCacheStore } from '../http/app/memory-cache.ts'
 import {
   buildMiddleware,
@@ -92,7 +100,11 @@ import {
 import { CORE_ALIASES } from '../http/app/protections.ts'
 import type { RequestState } from '../http/app/request-state.ts'
 import { ResourceController } from '../http/app/resource-controller.ts'
-import { isInternalResource } from '../http/app/resource-model.ts'
+import {
+  isInternalResource,
+  type ResourceModel,
+  type ResourceRecord,
+} from '../http/app/resource-model.ts'
 import {
   type ResolvedRouteMiddleware,
   resolveRouteMiddleware,
@@ -134,8 +146,10 @@ import {
   fallbackFor,
   matchRoute,
 } from '../routing/router.ts'
+import type { ControllerClass } from '../routing/types.ts'
 import { UrlGenerator, UrlGeneratorToken } from '../routing/url.ts'
 import { type AppFilesystemsConfig, storageFromConfig } from '../runtime/storage-config.ts'
+import type { AppMetadata } from '../schema/generate/metadata.ts'
 import { checkBootGuards } from '../security/boot-guards.ts'
 import { Encrypter, EncrypterToken } from '../security/encrypter.ts'
 import { HttpClient, HttpClientToken } from '../security/http.ts'
@@ -416,6 +430,10 @@ export class Application implements CoreApplication<object> {
   #registering = false
   #forceDebug = false
   #webUi: WebUiOptions | undefined
+  /** The resources the manifest describes, collected on the first manifest request. */
+  #manifestResources: Promise<ManifestResource[]> | undefined
+  /** `.strutvane/resources.json`, read on the first manifest request. */
+  #appMetadata: { readonly value: AppMetadata | undefined } | undefined
   /** The ORM's tenant column once boot read the tenancy switch; `undefined` = single-tenant. */
   #tenantColumn: string | undefined
   /** The merged environment (process env, `.env`, the `env` option), read once at boot. */
@@ -1086,6 +1104,9 @@ export class Application implements CoreApplication<object> {
     extra.push({
       entries: defineRoutes([
         Route.get(health ?? DEFAULT_HEALTH, (ctx) => ctx.json({ status: 'ok' })),
+        // The UI's resource manifest (ADR-0014), at the origin's well-known path whatever the
+        // API base path is: the UI finds it before it knows anything else about the app.
+        Route.get(MANIFEST_PATH, (ctx) => this.#manifest(ctx)).name('strutvane.manifest'),
       ]).entries,
       prefix: '',
       group: undefined,
@@ -1394,6 +1415,82 @@ export class Application implements CoreApplication<object> {
           )
         }),
     )
+  }
+
+  /**
+   * `GET /.well-known/strutvane.json`: the resources this actor may use, built from the app's
+   * resource routes and `.strutvane/resources.json` (`http/app/manifest.ts`). Per actor, so never
+   * cached by a shared cache.
+   */
+  async #manifest(ctx: Ctx): Promise<Response> {
+    const booted = this.#booted('the manifest')
+    this.#manifestResources ??= this.#collectManifestResources(booted).catch((error: unknown) => {
+      this.#manifestResources = undefined
+      throw error
+    })
+    const resources = await this.#manifestResources
+    this.#appMetadata ??= { value: readAppMetadata(this.basePath) }
+    const clock = this.make(ClockToken)
+    const manifest = await buildAppManifest({
+      app: {
+        name: booted.config.string('app.name', 'Strutvane'),
+        apiVersion: apiVersionOf(booted.apiPrefix),
+      },
+      resources,
+      metadata: this.#appMetadata.value,
+      user: ctx.user,
+      now: () => new Date(clock.now()),
+    })
+    return ctx.json(manifest, 200, {
+      'cache-control': 'private, no-store',
+      vary: 'Cookie, Authorization',
+    })
+  }
+
+  /**
+   * Every resource a `ResourceController` serves under the API base path, with the actions that
+   * have a route and the policy in force (the controller's, else the registered or discovered
+   * one). Nested resources (`/posts/{post}/comments`) are left out: the manifest has no parent.
+   */
+  async #collectManifestResources(booted: BootedState): Promise<ManifestResource[]> {
+    const prefix = `${booted.apiPrefix.replace(/\/+$/, '')}/`
+    const found = new Map<
+      ControllerClass,
+      {
+        readonly controller: ResourceController<ResourceModel<ResourceRecord>>
+        readonly actions: Set<string>
+        path: string | undefined
+      }
+    >()
+    for (const route of booted.routes) {
+      const action = route.action
+      if (route.resourceAction === undefined || action.kind !== 'controller') continue
+      if (!route.uri.startsWith(prefix)) continue
+      let entry = found.get(action.controller)
+      if (entry === undefined) {
+        const controller: unknown = this.#scope(() =>
+          buildUnchecked(this.container, action.controller),
+        )
+        if (!(controller instanceof ResourceController)) continue
+        entry = { controller, actions: new Set(), path: undefined }
+        found.set(action.controller, entry)
+      }
+      entry.actions.add(route.resourceAction)
+      if (route.resourceAction === 'index' || route.resourceAction === 'store')
+        entry.path = route.uri.slice(prefix.length)
+    }
+    const registry = this.make(PolicyRegistryToken)
+    const resources: ManifestResource[] = []
+    for (const { controller, actions, path } of found.values()) {
+      if (path === undefined || path.includes('{') || path.includes('/')) continue
+      const metadata = controller.resourceMetadata()
+      if (isInternalResource(metadata)) continue
+      const policy =
+        (controller.explicitPolicy() as Policy<unknown> | undefined) ??
+        (await registry.discover(controller.resourceModel()))
+      resources.push({ path, actions, metadata, policy })
+    }
+    return resources
   }
 
   /**
