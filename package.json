@@ -47,6 +47,10 @@
       "types": "./dist/schema.d.mts",
       "default": "./dist/schema.mjs"
     },
+    "./queue": {
+      "types": "./dist/queue.d.mts",
+      "default": "./dist/queue.mjs"
+    },
     "./commands": {
       "types": "./dist/commands.d.mts",
       "default": "./dist/commands.mjs"

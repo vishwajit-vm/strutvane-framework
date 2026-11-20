@@ -3,6 +3,14 @@
  *
  * @packageDocumentation
  */
+
+export {
+  type DriverContractCase,
+  type DriverContractOptions,
+  type DriverFactory,
+  type DriverSetup,
+  queueDriverContract,
+} from '../queue/driver-contract.ts'
 export {
   createFake,
   type DefinedFactory,

@@ -12,7 +12,7 @@
 </div>
 
 > [!NOTE]
-> **Status: `0.1.0-next.0`, implemented and tested, but not yet released to npm.** It follows the [package spec](https://github.com/vishwajit-vm/strutvane/blob/main/docs/06-package-framework.md), ADR-0003/0004/0007/0008/0009/0011, [RFC-0002](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0002-file-storage-and-uploads.md) (storage core) and [RFC-0003](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0003-errors-and-messages.md) (errors). The API may still change before `0.1.0`. Queue, cache, mail and MySQL are not implemented yet (see [What's deferred](#whats-deferred)).
+> **Status: `0.1.0-next.0`, implemented and tested, but not yet released to npm.** It follows the [package spec](https://github.com/vishwajit-vm/strutvane/blob/main/docs/06-package-framework.md), ADR-0003/0004/0007/0008/0009/0011, [RFC-0002](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0002-file-storage-and-uploads.md) (storage core) and [RFC-0003](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0003-errors-and-messages.md) (errors). The API may still change before `0.1.0`. Mail, some cache stores and v1 MySQL are not implemented yet (see [What's deferred](#whats-deferred)).
 
 ## What it is
 
@@ -299,10 +299,41 @@ export default Application.configure({ basePath: dirname(import.meta.dirname) })
   }
   ```
 
-- **Facades** live on `@strutvane/framework/facades` (`Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`; `Mail`, `Queue`, `Bus`, `Notification` and `Hash` say "coming in 0.3"). They resolve from the current app's container, so tests can swap them, and the `Route` facade never shadows the `Route` builder.
+- **Facades** live on `@strutvane/framework/facades` (`Log`, `Cache`, `DB`, `Route`, `Storage`, `Http`, `Event`, `Crypt`, `Url`, `Queue`, `Bus`; `Mail`, `Notification` and `Hash` say "coming in 0.3"). They resolve from the current app's container, so tests can swap them, and the `Route` facade never shadows the `Route` builder.
 - **The database in requests.** Models work in controllers, route closures, middleware, listeners and commands with no setup, Laravel-style. When the app boots it hands the ORM `.strutvane/schema.json` and the tenancy switch (`config/tenancy.ts`), and binds `DatabaseConnectionToken`: the default connection from `config/database.ts` (`default`, `host`, `port`, `database`, `username`, `socket`, `sslmode`, `ssl_ca`) over `DB_*` in `.env`, with `DB_PASSWORD`/`DB_URL` read from the environment when it connects. It is **opened by the first query** (so `/up`, `route:list` and other work that never queries never needs the database, and a database that is down fails only the requests that use it) and closed by `app.shutdown()`. Every request and command resolves its own app's connection, even with two apps in one process. With tenancy on, the tenant an `http.onRequest` hook resolves (the auth package) scopes every model query of that request; a request without one can't read tenant tables (fail closed). With `APP_ENV=testing`, `database.test_database` replaces the database name. To use another connection (a test double, a replica), bind `DatabaseConnectionToken` in a provider's `register()` or on `app.container` before boot. On MySQL and MariaDB the app's connection compiles inserts without `RETURNING` (the row is read back by key), so one grammar fits every server version.
 - **Serving.** `node strut start` (and `dev`) boots `bootstrap/app.ts` before the port opens (`startApplication()`); a broken route or a weak key never starts serving. The Node adapter hands the app the socket peer and `waitUntil`, so deferred work runs after the response and a graceful stop waits for it.
-- **Commands.** `node strut list` (`help` is an alias) shows the app commands: `optimize`, `config:cache`, `route:cache`, `event:cache` (and their `:clear`), `event:list`, `route:list [--security]`, `cache:clear`, `cache:forget`, `key:rotate`, `env:encrypt`/`env:decrypt`, `down`/`up`, `session:flush`, `security:check [--audit]`, `make:command`, `make:rule`, `make:observer`, plus the commands the app registers with `withCommands()`. A `BootError` is reported with its hint and exit code 3.
+- **Commands.** `node strut list` (`help` is an alias) shows the app commands: `optimize`, `config:cache`, `route:cache`, `event:cache` (and their `:clear`), `event:list`, `route:list [--security]`, `cache:clear`, `cache:forget`, `key:rotate`, `env:encrypt`/`env:decrypt`, `down`/`up`, `session:flush`, `security:check [--audit]`, the `queue:*` commands (below), `make:command`, `make:rule`, `make:observer`, plus the commands the app registers with `withCommands()`. A `BootError` is reported with its hint and exit code 3.
+
+### Queues (RFC-0006)
+
+Jobs live in `app/jobs/` and are found by name, never by file path; only plain JSON data travels, signed with a key derived from `APP_KEY`:
+
+```ts
+// app/jobs/send-welcome-email.ts
+import { defineJob } from '@strutvane/framework/queue'
+
+export const SendWelcomeEmail = defineJob({
+  name: 'send-welcome-email',
+  tries: 3,
+  backoff: [10, 60, 300],
+  timeout: 30,
+  unique: { key: (data) => data.userId, for: 600 },
+  async handle({ userId }: { userId: string }, ctx) {
+    // ctx.jobId (an idempotency key), ctx.attempt, ctx.signal (aborted on timeout), ctx.release(s), ctx.fail()
+  },
+})
+
+await SendWelcomeEmail.dispatch({ userId: user.id })
+await SendWelcomeEmail.with({ userId }).delay(60).onQueue('emails').afterCommit().dispatch()
+await Bus.chain([Resize.with({ id }), Publish.with({ id })]).catch(Notify.with({ id })).dispatch()
+```
+
+- **Drivers:** `database` (the default: `node strut queue:table && node strut migrate`), `sync` (runs at dispatch; the default under `APP_ENV=testing`), `memory`, and add-on drivers such as `@strutvane/redis` (`registerQueueDriver`). Choose with `QUEUE_CONNECTION` or `config/queue.ts` (`default`, `connections`, `failed`, `maxPayloadBytes`).
+- **Delivery is at-least-once.** A worker reserves a job for `retryAfter` seconds (90 by default; every job `timeout` must stay below it) and acknowledges it when done. Two workers never reserve one job at the same time, and a crashed worker's job comes back by itself. A job that keeps crashing its worker is failed once its tries are used up.
+- **Payloads** must be plain data (no `Date`, class instances or functions), at most 64 KiB, with no secret-looking keys (`password`, `token`…): pass ids and load the rest in the handler. An edited, unsigned or unknown job is moved to the failed jobs without running.
+- **Tenancy:** the dispatching tenant is restored around the handler, so tenant scopes and row-level security apply as in the request.
+- **Commands:** `queue:work [connection] [--queue=high,default] [--sleep] [--timeout] [--memory=512] [--max-jobs] [--max-time] [--stop-when-empty]` stops gracefully on SIGTERM/SIGINT (the running job finishes first) and on `queue:restart`; `queue:failed`, `queue:retry <id…|all>`, `queue:forget <id>`, `queue:flush [--hours]`, `queue:clear`.
+- **Not yet:** batches, the transactional outbox and class-based jobs (RFC-0006 §1.2, §7.1, §8).
 
 ### Upgrading to 0.2: lowercase error codes
 
@@ -314,7 +345,7 @@ Validation issues also carry `field`, the dotted path (`items.0.title`), next to
 
 | Item | Status |
 |---|---|
-| Queue, mail; database and Redis cache stores | Not implemented (coming in 0.3). The cache has `memory` and `file` stores today. |
+| Mail; queue batches and the outbox; database and Redis cache stores | Not implemented (coming in 0.3). Queues are in (see Queues); the cache has `memory` and `file` stores today. |
 | MySQL in the v1 runtime | v1's `connectDatabase({ driver: 'mysql' })` throws `NotImplementedError`; migration-first apps use MySQL through the ORM (`DB_CONNECTION=mysql`). |
 | Azure Entra ID (passwordless) Postgres | `auth: { kind: 'azure-entra' }` is part of the config shape and throws `NotImplementedError` for now. |
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |

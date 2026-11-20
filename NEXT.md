@@ -31,19 +31,19 @@ commit 01f1f6a). Never merged or pushed by the implementing agent.
 - More tests: worker 11, database stores/afterCommit/two-worker exactly-once on all 5 engines,
   app + commands 9. *(agent-reported)*
 
+- Public surface: `@strutvane/framework/queue` (src/entries/queue.ts, tsdown entry, package.json
+  export), `queueDriverContract` on `/testing`; README "Queues (RFC-0006)"; changeset
+  `.changeset/queues.md` (minor). RFC amendments committed in the hub (4e60a8a).
+- Real-process tests (test/commands/queue-signal.test.ts): `node strut queue:work --stop-when-empty`
+  on every OS; SIGTERM drains the running job (POSIX only, skipped on Windows).
+
 ## Next (in order)
-1. Exports: `/queue` subpath (tsdown entry, package.json exports, smoke-dist), `queueDriverContract`
-   from `/testing`, queue types from the root entry; README section; `.env.example`/skeleton note.
-2. A real-process test: `node strut queue:work` gets SIGTERM mid-job and drains it.
-3. Batches (`job_batches` + `job_batch_jobs`, CAS bookkeeping) and the transactional outbox +
-   relay (RFC §7.1, §8).
-4. Per-process worker log file once ADR-0022 logging is on main; class jobs (RFC §1.2).
-5. RFC amendments: payload cap 64 KiB (portable TEXT), not 256 KiB; dispatch API is
-   `Job.dispatch(data, options)` / `Job.with(data).delay().dispatch()` (no thenable);
-   `maxExceptions` deferred; worker memory default 512 MB (Laravel's 128 is below a booted Node
-   app); `QueueDriversToken`/`registerQueueDriver` instead of `QueueManager.extend`; the DB lock
-   store reads the owner back (MySQL reports found rows, not changed rows).
-6. Changeset (minor, pre `next`), full gate 3×.
+1. Batches (`job_batches` + `job_batch_jobs`, CAS bookkeeping, then/catch/finally jobs) and the
+   transactional outbox + relay (RFC §7.1, §8), with engine tests.
+2. `queue:prune-batches`, `queue:prune-outbox`; skeleton: `QUEUE_CONNECTION` in `.env.example`
+   and the queue migration in new apps (skeleton repo, separate change).
+3. Per-process worker log file once ADR-0022 logging is on main; class jobs (RFC §1.2).
+4. Full gate (`npm run ci`) 3×, then a security review of src/queue (security-reviewer agent).
 
 ## How to verify
 ```bash
