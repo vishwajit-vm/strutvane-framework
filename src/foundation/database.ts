@@ -17,6 +17,10 @@
  * in the config tree (or a config cache). With `APP_ENV=testing` and `database.test_database` set,
  * that database is used, so `npm test` never touches local data.
  *
+ * **Extra connections** (`database.connections`, CONSISTENCY #132) are bound the same way, through
+ * the `DatabaseManager` (`database-connections.ts`): each is checked and opened on its first use,
+ * by name, and closed by `shutdown()`.
+ *
  * @module
  */
 import { existsSync, readFileSync } from 'node:fs'

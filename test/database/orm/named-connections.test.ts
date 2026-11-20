@@ -11,8 +11,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest'
-import { EnvValidationError } from '../../src/core/index.ts'
-import { databaseEngineOf, databaseSettings } from '../../src/database/config.ts'
+import { EnvValidationError } from '../../../src/core/index.ts'
+import { databaseEngineOf, databaseSettings } from '../../../src/database/config.ts'
 import {
   Connection,
   configureOrm,
@@ -30,18 +30,18 @@ import {
   sql,
   sqliteDriver,
   useConnection,
-} from '../../src/database/index.ts'
-import { ModelBase } from '../../src/database/orm/model.ts'
-import { BootError } from '../../src/foundation/boot-error.ts'
+} from '../../../src/database/index.ts'
+import { ModelBase } from '../../../src/database/orm/model.ts'
+import { BootError } from '../../../src/foundation/boot-error.ts'
 import {
   connectionEnvPrefix,
   DatabaseManager,
   declaredConnections,
   namedConnectionSettings,
   readConnectionsFromConfig,
-} from '../../src/foundation/database-connections.ts'
-import { snapshot } from './orm/fixtures/schema.ts'
-import { createTables } from './orm/support/ddl.ts'
+} from '../../../src/foundation/database-connections.ts'
+import { snapshot } from './fixtures/schema.ts'
+import { createTables } from './support/ddl.ts'
 
 const ROOT = mkdtempSync(join(tmpdir(), 'sv-named-conn-'))
 afterAll(() => rmSync(ROOT, { recursive: true, force: true, maxRetries: 5 }))

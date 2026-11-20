@@ -1,3 +1,40 @@
+# v2/env-connections: several databases at once (CONSISTENCY #132, RFC-0007)
+
+Branch `v2/env-connections`, from `v2/gaps` b0de9ca (which is being verified for release). Not
+pushed by the agent; the coordinator pushes. Spec: hub `spikes/CONSISTENCY-2026-11-15.md` #132,
+hub `docs/rfcs/0007-database-connections.md` (Draft).
+
+## Done
+- `config/database.ts` → `connections`: each extra connection reads `DB_<NAME>_*` (config wins over
+  `.env`; `password`/`url` only from `.env`, refused in config as `secret_in_config`;
+  `DB_<NAME>_TEST_DATABASE` under `APP_ENV=testing`). `databaseSettings(env, root, { prefix,
+  driverKey })` names the prefixed keys in every problem.
+- `DatabaseManager` / `DatabaseManagerToken` (`src/foundation/database-connections.ts`): lazy,
+  checked on first use (never at boot), one connection per name, closed on shutdown; not cached
+  when configuration fails. Errors: `unknown_connection`, `invalid_connection_name`,
+  `database_not_configured`, `invalid_database_config`, `secret_in_config`, `connection_closed`
+  (BootError, hint names the key).
+- ORM: `db.connection(name?)`, `connectionNamed`, `runWithConnections`,
+  `useConnection(connection, name)`, `forgetConnection`; model option `connection`; `Model.on(name)`
+  (cached subclass, same name, `instanceof` kept); `ModelClass` types `on()` and `connection()`.
+- CLI: `--database=<name>` on migrate, migrate:status, rollback, reset, refresh, fresh, db:seed
+  (reads `config/database.ts` like the app; a seeded model declaring the connection finds it).
+- Tests: `test/database/orm/named-connections.test.ts` (unit + SQLite/PGlite side by side),
+  `test/database/orm/app-connections.test.ts` (app + CLI; extra connection on SQLite, MySQL 8.4,
+  MariaDB 11.4, PostgreSQL 18; boot with every optional key empty), type tests in
+  `test/database/orm/types.test.ts`. README, changeset (minor).
+
+## Next
+- Coordinator: re-run the gate 3x (`npm ci`, `npm run ci`), review, push. Merge after `v2/gaps`.
+- Hub: RFC-0007 to Accepted; integration map §3 row for `DatabaseManagerToken`.
+- Not in scope (RFC-0007 open questions): per-connection migration folders (`--path`), a
+  migration's own connection, read replicas.
+
+## How to verify
+`STRUTVANE_TEST_DOCKER=require npx vitest run test/database/orm/named-connections.test.ts
+test/database/orm/app-connections.test.ts` (real servers in uniquely named containers, removed
+after), then the full gate.
+
 # v2/gaps: what add-ons and the docs agent hit in 0.2.0-next.1
 
 Branch `v2/gaps` (from `main` 8b896f0, `main` e395315 merged in). Not pushed by the agent; the

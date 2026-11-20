@@ -8,6 +8,8 @@
 import { describe, expectTypeOf, test } from 'vitest'
 import {
   type BelongsTo,
+  type Connection,
+  db,
   type HasMany,
   type JsonOf,
   Model,
@@ -141,6 +143,26 @@ async function serialization(): Promise<void> {
   postJson.author?.password
 }
 
+/** Named connections (CONSISTENCY #132): the bound class keeps the model's own type. */
+async function namedConnections(): Promise<void> {
+  const Archived = Post.on('archive')
+  expectTypeOf(Archived).toEqualTypeOf<typeof Post>()
+  expectTypeOf(await Post.on('archive').where('status', 'published').get()).toEqualTypeOf<Post[]>()
+  expectTypeOf(Post.connection()).toEqualTypeOf<Connection>()
+  expectTypeOf(db.connection('reports')).toEqualTypeOf<Connection>()
+  expectTypeOf(db.connection()).toEqualTypeOf<Connection>()
+  class OnReports extends Model('tags', { fillable: ['name'], connection: 'reports' }) {}
+  expectTypeOf(await OnReports.create({ name: 'x' })).toEqualTypeOf<OnReports>()
+  // @ts-expect-error: a connection is named by a string
+  Post.on(1)
+  // @ts-expect-error: a connection is named by a string
+  db.connection(42)
+  // @ts-expect-error: the connection option is a name, not a Connection object
+  Model('tags', { connection: { driver: 'pgsql' } })
+  // @ts-expect-error: the bound class still checks columns
+  Post.on('archive').where('titel', 'x')
+}
+
 describe('types', () => {
   test('the checks in this file compiled (tsc runs before vitest in npm test)', () => {
     expectTypeOf(columnsAndValues).toBeFunction()
@@ -149,5 +171,6 @@ describe('types', () => {
     expectTypeOf(resultsAndCasts).toBeFunction()
     expectTypeOf(relations).toBeFunction()
     expectTypeOf(serialization).toBeFunction()
+    expectTypeOf(namedConnections).toBeFunction()
   })
 })
