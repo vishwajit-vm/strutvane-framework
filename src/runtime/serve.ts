@@ -24,7 +24,7 @@
  * @module
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { type AddressInfo, createServer as createNetServer } from 'node:net'
+import { type AddressInfo, createServer as createNetServer, isIPv6 } from 'node:net'
 import {
   type ForwardedRequest,
   forwardedClient,
@@ -310,6 +310,11 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
   const proxies = resolveTrustProxy(options.trustProxy)
   const publicUrl = parsePublicUrl(options.publicUrl)
   const bindHost = hostname.includes(':') ? `[${hostname}]` : hostname
+  // Request URLs name the address the server listens on. A wildcard bind (`0.0.0.0` in a
+  // container) is not an address anyone can reach, and the app's trusted-hosts check reads the
+  // URL's host: it would refuse every request as `untrusted_host` (acceptance DOCK-2). Such URLs
+  // use the loopback address instead; the client's `Host` header is still checked as before.
+  const originHost = requestUrlHost(hostname, bindHost)
   const inFlight = new InFlight(options.timer ?? realTimer)
   const server = createServer((req, res) => {
     inFlight.add(res)
@@ -321,11 +326,11 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
     // A write racing a disconnect errors the response; treat it as the disconnect it is.
     res.on('error', () => controller.abort())
     const peer = req.socket.remoteAddress
-    const bindOrigin = `http://${bindHost}:${String(req.socket.localPort)}`
+    const bindOrigin = `http://${originHost}:${String(req.socket.localPort)}`
     const client = forwardedClient(peer, nodeView(req, bindOrigin), proxies)
     const origin = publicUrl
       ? publicUrl.origin
-      : `${client.secure ? 'https' : 'http'}://${bindHost}:${String(req.socket.localPort)}`
+      : `${client.secure ? 'https' : 'http'}://${originHost}:${String(req.socket.localPort)}`
     const bindings: ServeBindings = {
       incoming: req,
       clientAddress: client.ip,
@@ -355,6 +360,21 @@ export function serve(handler: FetchHandler, options: ServeOptions): Promise<Run
   return Promise.resolve()
     .then(() => options.prepare?.(server))
     .then(() => listen(server, options.port, hostname, bindHost, options.onError, inFlight))
+}
+
+/**
+ * The host request URLs carry when no `publicUrl` is set: the bind address, except that a
+ * wildcard (`0.0.0.0`, `::`) becomes the loopback address of its family.
+ *
+ * @example
+ * requestUrlHost('0.0.0.0', '0.0.0.0') // '127.0.0.1'
+ * requestUrlHost('::', '[::]')         // '[::1]'
+ * requestUrlHost('10.0.0.5', '10.0.0.5') // '10.0.0.5'
+ */
+export function requestUrlHost(hostname: string, bindHost: string): string {
+  if (hostname === '0.0.0.0') return '127.0.0.1'
+  if (isIPv6(hostname) && /^[0:]+$/.test(hostname)) return '[::1]'
+  return bindHost
 }
 
 /** The Node request as {@link forwardedClient} reads it (no `Request` is built for this). */

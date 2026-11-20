@@ -99,6 +99,7 @@ import {
 } from '../http/app/route-middleware.ts'
 import { type RouteSecurityProfile, securityProfile } from '../http/app/security-profile.ts'
 import { RateLimitStoreToken, resolveLimiter } from '../http/app/throttle.ts'
+import { type WebUiAnswer, type WebUiOptions, webUiResponder } from '../http/app/web-ui.ts'
 import { matchesPathPattern } from '../http/csrf.ts'
 import { IdempotencyStoreToken, MemoryIdempotencyStore } from '../http/idempotency.ts'
 import { forwardedClient } from '../http/proxy.ts'
@@ -109,6 +110,7 @@ import {
   SessionCookieToken,
   sessionCookieName,
 } from '../http/session-cookie.ts'
+import { UI_FALLTHROUGH_HEADER } from '../http/ui-paths.ts'
 import { appLoggingConfig, asLoggingBootError, createAppLogManager } from '../logging/app.ts'
 import { type LoggingConfigResult, resolveLoggingConfig } from '../logging/config.ts'
 import { runWithLogContext } from '../logging/context.ts'
@@ -362,6 +364,8 @@ interface BootedState {
   readonly stages: readonly KernelStage[]
   readonly logger: Logger
   readonly apiPrefix: string
+  /** The web UI for unmatched `GET`/`HEAD` requests ({@link Application.serveUi}). */
+  readonly ui: ((request: Request) => Promise<WebUiAnswer>) | undefined
 }
 
 /** Per-request bookkeeping the kernel needs after the response is built. */
@@ -411,6 +415,7 @@ export class Application implements CoreApplication<object> {
   #booting: Promise<void> | undefined
   #registering = false
   #forceDebug = false
+  #webUi: WebUiOptions | undefined
   /** The ORM's tenant column once boot read the tenancy switch; `undefined` = single-tenant. */
   #tenantColumn: string | undefined
   /** The merged environment (process env, `.env`, the `env` option), read once at boot. */
@@ -739,6 +744,27 @@ export class Application implements CoreApplication<object> {
   }
 
   /**
+   * Serve a web UI next to the API, on the same port: for `GET`/`HEAD` requests that no route and
+   * no request hook answered, outside the API base path and the framework's own paths. Files come
+   * from a built folder (`node strut start` passes `dist/web`), or the request falls through to the
+   * Node adapter's fallback (`node strut dev` passes Vite). Routes always win; an unknown API path
+   * stays a problem+json 404. Call it before the app boots.
+   *
+   * @example
+   * app.serveUi({ files: join(app.basePath, 'dist', 'web') })
+   */
+  serveUi(options: WebUiOptions): this {
+    if (this.#booting !== undefined)
+      throw new BootError(
+        'ui_after_boot',
+        'serveUi() was called after the app started booting.',
+        'Call it before the first request (node strut start and node strut dev do this for you).',
+      )
+    this.#webUi = options
+    return this
+  }
+
+  /**
    * Boot once: config, guards, providers, routes and every start-up check. Safe to call many
    * times (the first call's outcome is shared).
    *
@@ -935,6 +961,7 @@ export class Application implements CoreApplication<object> {
       stages,
       logger,
       apiPrefix,
+      ui: this.#webUi === undefined ? undefined : webUiResponder(this.#webUi, apiPrefix),
     }
     warnUnmatchedCsrfExceptions(security, routes, logger)
     const routeUse = routeCacheUse(
@@ -1351,6 +1378,9 @@ export class Application implements CoreApplication<object> {
                 status: 405,
                 headers: { Allow: allowed.join(', ') },
               })
+            const ui = await booted.ui?.(ctx.request)
+            if (ui instanceof Response) return ui
+            if (ui === 'fallthrough') return this.#uiFallthrough(ctx, run, booted)
             throw new NotFoundError()
           }
           const routed = ctx.forRoute(
@@ -1364,6 +1394,18 @@ export class Application implements CoreApplication<object> {
           )
         }),
     )
+  }
+
+  /**
+   * The app's own 404 problem, marked for the Node adapter to hand to its fallback (Vite in
+   * `node strut dev`) instead; it is sent as is when the fallback passes. The marker header is
+   * stripped by the adapter, and a client can't forge it (it is a response header).
+   */
+  async #uiFallthrough(ctx: Ctx, run: RequestRun, booted: BootedState): Promise<Response> {
+    const rendered = await booted.renderer.render(new NotFoundError(), this.#errorInfo(ctx, run))
+    const response = new Response(rendered.body, rendered)
+    response.headers.set(UI_FALLTHROUGH_HEADER, '1')
+    return response
   }
 
   /**

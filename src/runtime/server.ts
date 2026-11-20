@@ -4,6 +4,7 @@
  *
  * Two kinds of project: an application (`bootstrap/app.ts`, {@link startApplication}) and a
  * `strutvane.config.ts` project ({@link startServer}); {@link startProject} picks the right one.
+ * Both serve the UI the same way (built files in `start`, the project's Vite in `dev`).
  *
  * One port serves everything: the API, and the web UI next to it. `node strut start` serves the built UI
  * (`dist/web`, from `node strut build`); `node strut dev` mounts the project's own Vite in middleware mode
@@ -15,10 +16,13 @@
 
 import { existsSync } from 'node:fs'
 import type { Server } from 'node:http'
+import { isIP } from 'node:net'
 import { join } from 'node:path'
+import type { Logger } from '../contracts/logger.ts'
 import { LoggerToken } from '../core/index.ts'
 import { detectPackageManager, installCommand } from '../core/package-manager.ts'
 import type { Application } from '../foundation/application.ts'
+import { BootError } from '../foundation/boot-error.ts'
 import { hasBootstrapApp } from '../foundation/load.ts'
 import type { TrustProxy } from '../http/proxy.ts'
 import { hasBuiltUi } from '../http/static-files.ts'
@@ -30,7 +34,7 @@ import {
   type ViteDevServerLike,
 } from './dev-ui.ts'
 import { loadProject } from './project.ts'
-import { type RunningServer, serve } from './serve.ts'
+import { type RunningServer, type ServeOptions, serve } from './serve.ts'
 
 /** Options for {@link startServer}. */
 export interface StartServerOptions {
@@ -85,14 +89,7 @@ export async function startServer(options: StartServerOptions): Promise<StartedS
     ...(viteReady ? { uiFallthrough: true } : {}),
   })
   const logger = project.app.make(LoggerToken)
-  if (devVite?.status === 'no-config')
-    logger.info('No vite.config.* in the project: serving the API only')
-  else if (devVite?.status === 'not-installed')
-    logger.info('Found a Vite config but "vite" is not installed: serving the API only', {
-      configFile: devVite.configFile,
-      // The project's own package manager, never a hard-coded one.
-      hint: `install the project dependencies (${installCommand(detectPackageManager(options.root))})`,
-    })
+  reportDevVite(devVite, options.root, logger)
   let dev: ViteDevServerLike | undefined
   const appConfig = loaded.config['app'] as
     | { port?: number; publicUrl?: string; trustProxy?: TrustProxy }
@@ -106,20 +103,9 @@ export async function startServer(options: StartServerOptions): Promise<StartedS
       ...(appConfig?.publicUrl ? { publicUrl: appConfig.publicUrl } : {}),
       ...(appConfig?.trustProxy !== undefined ? { trustProxy: appConfig.trustProxy } : {}),
       ...(viteReady
-        ? {
-            prepare: async (httpServer: Server) => {
-              dev = await startDevUi({
-                root: options.root,
-                vite: viteReady.vite,
-                configFile: viteReady.configFile,
-                server: httpServer,
-              })
-            },
-            fallback: (req, res, next) => {
-              if (dev) dev.middlewares(req, res, next)
-              else next()
-            },
-          }
+        ? viteHooks(options.root, viteReady, (started) => {
+            dev = started
+          })
         : {}),
       onError: (error) =>
         logger.error('Unhandled server error', {
@@ -157,12 +143,26 @@ export interface StartApplicationOptions {
   readonly root: string
   /** Default: `config('app.port')`, else 3000. */
   readonly port?: number
-  /** Default `127.0.0.1`. */
+  /**
+   * The interface to bind. Default: `config('app.host')`, else `APP_HOST` (the generated Docker
+   * compose file sets `APP_HOST=0.0.0.0` inside the container), else `127.0.0.1`.
+   */
   readonly hostname?: string
   /** Load the app (default: import `bootstrap/app.ts`); tests pass an app they built. */
   readonly load?: (root: string) => Promise<Application>
   /** Boot even with APP_DEBUG=true in production (`--force-debug`). Default `false`. */
   readonly forceDebug?: boolean
+  /**
+   * Serve the built UI from this folder next to the API. Default: `<root>/dist/web` when it holds
+   * an `index.html` (the output of `node strut build`); `false` serves the API only.
+   */
+  readonly web?: string | false
+  /**
+   * Serve the UI through the project's own Vite (`node strut dev`), on the same port, for the
+   * requests the app does not answer. Without a `vite.config.*` or an installed `vite`, the API is
+   * served alone and an info line says why. Default `false`.
+   */
+  readonly vite?: boolean
 }
 
 /** A served application. */
@@ -191,13 +191,25 @@ export async function startApplication(
     (async (root: string) => (await import('../foundation/load.ts')).loadApplication(root))
   const app = await load(options.root)
   if (options.forceDebug === true) app.forceDebug()
+  const builtUi = join(options.root, 'dist', 'web')
+  const web =
+    options.web === false || options.vite === true
+      ? undefined
+      : (options.web ?? ((await hasBuiltUi(builtUi)) ? builtUi : undefined))
+  const devVite = options.vite === true ? await resolveProjectVite(options.root) : undefined
+  const viteReady = devVite?.status === 'ready' ? devVite : undefined
+  if (viteReady !== undefined) app.serveUi({ fallthrough: true })
+  else if (web !== undefined) app.serveUi({ files: web })
   await app.boot()
   const logger = app.make(LoggerToken)
+  reportDevVite(devVite, options.root, logger)
   const configured = app.configRepository.has('app.port')
     ? Number(app.configRepository.get('app.port'))
     : undefined
+  let dev: ViteDevServerLike | undefined
   let server: RunningServer
   try {
+    const hostname = options.hostname ?? configuredHost(app)
     server = await serve(
       (request, bindings) =>
         app.handle(request, {
@@ -206,7 +218,12 @@ export async function startApplication(
         }),
       {
         port: options.port ?? (Number.isInteger(configured) ? (configured as number) : 3000),
-        ...(options.hostname ? { hostname: options.hostname } : {}),
+        ...(hostname === undefined ? {} : { hostname }),
+        ...(viteReady
+          ? viteHooks(options.root, viteReady, (started) => {
+              dev = started
+            })
+          : {}),
         onError: (error) =>
           logger.error('Unhandled server error', {
             error: error instanceof Error ? error.message : String(error),
@@ -214,22 +231,98 @@ export async function startApplication(
       },
     )
   } catch (error) {
+    await dev?.close().catch(() => undefined)
     await app.shutdown()
     throw error
   }
-  logger.info('Server started', { url: server.url, env: app.environment })
+  logger.info('Server started', {
+    url: server.url,
+    env: app.environment,
+    ...(viteReady ? { ui: 'vite', vite: viteReady.entry } : web ? { ui: web } : {}),
+  })
   let stopping: Promise<void> | undefined
   return {
     app,
     server,
     stop: () => {
       stopping ??= (async () => {
+        // Vite first: it closes its watcher and the HMR sockets the HTTP server no longer tracks.
+        await dev?.close().catch(() => undefined)
         await server.close()
         await app.shutdown()
       })()
       return stopping
     },
   }
+}
+
+/**
+ * The adapter hooks that mount the project's Vite on the app's own server: `prepare` starts it in
+ * middleware mode (HMR on the same port) and `fallback` hands it the UI requests the app marked.
+ */
+function viteHooks(
+  root: string,
+  vite: Extract<ProjectVite, { status: 'ready' }>,
+  started: (dev: ViteDevServerLike) => void,
+): Pick<ServeOptions, 'prepare' | 'fallback'> {
+  let dev: ViteDevServerLike | undefined
+  return {
+    prepare: async (httpServer: Server) => {
+      dev = await startDevUi({
+        root,
+        vite: vite.vite,
+        configFile: vite.configFile,
+        server: httpServer,
+      })
+      started(dev)
+    },
+    fallback: (req, res, next) => {
+      if (dev) dev.middlewares(req, res, next)
+      else next()
+    },
+  }
+}
+
+/** Say why `node strut dev` serves the API alone (no Vite config, or Vite not installed). */
+function reportDevVite(devVite: ProjectVite | undefined, root: string, logger: Logger): void {
+  if (devVite?.status === 'no-config')
+    logger.info('No vite.config.* in the project: serving the API only')
+  else if (devVite?.status === 'not-installed')
+    logger.info('Found a Vite config but "vite" is not installed: serving the API only', {
+      configFile: devVite.configFile,
+      hint: `install the project dependencies (${installCommand(detectPackageManager(root))})`,
+    })
+}
+
+/** A plain host name (`localhost`, `app.internal`): letters, digits, dots and hyphens. */
+const BIND_NAME =
+  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i
+
+/**
+ * The interface to bind when no `--host` was given: `config('app.host')`, else the `APP_HOST`
+ * environment variable, else `undefined` (the adapter's `127.0.0.1`). Inside a container the
+ * server must listen on every interface (`0.0.0.0`) or the published port reaches nothing; the
+ * trusted-hosts check still refuses any `Host` that is not loopback, the `APP_URL` host or a
+ * configured trusted host, so a wider bind never widens which names the app answers to.
+ *
+ * @example
+ * configuredHost(app) // '0.0.0.0' with APP_HOST=0.0.0.0
+ */
+export function configuredHost(
+  app: Pick<Application, 'configRepository' | 'env'>,
+): string | undefined {
+  const fromConfig = app.configRepository.has('app.host')
+    ? app.configRepository.get('app.host')
+    : undefined
+  const raw = typeof fromConfig === 'string' ? fromConfig : app.env('APP_HOST')
+  const value = raw?.trim() ?? ''
+  if (value === '') return undefined
+  if (isIP(value) !== 0 || BIND_NAME.test(value)) return value
+  throw new BootError(
+    'invalid_app_host',
+    `APP_HOST (or config app.host) is "${value.slice(0, 64)}", which is not an address to listen on.`,
+    'Use an IP address such as 127.0.0.1 (this machine only) or 0.0.0.0 (every interface, for containers), or a host name such as localhost.',
+  )
 }
 
 /**
@@ -242,14 +335,27 @@ export async function startApplication(
 export function startProject(
   options: StartServerOptions,
 ): Promise<StartedServer | StartedApplication> {
-  if (hasBootstrapApp(options.root) && !existsSync(join(options.root, 'strutvane.config.ts')))
+  if (isApplicationProject(options.root))
     return startApplication({
       root: options.root,
       ...(options.port === undefined ? {} : { port: options.port }),
       ...(options.hostname === undefined ? {} : { hostname: options.hostname }),
       ...(options.forceDebug === true ? { forceDebug: true } : {}),
+      ...(options.web === undefined ? {} : { web: options.web }),
+      ...(options.vite === true ? { vite: true } : {}),
     })
   return startServer(options)
+}
+
+/**
+ * Is the project at `root` an application (`bootstrap/app.ts`, no `strutvane.config.ts`)? One
+ * rule for `start`, `dev` and `build`, so they never disagree about which loader to use.
+ *
+ * @example
+ * isApplicationProject(process.cwd()) // true for an app made by create-strutvane 0.2
+ */
+export function isApplicationProject(root: string): boolean {
+  return hasBootstrapApp(root) && !existsSync(join(root, 'strutvane.config.ts'))
 }
 
 /** The environment a started server runs in (for the "Listening on …" line). */

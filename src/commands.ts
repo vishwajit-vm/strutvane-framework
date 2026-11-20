@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { createUuidV7Generator, ValidationError } from './core/index.ts'
 import { connectDatabase } from './database/connect.ts'
 import { assertTenantId } from './database/types.ts'
+import type { Application } from './foundation/application.ts'
 import { answersResolver } from './migrations/files.ts'
 import type { RenameDecision } from './migrations/planner.ts'
 import { createModelRegistry } from './model/registry.ts'
@@ -40,7 +41,14 @@ import {
 } from './runtime/schema-commands.ts'
 import { isSeeder, runSeeder } from './runtime/seeders.ts'
 import { assertCanListen } from './runtime/serve.ts'
-import { exitCodeForStop, startedEnv, startProject, stopOnSignals } from './runtime/server.ts'
+import {
+  configuredHost,
+  exitCodeForStop,
+  isApplicationProject,
+  startedEnv,
+  startProject,
+  stopOnSignals,
+} from './runtime/server.ts'
 
 /** The parts of the CLI's command context these commands use. */
 export interface CommandContextLike {
@@ -376,20 +384,16 @@ const devCommand: ContributedCommand = {
   flags: serverFlags,
   async run(ctx) {
     const root = ctx.requireProject().root
-    // Load once in this process: an invalid .env or config fails here as the CLI's config error,
-    // and a taken port is reported before the watched child starts (a child that cannot listen
-    // would leave Node's watch mode waiting for file changes instead of exiting).
-    const project = await loadFor(ctx)
-    const appConfig = project.config['app'] as { port?: unknown } | undefined
+    // Load once in this process: an invalid .env or config (or, for an application, a broken
+    // route or provider) fails here, and a taken port is reported before the watched child
+    // starts (a child that cannot listen would leave Node's watch mode waiting for file changes
+    // instead of exiting).
+    const target = await devTarget(ctx, root)
     const flagPort = str(ctx.flags['port'])
-    const port = flagPort
-      ? Number(flagPort)
-      : typeof appConfig?.port === 'number'
-        ? appConfig.port
-        : 3000
-    await assertCanListen(port, str(ctx.flags['host']) ?? '127.0.0.1')
+    const port = flagPort ? Number(flagPort) : target.port
+    await assertCanListen(port, str(ctx.flags['host']) ?? target.host ?? '127.0.0.1')
     const main = fileURLToPath(new URL('./serve-main.mjs', import.meta.url))
-    const watch = ['app', 'config', 'strutvane.config.ts', '.env']
+    const watch = (isApplicationProject(root) ? APPLICATION_WATCH : PROJECT_WATCH)
       .map((p) => join(root, p))
       .filter((p) => existsSync(p))
       .map((p) => `--watch-path=${p}`)
@@ -401,7 +405,9 @@ const devCommand: ContributedCommand = {
       str(ctx.flags['host']) ?? '',
       ctx.flags['force-debug'] === true ? '--force-debug' : '',
     ]
-    ctx.out.info('Watching app/, config/ and .env for changes.')
+    ctx.out.info(
+      `Watching ${(isApplicationProject(root) ? APPLICATION_WATCH : PROJECT_WATCH).join(', ')} for changes.`,
+    )
     // The child re-reads nothing on its own: it gets the CLI's APP_ENV explicitly.
     const appEnv = commandAppEnv(ctx)
     const env = appEnv !== undefined ? { ...process.env, APP_ENV: appEnv } : process.env
@@ -430,20 +436,96 @@ export async function projectViteBin(root: string): Promise<string | undefined> 
 
 const buildCommand: ContributedCommand = {
   name: 'build',
-  description: 'Check that the app boots (models, config, routes) and build the web UI with Vite',
+  description:
+    'Check that the app boots (config, providers, routes) and build the web UI with Vite',
   async run(ctx) {
     const root = ctx.requireProject().root
-    const project = await loadFor(ctx)
-    createModelRegistry(project.models.map((m) => m.definition))
-    ctx.out.success(
-      `Project loads: ${project.models.length} model(s), ${project.routes.length} route(s)`,
-    )
+    if (isApplicationProject(root)) {
+      const app = await bootApplication(root)
+      try {
+        ctx.out.success(`App boots: ${app.routes.length} route(s)`)
+      } finally {
+        await app.shutdown()
+      }
+    } else {
+      const project = await loadFor(ctx)
+      createModelRegistry(project.models.map((m) => m.definition))
+      ctx.out.success(
+        `Project loads: ${project.models.length} model(s), ${project.routes.length} route(s)`,
+      )
+    }
     const vite = await projectViteBin(root)
     if (vite === undefined) return undefined
     const code = await runChild([vite, 'build'], { cwd: root })
     if (code === 0) ctx.out.success('Web UI built')
     return code === 0 ? undefined : { exitCode: code }
   },
+}
+
+/** What `node strut dev` watches in an application (`bootstrap/app.ts`); Vite watches the UI. */
+export const APPLICATION_WATCH: readonly string[] = Object.freeze([
+  'app',
+  'bootstrap',
+  'config',
+  'routes',
+  '.strutvane/resources.json',
+  '.env',
+])
+
+/** What `node strut dev` watches in a `strutvane.config.ts` project. */
+const PROJECT_WATCH: readonly string[] = Object.freeze([
+  'app',
+  'config',
+  'strutvane.config.ts',
+  '.env',
+])
+
+/**
+ * Import `bootstrap/app.ts` and boot it: every boot check runs (config, env, providers, every
+ * route), so a mistake fails the command with the boot error's hint. The caller shuts it down.
+ * The loader is imported on first use: `node strut` commands that never boot don't pay for it.
+ */
+async function bootApplication(root: string): Promise<Application> {
+  const { loadApplication } = await import('./foundation/load.ts')
+  const app = await loadApplication(root)
+  try {
+    await app.boot()
+  } catch (error) {
+    await app.shutdown().catch(() => undefined)
+    throw error
+  }
+  return app
+}
+
+/**
+ * The port and interface `node strut dev` will use when no flag says otherwise, read the same way
+ * the server reads them, after one load of the project in this process (so a broken project fails
+ * here, before the watched child starts).
+ */
+async function devTarget(
+  ctx: CommandContextLike,
+  root: string,
+): Promise<{ readonly port: number; readonly host: string | undefined }> {
+  if (!isApplicationProject(root)) {
+    const project = await loadFor(ctx)
+    const appConfig = project.config['app'] as { port?: unknown } | undefined
+    return {
+      port: typeof appConfig?.port === 'number' ? appConfig.port : 3000,
+      host: undefined,
+    }
+  }
+  const app = await bootApplication(root)
+  try {
+    const configured = app.configRepository.has('app.port')
+      ? Number(app.configRepository.get('app.port'))
+      : Number.NaN
+    return {
+      port: Number.isInteger(configured) ? configured : 3000,
+      host: configuredHost(app),
+    }
+  } finally {
+    await app.shutdown()
+  }
 }
 
 /**
