@@ -6,6 +6,7 @@
 import type { AnyCommand } from '../framework/command.ts'
 import { aboutCommand } from './about.ts'
 import { APP_COMMANDS } from './app/index.ts'
+import { designUseCommand } from './design.ts'
 import { doctorCommand } from './doctor.ts'
 import { envCheckCommand, keyGenerateCommand } from './env.ts'
 import { frameworkPlaceholders } from './framework.ts'
@@ -27,6 +28,7 @@ import { upgradeCommand } from './upgrade.ts'
 export const BUILTIN_COMMANDS: readonly AnyCommand[] = [
   aboutCommand,
   doctorCommand,
+  designUseCommand,
   envCheckCommand,
   keyGenerateCommand,
   makeModelCommand,

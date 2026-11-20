@@ -35,6 +35,9 @@ import { stackFrames } from './code-frame.ts'
 import { debugMember, renderDebugPage } from './debug-page.ts'
 import { buildReport } from './error-report.ts'
 
+/** 5xx codes the app answers on purpose; never reported as errors. */
+const EXPECTED_SERVER_STATES: ReadonlySet<string> = new Set(['maintenance_mode'])
+
 /**
  * A class of errors, for `dontReport`, `report(Class, …)` and `render(Class, …)`.
  *
@@ -258,6 +261,9 @@ export class ExceptionHandler implements ExceptionRenderer {
   shouldReport(error: unknown): boolean {
     if (error instanceof ResponseError) return false
     if (this.#settings.dontReport.some((type) => error instanceof type)) return false
+    // A 503 the app answers on purpose (`node strut down`) is a state, not a fault: logging each
+    // one as an error with a stack buried real errors during every deploy (acceptance FW-9).
+    if (error instanceof StrutvaneError && EXPECTED_SERVER_STATES.has(error.code)) return false
     return this.#status(error) >= 500
   }
 

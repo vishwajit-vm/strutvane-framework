@@ -25,6 +25,7 @@ import {
   declaredRange,
   dependencyNames,
   detectPackageManager,
+  isApplicationRoot,
   packageManagerCommand,
   readInstalledPackage,
 } from '../project/project.ts'
@@ -33,6 +34,8 @@ import { RegistryCompiler } from '../registry/compiler.ts'
 import { verifyContentHash } from '../registry/emit.ts'
 import { CLI_PACKAGE } from '../version.ts'
 import { isStrutvanePackage } from './about.ts'
+import { appDoctorChecks } from './app/inspect.ts'
+import { DEFAULT_APP_DEPS } from './app/support.ts'
 
 /** The outcome of one check. */
 export interface DoctorCheck {
@@ -359,7 +362,7 @@ function checkPackageMigrations(project: Project, version: string): DoctorCheck[
 
 export const doctorCommand: AnyCommand = defineCommand({
   name: 'doctor',
-  description: 'Diagnose Node.js, the project, env files, the registry and plugins',
+  description: 'Diagnose Node.js, the project, env files, the app (or the registry) and plugins',
   requiresProject: false,
   flags: {
     global: { type: 'boolean', description: 'Only check the environment (no project needed)' },
@@ -375,9 +378,21 @@ export const doctorCommand: AnyCommand = defineCommand({
         ...checkPackages(project),
         ...checkEnvFiles(project),
       )
-      checks.push(...checkRegistry(project), ...(await checkOwnedFiles(project)))
+      // An application (bootstrap/app.ts) has no v1 registry and no strutvane.config.ts: its
+      // checks are the app's own boot, resources.json and its registered providers.
+      const application = isApplicationRoot(project.root)
+      checks.push(
+        ...(application
+          ? await appDoctorChecks(
+              project.root,
+              dependencyNames(project.packageJson),
+              DEFAULT_APP_DEPS,
+            )
+          : checkRegistry(project)),
+        ...(await checkOwnedFiles(project)),
+      )
       checks.push(...(await checkPlugins(project, ctx.version)))
-      checks.push(...checkPackageMigrations(project, ctx.version))
+      if (!application) checks.push(...checkPackageMigrations(project, ctx.version))
     }
     const { out } = ctx
     for (const check of checks) {

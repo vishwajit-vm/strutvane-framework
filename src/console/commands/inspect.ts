@@ -16,11 +16,14 @@ import { type AnyCommand, type CommandContext, defineCommand } from '../framewor
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
 import { names } from '../make/names.ts'
+import { isApplicationRoot } from '../project/project.ts'
 import { analyzeFile, type ResourceEntry } from '../registry/analyze.ts'
 import { RegistryCompiler } from '../registry/compiler.ts'
 import { discover } from '../registry/discover.ts'
 import { formatDiagnostic } from '../registry/errors.ts'
 import type { Registry } from '../registry/registry.ts'
+import { runAppModels, runAppPermissions } from './app/inspect.ts'
+import { DEFAULT_APP_DEPS, withBootedApp } from './app/support.ts'
 
 /** The default API prefix for automatic routes. */
 export const API_PREFIX = '/api/v1'
@@ -180,6 +183,9 @@ export const modelsCommand: AnyCommand = defineCommand({
   },
   examples: ['node strut models', 'node strut models --model Invoice --json'],
   run(ctx) {
+    const root = ctx.requireProject().root
+    // An application's models are its migrations' tables (.strutvane/resources.json).
+    if (isApplicationRoot(root)) return runAppModels(ctx, root, ctx.flags.model)
     const { registry } = compile(ctx)
     const models = registry.models
       .filter((m) => ctx.flags.model === undefined || m.name === ctx.flags.model)
@@ -226,7 +232,15 @@ export const permissionsCommand: AnyCommand = defineCommand({
     model: { type: 'string', valueName: '<Model>', description: "Only this model's permissions" },
   },
   examples: ['node strut permissions', 'node strut permissions --json'],
-  run(ctx) {
+  async run(ctx) {
+    const root = ctx.requireProject().root
+    // An application's permissions are its abilities and policies, read from the booted app.
+    if (isApplicationRoot(root))
+      return withBootedApp(
+        { cwd: ctx.cwd, project: ctx.project, flags: {} },
+        DEFAULT_APP_DEPS,
+        (app) => runAppPermissions(ctx, app, ctx.flags.model),
+      )
     const { registry } = compile(ctx)
     const prefix = ctx.flags.model === undefined ? undefined : `${names(ctx.flags.model).camel}.`
     const permissions = registry.permissions.filter(

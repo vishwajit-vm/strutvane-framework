@@ -11,11 +11,13 @@ import { type AnyCommand, defineCommand } from '../framework/command.ts'
 import { CliError } from '../framework/errors.ts'
 import { EXIT } from '../framework/exit-codes.ts'
 import type { Output } from '../framework/output.ts'
+import { isApplicationRoot } from '../project/project.ts'
 import type { CompileResult, WriteResult } from '../registry/compiler.ts'
 import { RegistryCompiler } from '../registry/compiler.ts'
 import { OUTPUT_FILE } from '../registry/conventions.ts'
 import { type Diagnostic, formatDiagnostic } from '../registry/errors.ts'
 import { watchProject } from '../registry/watch.ts'
+import { commandError } from './app/support.ts'
 
 /** Summary of a compile for `--json`. */
 export function compileSummary(result: CompileResult): {
@@ -75,6 +77,13 @@ export const registryBuildCommand: AnyCommand = defineCommand({
   examples: ['node strut registry:build', 'node strut registry:build --check'],
   run(ctx) {
     const root = ctx.requireProject().root
+    if (isApplicationRoot(root))
+      throw commandError(
+        'registry_not_used',
+        'registry:build compiles strutvane.config.ts projects; an application (bootstrap/app.ts) has no registry.',
+        'An application regenerates .strutvane/ (types, resources.json) with node strut migrate, or node strut sync without a database.',
+        EXIT.USAGE,
+      )
     const compiler = new RegistryCompiler(root)
     const check = ctx.flags.check === true || ctx.globals.dryRun
     const outcome = check ? { result: compiler.compile(), written: false } : compiler.write()

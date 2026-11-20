@@ -49,6 +49,17 @@ export function isAppRoot(dir: string): boolean {
 }
 
 /**
+ * `true` when `dir` holds an application and no v1 `strutvane.config.ts`: commands with a v1
+ * (registry) and a v2 (application) form pick the v2 one.
+ *
+ * @example
+ * isApplicationRoot('/srv/northwind') // true for an app made by create-strutvane 0.2
+ */
+export function isApplicationRoot(dir: string): boolean {
+  return isAppRoot(dir) && !existsSync(join(dir, PROJECT_MARKER))
+}
+
+/**
  * Find the project root for `start`: the nearest directory that contains `strutvane.config.ts`,
  * an application (`bootstrap/app.ts` or `strut.js`, so `.env`'s `APP_ENV` reaches the production
  * guard) or whose package.json declares `@strutvane/cli`, under the boundary rules of `boundary.ts`

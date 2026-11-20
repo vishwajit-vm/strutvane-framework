@@ -67,7 +67,7 @@ export function installSpec(name: string, cliVersion: string): string {
 }
 
 /** Run the package manager; a non-zero exit is a `command_failed` error. */
-async function runPackageManager(
+export async function runPackageManager(
   ctx: CommandContext,
   project: Project,
   action: 'add' | 'remove',

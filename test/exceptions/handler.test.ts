@@ -269,6 +269,9 @@ describe('ExceptionHandler', () => {
     const early = new Response(null, { status: 302, headers: { location: '/login' } })
     expect(await plain.render(new ResponseError(early), info())).toBe(early)
     expect(plain.shouldReport(new ResponseError(early))).toBe(false)
+    // FW-9: maintenance mode's 503 is expected; other 5xx still are reported.
+    expect(plain.shouldReport(new StrutvaneError('maintenance_mode', { status: 503 }))).toBe(false)
+    expect(plain.shouldReport(new StrutvaneError('cache_unavailable', { status: 503 }))).toBe(true)
     expect(logger.entries).toEqual([])
   })
 

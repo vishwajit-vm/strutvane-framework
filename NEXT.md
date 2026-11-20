@@ -1,3 +1,66 @@
+# v2/app-runtime: a generated app runs end to end (demo acceptance blockers)
+
+Branch `v2/app-runtime`, cut from `v2/gaps` b0de9ca, with `v2/logging` f3e28b8 **merged** (not
+rewritten). Not pushed by the agent; the coordinator pushes. Evidence: `strutvane-demo/ACCEPTANCE.md`.
+
+## Done (each with tests that fail on 0.2.0-next.1)
+- **FW-1 / FW-2** `dev` and `build` boot `bootstrap/app.ts` (no `strutvane.config.ts` needed); `dev`
+  mounts the project's Vite on the app port. `test/runtime/app-runtime.test.ts`.
+- **FW-3** `start` serves `dist/web` (static + SPA fallback, caching, page CSP) via the new
+  `Application.serveUi()`; routes and hooks win; API paths stay problem+json. Same file.
+- **FW-6** `GET /.well-known/strutvane.json` from the application (`src/http/app/manifest.ts`):
+  resources = `ResourceController` routes under the API base; fields from `.strutvane/resources.json`;
+  per-actor capabilities from the API's own policies; nothing for an actor who may do nothing.
+  `test/app/manifest.test.ts`.
+- **FW-8** logs to `storage/logs`: merged `v2/logging` (its own NEXT section below still applies:
+  its gate never had a green run before the merge).
+- **FW-9** maintenance 503 not reported as an error. `test/exceptions/handler.test.ts`.
+- **FW-11** `doctor` (app boots, resources.json, unregistered add-on providers = AUTH-2 in v2 terms),
+  `models`, `permissions`, `registry:build` on an application. `test/commands/app-inspect.test.ts`.
+- **FW-14** `node strut design:use <crisp|vivid>`. Same file.
+- **DOCK-2** cause (verified): with no `publicUrl`, the Node adapter built request URLs from the bind
+  address, so `0.0.0.0` became `ctx.state.host` and failed the trusted-host check. Request URLs now
+  use loopback for a wildcard bind; the `Host` header is still checked against loopback, the
+  `APP_URL` host and `trustedHosts`. The bind comes from `--host`, `config('app.host')` or `APP_HOST`
+  (the installer's compose file already sets `APP_HOST=0.0.0.0`).
+
+## URL contract (framework ↔ ui ↔ auth), and what the UI must change for UI-1
+- API base = the app's `apiPrefix`: **`/api`** by default (CONSISTENCY #33, which wins over the
+  `/api/v1` in docs/05 §1 and in this agent's brief: **conflict reported, not silently resolved**;
+  an app may opt into `/api/v1` with `withRouting({ apiPrefix: '/api/v1' })`).
+- Manifest: the origin's `/.well-known/strutvane.json`, whatever the API base. `app.apiVersion` is
+  the base's version segment (`''` for `/api`, `v1` for `/api/v1`). Resource `path` is relative
+  to the API base (`customers` → `/api/customers`).
+- Auth: `{API base}/auth/*`, i.e. `/api/auth/*` by default (auth's AUTH-1 fix: drop the `v1` default).
+- **UI changes for UI-1:** none needed for the manifest URL (`fetchManifest` resolves the absolute
+  `MANIFEST_PATH` against the origin); keep `apiUrl="/api"` in the skeleton's `main.tsx`.
+  To check on the ui side: (1) filter operator `null` in resources.json is published as
+  `isNull` + `isNotNull`: the list-query URL the UI builds must match the v2 API's
+  `?filter[field][op]=` syntax (data-crud agent owns that side); (2) UI-2: only call
+  `/auth/tenants` when tenancy is on; (3) the manifest may list zero resources (no resource routes
+  until FW-4/FW-5 land): show the shell, not an error.
+
+## Notes for other agents
+- **skeleton:** `routes/web.ts` registers `/` (welcome), which wins over the UI's `/`; with `--ui
+  admin` drop it (or redirect) so `/` is the admin home. Optional `host: env.string('APP_HOST', '')`
+  in `config/app.ts` (the framework reads `APP_HOST` without it).
+- **installer:** `design:use` now exists (INST-2 can stay). Still missing from the installer's text:
+  `install:<name>` (`add` exists), `services:*`, `docker:prod`, `db:prepare`, `shell`, `setup`
+  (check which are the installer's own `strut.js` commands before dropping them).
+- **FW-13** (`migrate`'s v1 description) left alone: `migrate` belongs to `v2/data-crud`.
+
+## DOCK-1 options (decision for the lead; the ownership check is unchanged)
+1. Trust the project root when `STRUTVANE_IN_CONTAINER=1` **and** the root is the compose
+   `working_dir` (`/app`) **and** the process is not root: narrow, but an env var is the gate.
+2. Installer writes `STRUT_UID=0`/`STRUT_GID=0` on Windows hosts (the workaround used): no
+   framework change, but disables the check entirely in those containers.
+3. Keep the app on a named volume inside the container (also fixes DOCK-3 slowness); the bind mount
+   only for source sync. Most work, safest.
+
+## Next
+- Scope addition from the coordinator (6 items) is in progress below this list, see "Hardening".
+- Full gate 3x, then the coordinator re-runs and pushes.
+
 # v2/gaps: what add-ons and the docs agent hit in 0.2.0-next.1
 
 Branch `v2/gaps` (from `main` 8b896f0, `main` e395315 merged in). Not pushed by the agent; the
