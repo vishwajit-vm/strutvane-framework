@@ -27,6 +27,15 @@ export type {
   ReservedJob,
 } from '../contracts/queue.ts'
 export {
+  type BatchRepository,
+  type BatchStatus,
+  type BatchTables,
+  DatabaseBatchRepository,
+  DEFAULT_BATCH_TABLES,
+  type MemberResult,
+  MemoryBatchRepository,
+} from '../queue/batches.ts'
+export {
   bindQueue,
   type CreateQueueManagerOptions,
   createQueueManager,
@@ -59,7 +68,9 @@ export {
   type UniqueOptions,
 } from '../queue/job.ts'
 export {
+  type BatchOptions,
   deriveId,
+  PendingBatch,
   PendingChain,
   type ProcessOptions,
   type ProcessResult,
@@ -69,7 +80,14 @@ export {
   type TransactionHooks,
 } from '../queue/manager.ts'
 export {
+  type ClaimedOutbox,
+  DatabaseOutboxStore,
+  type OutboxMessage,
+  type OutboxStore,
+} from '../queue/outbox.ts'
+export {
   assertPlainData,
+  type BatchInfo,
   type ChainStep,
   DEFAULT_MAX_PAYLOAD_BYTES,
   type Envelope,

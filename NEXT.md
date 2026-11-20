@@ -37,13 +37,24 @@ commit 01f1f6a). Never merged or pushed by the implementing agent.
 - Real-process tests (test/commands/queue-signal.test.ts): `node strut queue:work --stop-when-empty`
   on every OS; SIGTERM drains the running job (POSIX only, skipped on Windows).
 
+- Batches (`src/queue/batches.ts`: memory + database repositories, member CAS, claimed
+  then/catch/finally jobs signed in every member's envelope, `ctx.batch()`, `Bus.batch`,
+  `Bus.findBatch`) and the transactional outbox (`src/queue/outbox.ts`: `viaOutbox`, claimed relay
+  run by idle workers, turns itself off once when the table is missing); `queue:prune-batches`,
+  `queue:prune-outbox`; the `queue:table` migration now also creates `job_batches`,
+  `job_batch_jobs` and `queue_outbox`, and test/queue/migration.test.ts runs it through the v2
+  migrator on every engine.
+- SIGTERM drain verified on Linux in a `node:24` container (test/commands/queue-signal.test.ts).
+
 ## Next (in order)
-1. Batches (`job_batches` + `job_batch_jobs`, CAS bookkeeping, then/catch/finally jobs) and the
-   transactional outbox + relay (RFC §7.1, §8), with engine tests.
-2. `queue:prune-batches`, `queue:prune-outbox`; skeleton: `QUEUE_CONNECTION` in `.env.example`
-   and the queue migration in new apps (skeleton repo, separate change).
-3. Per-process worker log file once ADR-0022 logging is on main; class jobs (RFC §1.2).
-4. Full gate (`npm run ci`) 3×, then a security review of src/queue (security-reviewer agent).
+1. Full gate (`npm run ci`) 3× (coverage thresholds 90/90/85/90 for the new files).
+2. Security review of src/queue (security-reviewer agent) and the ecosystem guardian on the diff.
+3. `@strutvane/redis`: replace its experimental `src/queue/contract.ts` with the framework's types
+   and run `queueDriverContract({ usesClock: false, idempotentPush: false })` (redis repo, after
+   this merges and the framework is published).
+4. Skeleton: `QUEUE_CONNECTION` in `.env.example` and the queue migration in new apps.
+5. Per-process worker log file once ADR-0022 logging is on main; class jobs (RFC §1.2);
+   `maxExceptions`.
 
 ## How to verify
 ```bash

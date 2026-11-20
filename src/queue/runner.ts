@@ -11,6 +11,7 @@
  */
 import type { Logger } from '../contracts/logger.ts'
 import { runWithTenant } from '../database/orm/tenancy.ts'
+import type { BatchStatus } from './batches.ts'
 import { QueueError } from './errors.ts'
 import { checkSeconds, type JobContext, type RegisteredJob } from './job.ts'
 import type { Envelope } from './payload.ts'
@@ -51,6 +52,8 @@ export interface AttemptInput {
   readonly now: () => number
   /** Runs the handler inside the app (container, config, DB connection). Default: as is. */
   readonly scope?: <TResult>(work: () => Promise<TResult>) => Promise<TResult>
+  /** Looks up a batch's progress (for `ctx.batch()`). */
+  readonly findBatch?: (id: string) => Promise<BatchStatus | undefined>
   /** Overrides the job's timeout (the worker's `--timeout`). */
   readonly timeoutSeconds?: number
 }
@@ -90,6 +93,13 @@ export async function runAttempt(input: AttemptInput): Promise<AttemptOutcome> {
     tenantId: envelope.tenantId,
     signal: controller.signal,
     log: input.logger.child({ jobId: envelope.id, job: envelope.job, attempt }),
+    batchId: envelope.batch?.id,
+    batch: () => {
+      const id = envelope.batch?.id
+      return id === undefined || input.findBatch === undefined
+        ? Promise.resolve(undefined)
+        : input.findBatch(id)
+    },
     release(delaySeconds = 0) {
       released = checkSeconds(delaySeconds, 'release delay', job.name)
     },

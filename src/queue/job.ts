@@ -9,6 +9,7 @@
 import type { Logger } from '../contracts/logger.ts'
 import type { StandardSchemaV1 } from '../contracts/standard-schema.ts'
 import { currentApplication } from '../foundation/current.ts'
+import type { BatchStatus } from './batches.ts'
 import { QueueError } from './errors.ts'
 import { QueueDispatcherToken } from './tokens.ts'
 
@@ -66,6 +67,10 @@ export interface JobContext {
   readonly signal: AbortSignal
   /** The app logger with the job's context. Data is never logged by the framework. */
   readonly log: Logger
+  /** The batch this job belongs to, if any. */
+  readonly batchId: string | undefined
+  /** The batch's current progress (`cancelled`, `pending`…), or `undefined` outside a batch. */
+  batch(): Promise<BatchStatus | undefined>
   /** Put the job back after `delaySeconds` without counting it as a failure. */
   release(delaySeconds?: number): void
   /** Fail the job now: no further attempts. */
@@ -158,6 +163,11 @@ export interface DispatchOptions {
   readonly connection?: string
   /** Inside a database transaction, push only after it commits. */
   readonly afterCommit?: boolean
+  /**
+   * Write the job to the transactional outbox, in the caller's transaction: it exists exactly
+   * when the data committed (RFC-0006 §8). Database-backed queues only.
+   */
+  readonly viaOutbox?: boolean
 }
 
 /**
@@ -190,6 +200,11 @@ export class JobCall {
   /** The same call, on another connection. */
   onConnection(connection: string): JobCall {
     return new JobCall(this.job, this.data, { ...this.options, connection })
+  }
+
+  /** The same call, written to the transactional outbox in the current transaction. */
+  viaOutbox(): JobCall {
+    return new JobCall(this.job, this.data, { ...this.options, viaOutbox: true })
   }
 
   /** The same call, pushed only after the current transaction commits. */

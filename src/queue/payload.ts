@@ -80,6 +80,21 @@ export interface UniqueLock {
 }
 
 /**
+ * The batch a job belongs to, with the batch's callback jobs (RFC-0006 §7.1). It travels signed
+ * in every member's envelope, so the batch rows in the database hold only counters.
+ *
+ * @example
+ * const batch: BatchInfo = { id, allowFailures: false, onSuccess: { job: 'import-done', data: {} } }
+ */
+export interface BatchInfo {
+  readonly id: string
+  readonly allowFailures: boolean
+  readonly onSuccess?: ChainStep
+  readonly onFailure?: ChainStep
+  readonly onFinish?: ChainStep
+}
+
+/**
  * The envelope: what a driver stores, as one JSON string.
  *
  * @example
@@ -97,6 +112,7 @@ export interface Envelope extends WireOptions {
   readonly chain?: readonly ChainStep[]
   readonly chainCatch?: ChainStep
   readonly unique?: UniqueLock
+  readonly batch?: BatchInfo
 }
 
 /** Keys refused in job data and dropped when parsing: the prototype-pollution vectors. */
@@ -333,6 +349,18 @@ function isStep(value: unknown): value is ChainStep {
   )
 }
 
+function isBatch(value: unknown): value is BatchInfo {
+  if (value === null || typeof value !== 'object') return false
+  const batch = value as Record<string, unknown>
+  return (
+    isStr(batch['id']) &&
+    typeof batch['allowFailures'] === 'boolean' &&
+    (batch['onSuccess'] === undefined || isStep(batch['onSuccess'])) &&
+    (batch['onFailure'] === undefined || isStep(batch['onFailure'])) &&
+    (batch['onFinish'] === undefined || isStep(batch['onFinish']))
+  )
+}
+
 function isEnvelope(value: Record<string, unknown>): value is Record<string, unknown> & Envelope {
   const backoff = value['backoff']
   const unique = value['unique'] as Record<string, unknown> | undefined
@@ -352,6 +380,7 @@ function isEnvelope(value: Record<string, unknown>): value is Record<string, unk
     (value['chain'] === undefined ||
       (Array.isArray(value['chain']) && value['chain'].every(isStep))) &&
     (value['chainCatch'] === undefined || isStep(value['chainCatch'])) &&
+    (value['batch'] === undefined || isBatch(value['batch'])) &&
     (unique === undefined ||
       (typeof unique === 'object' &&
         unique !== null &&

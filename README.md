@@ -325,15 +325,17 @@ export const SendWelcomeEmail = defineJob({
 
 await SendWelcomeEmail.dispatch({ userId: user.id })
 await SendWelcomeEmail.with({ userId }).delay(60).onQueue('emails').afterCommit().dispatch()
-await Bus.chain([Resize.with({ id }), Publish.with({ id })]).catch(Notify.with({ id })).dispatch()
+await Bus.chain([Resize.with({ id }), Publish.with({ id })]).onFailure(Notify.with({ id })).dispatch()
 ```
 
 - **Drivers:** `database` (the default: `node strut queue:table && node strut migrate`), `sync` (runs at dispatch; the default under `APP_ENV=testing`), `memory`, and add-on drivers such as `@strutvane/redis` (`registerQueueDriver`). Choose with `QUEUE_CONNECTION` or `config/queue.ts` (`default`, `connections`, `failed`, `maxPayloadBytes`).
 - **Delivery is at-least-once.** A worker reserves a job for `retryAfter` seconds (90 by default; every job `timeout` must stay below it) and acknowledges it when done. Two workers never reserve one job at the same time, and a crashed worker's job comes back by itself. A job that keeps crashing its worker is failed once its tries are used up.
 - **Payloads** must be plain data (no `Date`, class instances or functions), at most 64 KiB, with no secret-looking keys (`password`, `token`…): pass ids and load the rest in the handler. An edited, unsigned or unknown job is moved to the failed jobs without running.
 - **Tenancy:** the dispatching tenant is restored around the handler, so tenant scopes and row-level security apply as in the request.
-- **Commands:** `queue:work [connection] [--queue=high,default] [--sleep] [--timeout] [--memory=512] [--max-jobs] [--max-time] [--stop-when-empty]` stops gracefully on SIGTERM/SIGINT (the running job finishes first) and on `queue:restart`; `queue:failed`, `queue:retry <id…|all>`, `queue:forget <id>`, `queue:flush [--hours]`, `queue:clear`.
-- **Not yet:** batches, the transactional outbox and class-based jobs (RFC-0006 §1.2, §7.1, §8).
+- **Commands:** `queue:work [connection] [--queue=high,default] [--sleep] [--timeout] [--memory=512] [--max-jobs] [--max-time] [--stop-when-empty]` stops gracefully on SIGTERM/SIGINT (the running job finishes first) and on `queue:restart`; `queue:failed`, `queue:retry <id…|all>`, `queue:forget <id>`, `queue:flush [--hours]`, `queue:clear`, `queue:prune-batches`, `queue:prune-outbox`.
+- **Batches:** `Bus.batch(rows.map((row) => ImportRow.with(row))).name('import').allowFailures().onSuccess(Done.with(x)).onFailure(Failed.with(x)).onFinish(Cleanup.with(x)).dispatch()` (Laravel's `then`/`catch`/`finally`: a builder with a `then` method would be a thenable) resolves to the batch id; `Bus.findBatch(id)` shows progress, and a job sees `await ctx.batch()` (`cancelled`…). Callbacks are jobs, never closures; each runs once even when a member is delivered twice.
+- **The transactional outbox:** `Job.dispatch(data, { viaOutbox: true })` (or `Job.with(data).viaOutbox().dispatch()`) writes the job in your database transaction, so it exists exactly when your data committed; idle workers relay due rows to their queue.
+- **Not yet:** class-based jobs (RFC-0006 §1.2) and `maxExceptions`.
 
 ### Upgrading to 0.2: lowercase error codes
 
@@ -345,7 +347,7 @@ Validation issues also carry `field`, the dotted path (`items.0.title`), next to
 
 | Item | Status |
 |---|---|
-| Mail; queue batches and the outbox; database and Redis cache stores | Not implemented (coming in 0.3). Queues are in (see Queues); the cache has `memory` and `file` stores today. |
+| Mail; database and Redis cache stores | Not implemented (coming in 0.3). Queues are in (see Queues); the cache has `memory` and `file` stores today. |
 | MySQL in the v1 runtime | v1's `connectDatabase({ driver: 'mysql' })` throws `NotImplementedError`; migration-first apps use MySQL through the ORM (`DB_CONNECTION=mysql`). |
 | Azure Entra ID (passwordless) Postgres | `auth: { kind: 'azure-entra' }` is part of the config shape and throws `NotImplementedError` for now. |
 | Relation paths in filters (`customer.name`), sparse fieldsets, bulk, export, `PUT` | Rejected clearly (`relation_path_unsupported`, `unknown_parameter`) or not routed. |

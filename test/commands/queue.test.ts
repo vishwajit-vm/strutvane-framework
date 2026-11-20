@@ -193,6 +193,28 @@ describe('queue commands', () => {
     expect(bad.json().error?.code).toBe('invalid_flag')
   })
 
+  it('queue:prune-batches and queue:prune-outbox keep recent rows', async () => {
+    const { base, make, app } = await preparedApp()
+    await app.run(async () => {
+      await Bus.batch([WriteLine.with({ line: 'b' })]).dispatch()
+      await WriteLine.dispatch({ line: 'o' }, { viaOutbox: true })
+    })
+    await app.shutdown()
+    const batches = await strut(['queue:prune-batches', '--json'], { cwd: base, app: make })
+    expect(batches.json().data).toEqual({ deleted: 0 })
+    const outbox = await strut(['queue:prune-outbox', '--hours=0', '--json'], {
+      cwd: base,
+      app: make,
+    })
+    expect(outbox.json().data).toEqual({ deleted: 0 })
+    const worked = await strut(['queue:work', '--stop-when-empty', '--json'], {
+      cwd: base,
+      app: make,
+    })
+    expect(worked.json().data).toMatchObject({ reason: 'empty', processed: 2 })
+    expect(readFileSync(join(base, 'out.txt'), 'utf8').split('\n').sort()).toEqual(['', 'b', 'o'])
+  })
+
   it('queue:restart stops a running worker after its current job', async () => {
     const { base, make, app } = await preparedApp()
     await app.run(() => WriteLine.dispatch({ line: 'before-restart' }))

@@ -11,6 +11,8 @@
  * | `queue:forget <id>` | delete one failed job |
  * | `queue:flush [--hours=N]` | delete failed jobs (destructive guard) |
  * | `queue:clear [connection] [--queue=default]` | delete waiting jobs (destructive guard) |
+ * | `queue:prune-batches [--hours=24]` | delete finished and cancelled batches |
+ * | `queue:prune-outbox [--hours=24]` | delete dispatched outbox rows |
  *
  * @module
  */
@@ -365,7 +367,46 @@ export function queueCommands(deps: QueueCommandDeps): readonly AnyCommand[] {
         return { data: result }
       },
     }),
+    pruneCommand(
+      deps,
+      'queue:prune-batches',
+      'Delete finished and cancelled batches',
+      (m, before) => m.pruneBatches(before),
+    ),
+    pruneCommand(deps, 'queue:prune-outbox', 'Delete dispatched outbox rows', (m, before) =>
+      m.pruneOutbox(before),
+    ),
   ]
+}
+
+function pruneCommand(
+  deps: QueueCommandDeps,
+  name: string,
+  description: string,
+  prune: (manager: QueueManager, beforeMs: number) => Promise<number>,
+): AnyCommand {
+  return defineAppCommand({
+    name,
+    description,
+    details: 'Keeps the last 24 hours unless --hours says otherwise. Schedule it daily.',
+    requiresProject: false,
+    flags: {
+      ...BOOT_FLAGS,
+      hours: {
+        type: 'string',
+        valueName: '<n>',
+        description: 'Keep the last n hours (default 24)',
+      },
+    },
+    async run(ctx) {
+      const hours = wholeNumber(ctx.flags.hours, 'hours') ?? 24
+      const deleted = await withBootedApp(ctx, deps, (app) =>
+        friendly(() => prune(managerOf(app), Date.now() - hours * 3_600_000)),
+      )
+      ctx.out.success(`Deleted ${deleted} row(s) older than ${hours} hour(s).`)
+      return { data: { deleted } }
+    },
+  })
 }
 
 function numeric<TKey extends string>(

@@ -1,6 +1,7 @@
 /**
- * The queue manager (RFC-0006 §3, §6, §10): named connections, dispatch, chains, unique locks,
- * the per-job lifecycle the worker drives, and the observability hooks.
+ * The queue manager (RFC-0006 §3, §6–§8, §10): named connections, dispatch, chains, batches,
+ * unique locks, the outbox relay, the per-job lifecycle the worker drives, and the observability
+ * hooks.
  *
  * The worker (`worker.ts`) is only a loop around {@link QueueManager.processNext}; everything
  * that decides what happens to a job lives here, so the `sync` connection, `dispatchSync` and the
@@ -16,6 +17,7 @@ import { uuidv7 } from '../core/uuid.ts'
 import { currentTenant } from '../database/orm/tenancy.ts'
 import { assertTenantId } from '../database/types.ts'
 import { closestMatch } from '../support/str.ts'
+import type { BatchRepository, BatchStatus } from './batches.ts'
 import { isQueueError, QueueError } from './errors.ts'
 import type { QueueEvent, QueueListener } from './events.ts'
 import {
@@ -25,8 +27,10 @@ import {
   JobCall,
   type RegisteredJob,
 } from './job.ts'
+import type { OutboxStore } from './outbox.ts'
 import {
   assertPlainData,
+  type BatchInfo,
   type ChainStep,
   type Envelope,
   type EnvelopeSigner,
@@ -86,6 +90,20 @@ export interface QueueManagerOptions {
   readonly transactions?: () => TransactionHooks | undefined
   /** Jitter source for exponential backoff (tests pass a fixed one). */
   readonly random?: () => number
+  /** Where batches live (database by default); without it `Bus.batch` is refused. */
+  readonly batches?: BatchRepository
+  /** The transactional outbox (database only); without it `viaOutbox` is refused. */
+  readonly outbox?: () => OutboxStore | undefined
+}
+
+/** Extra envelope fields for one push. */
+interface EnvelopeExtras {
+  readonly chain?: readonly ChainStep[] | undefined
+  readonly chainCatch?: ChainStep | undefined
+  readonly unique?: Envelope['unique']
+  readonly batch?: BatchInfo | undefined
+  readonly id?: string
+  readonly tenantId?: string | undefined
 }
 
 /**
@@ -112,7 +130,7 @@ export interface ProcessOptions {
 }
 
 /**
- * A chain being built: `Bus.chain([...]).catch(Job.with(x)).dispatch()`.
+ * A chain being built: `Bus.chain([...]).onFailure(Job.with(x)).dispatch()`.
  *
  * @example
  * await manager.chain([Resize.with({ id }), Publish.with({ id })]).dispatch()
@@ -129,7 +147,7 @@ export class PendingChain {
   }
 
   /** The job pushed once when a step fails for good. */
-  catch(call: JobCall): PendingChain {
+  onFailure(call: JobCall): PendingChain {
     return new PendingChain(this.#manager, this.#calls, call)
   }
 
@@ -137,6 +155,71 @@ export class PendingChain {
   dispatch(): Promise<string | undefined> {
     return this.#manager.dispatchChain(this.#calls, this.#catch)
   }
+}
+
+/**
+ * A batch being built: `Bus.batch([...]).onSuccess(Done.with(x)).dispatch()`.
+ *
+ * @example
+ * const id = await manager.batch(rows.map((row) => ImportRow.with(row))).name('import').dispatch()
+ */
+export class PendingBatch {
+  readonly #manager: QueueManager
+  readonly #calls: readonly JobCall[]
+  readonly #options: BatchOptions
+
+  constructor(manager: QueueManager, calls: readonly JobCall[], options: BatchOptions = {}) {
+    this.#manager = manager
+    this.#calls = calls
+    this.#options = options
+  }
+
+  /** A name for dashboards and `findBatch`. */
+  name(name: string): PendingBatch {
+    return new PendingBatch(this.#manager, this.#calls, { ...this.#options, name })
+  }
+
+  /** Keep going when a job fails for good (the batch is not cancelled; `onSuccess` is skipped). */
+  allowFailures(): PendingBatch {
+    return new PendingBatch(this.#manager, this.#calls, { ...this.#options, allowFailures: true })
+  }
+
+  /**
+   * Pushed once when every job succeeded (Laravel's `then`; renamed because an object with a
+   * `then` method is a thenable, and `await`ing the builder would call it).
+   */
+  onSuccess(call: JobCall): PendingBatch {
+    return new PendingBatch(this.#manager, this.#calls, { ...this.#options, onSuccess: call })
+  }
+
+  /** Pushed once, on the first job that failed for good (Laravel's `catch`). */
+  onFailure(call: JobCall): PendingBatch {
+    return new PendingBatch(this.#manager, this.#calls, { ...this.#options, onFailure: call })
+  }
+
+  /** Pushed once when every job has finished, successfully or not (Laravel's `finally`). */
+  onFinish(call: JobCall): PendingBatch {
+    return new PendingBatch(this.#manager, this.#calls, { ...this.#options, onFinish: call })
+  }
+
+  /** Create the batch and push its jobs. Resolves to the batch id. */
+  dispatch(): Promise<string> {
+    return this.#manager.dispatchBatch(this.#calls, this.#options)
+  }
+}
+
+/**
+ * What a batch is built with.
+ *
+ * @example
+ * const options: BatchOptions = { name: 'import', allowFailures: true }
+ */
+export interface BatchOptions {
+  readonly name?: string
+  readonly allowFailures?: boolean
+  readonly onSuccess?: JobCall
+  readonly onFailure?: JobCall
+  readonly onFinish?: JobCall
 }
 
 const SYNC = 'sync'
@@ -161,6 +244,7 @@ export class QueueManager implements QueueDispatcher {
   /** The lock store unique jobs use. */
   readonly locks: QueueLockStore
   readonly #logger: Logger
+  #relayDisabled = false
 
   constructor(options: QueueManagerOptions) {
     for (const connection of options.connections) {
@@ -246,6 +330,121 @@ export class QueueManager implements QueueDispatcher {
   }
 
   /**
+   * Start a batch.
+   *
+   * @example
+   * await manager.batch(rows.map((row) => ImportRow.with(row))).onSuccess(Done.with({})).dispatch()
+   */
+  batch(calls: readonly JobCall[]): PendingBatch {
+    return new PendingBatch(this, calls)
+  }
+
+  #batches(): BatchRepository {
+    const batches = this.#options.batches
+    if (batches === undefined)
+      throw new QueueError(
+        'queue_not_configured',
+        'Batches need a batch store, and this queue has none.',
+        'Batches live in the job_batches tables: run node strut queue:table && node strut migrate, and use a database-backed app.',
+      )
+    return batches
+  }
+
+  /**
+   * A batch's progress, or `undefined`.
+   *
+   * @example
+   * const batch = await manager.findBatch(id)
+   */
+  async findBatch(id: string): Promise<BatchStatus | undefined> {
+    return this.#batches().find(id)
+  }
+
+  /**
+   * Cancel a batch: its jobs still run unless they check `ctx.batch()`, and `onSuccess` never runs.
+   *
+   * @example
+   * await manager.cancelBatch(id)
+   */
+  async cancelBatch(id: string): Promise<boolean> {
+    return this.#batches().cancel(id)
+  }
+
+  /**
+   * Remove finished or cancelled batches older than `beforeMs` (`queue:prune-batches`).
+   *
+   * @example
+   * await manager.pruneBatches(Date.now() - 24 * 3_600_000)
+   */
+  async pruneBatches(beforeMs: number): Promise<number> {
+    return this.#batches().prune(beforeMs)
+  }
+
+  /**
+   * Remove dispatched outbox rows older than `beforeMs` (`queue:prune-outbox`); 0 without an
+   * outbox.
+   *
+   * @example
+   * await manager.pruneOutbox(Date.now() - 24 * 3_600_000)
+   */
+  async pruneOutbox(beforeMs: number): Promise<number> {
+    const outbox = this.#options.outbox?.()
+    return outbox === undefined ? 0 : outbox.prune(beforeMs)
+  }
+
+  /** Create a batch and push its jobs (see {@link PendingBatch}). */
+  async dispatchBatch(calls: readonly JobCall[], options: BatchOptions): Promise<string> {
+    const batches = this.#batches()
+    const id = uuidv7()
+    const info: BatchInfo = {
+      id,
+      allowFailures: options.allowFailures === true,
+      ...(options.onSuccess === undefined
+        ? {}
+        : { onSuccess: this.#step(options.onSuccess, 'batch.onSuccess') }),
+      ...(options.onFailure === undefined
+        ? {}
+        : { onFailure: this.#step(options.onFailure, 'batch.onFailure') }),
+      ...(options.onFinish === undefined
+        ? {}
+        : { onFinish: this.#step(options.onFinish, 'batch.onFinish') }),
+    }
+    // Build (and so validate) every envelope before anything is stored or pushed.
+    const members: { envelope: Envelope; call: JobCall; delay: number }[] = []
+    for (const [index, call] of calls.entries()) {
+      if (call.job.uniqueLock(call.data) !== undefined)
+        throw new QueueError(
+          'queue_invalid_option',
+          `The "${call.job.name}" job is unique and can't be part of a batch (batch[${index}]).`,
+          'Dispatch unique jobs on their own; a skipped member would leave the batch unfinished.',
+        )
+      const connection = call.options.connection ?? call.job.options.connection ?? this.#default
+      const envelope = await this.#envelope(call, connection, { batch: info })
+      this.#signer.encode(envelope)
+      members.push({ envelope, call, delay: this.#delaySeconds(call.options) })
+    }
+    const name = options.name ?? ''
+    await batches.create({ id, name, jobIds: members.map((member) => member.envelope.id) })
+    try {
+      for (const member of members)
+        await this.#push(
+          this.connection(member.envelope.connection),
+          member.envelope,
+          member.delay,
+          member.call.job,
+        )
+    } catch (error) {
+      await batches.cancel(id)
+      throw error
+    }
+    if (members.length === 0) {
+      const tenantId = currentTenant()
+      await this.#finishBatch(info, tenantId)
+    }
+    return id
+  }
+
+  /**
    * Queue a job (see `Job.dispatch`). Resolves to its id, or `undefined` when a unique job's
    * lock is held.
    */
@@ -276,7 +475,7 @@ export class QueueManager implements QueueDispatcher {
    */
   async dispatchSync(call: JobCall): Promise<void> {
     const connection = call.options.connection ?? call.job.options.connection ?? this.#default
-    const envelope = await this.#envelope(call, connection, undefined, undefined, undefined)
+    const envelope = await this.#envelope(call, connection, {})
     await this.#runSync(envelope, call.job)
   }
 
@@ -309,12 +508,9 @@ export class QueueManager implements QueueDispatcher {
   async #envelope(
     call: JobCall,
     connectionName: string,
-    chain: readonly ChainStep[] | undefined,
-    chainCatch: ChainStep | undefined,
-    unique: Envelope['unique'],
-    id?: string,
-    tenantOverride?: string,
+    extras: EnvelopeExtras,
   ): Promise<Envelope> {
+    const { chain, chainCatch, unique, batch, id } = extras
     const connection = this.connection(connectionName)
     const options = call.job.options
     const queue = checkQueueName(call.options.queue ?? options.queue ?? connection.defaultQueue)
@@ -326,7 +522,7 @@ export class QueueManager implements QueueDispatcher {
         `The "${call.job.name}" job's timeout (${options.timeout}s) is not below the "${connection.name}" connection's retryAfter (${connection.retryAfter}s).`,
         'Lower the job timeout or raise retryAfter in config/queue.ts: otherwise a slow job is handed to a second worker while it still runs.',
       )
-    const tenantId = tenantOverride ?? currentTenant()
+    const tenantId = 'tenantId' in extras ? extras.tenantId : currentTenant()
     if (tenantId !== undefined) assertTenantId(tenantId)
     const now = this.#clock.now()
     return {
@@ -345,6 +541,7 @@ export class QueueManager implements QueueDispatcher {
       ...(chain === undefined || chain.length === 0 ? {} : { chain }),
       ...(chainCatch === undefined ? {} : { chainCatch }),
       ...(unique === undefined ? {} : { unique }),
+      ...(batch === undefined ? {} : { batch }),
     }
   }
 
@@ -371,8 +568,13 @@ export class QueueManager implements QueueDispatcher {
       unique = { key: lock.key, owner, until: lock.until }
     }
     try {
-      const envelope = await this.#envelope(call, connection.name, chain, chainCatch, unique)
+      const envelope = await this.#envelope(call, connection.name, { chain, chainCatch, unique })
       const delay = this.#delaySeconds(call.options)
+      if (call.options.viaOutbox === true) {
+        // In the caller's transaction (if any): the job exists exactly when the data committed.
+        await this.#addToOutbox(connection, envelope, delay)
+        return envelope.id
+      }
       const push = async (): Promise<void> => {
         await this.#push(connection, envelope, delay, call.job)
       }
@@ -423,6 +625,86 @@ export class QueueManager implements QueueDispatcher {
       job: envelope.job,
       ...(delaySeconds > 0 ? { delaySeconds } : {}),
     })
+  }
+
+  async #addToOutbox(
+    connection: QueueConnection,
+    envelope: Envelope,
+    delaySeconds: number,
+  ): Promise<void> {
+    const outbox = this.#options.outbox?.()
+    if (outbox === undefined || connection.driver === undefined)
+      throw new QueueError(
+        'queue_not_configured',
+        connection.driver === undefined
+          ? `The "${connection.name}" connection runs jobs at dispatch, so it can't go through the outbox.`
+          : 'viaOutbox needs the queue_outbox table on the app database, and this queue has no outbox.',
+        'Use a queued connection (such as database) and run node strut queue:table && node strut migrate.',
+      )
+    await outbox.add({
+      id: envelope.id,
+      connection: connection.name,
+      queue: envelope.queue,
+      payload: this.#signer.encode(envelope),
+      availableAt: this.#clock.now() + delaySeconds * 1000,
+    })
+    this.emit({
+      type: 'queue.job.queued',
+      connection: connection.name,
+      queue: envelope.queue,
+      jobId: envelope.id,
+      job: envelope.job,
+      reason: 'outbox',
+      ...(delaySeconds > 0 ? { delaySeconds } : {}),
+    })
+  }
+
+  /**
+   * Move due outbox rows to their queues (one relay tick; workers run it when idle). Returns how
+   * many rows were pushed. A row that can't be pushed stays claimed until its claim runs out,
+   * then is tried again.
+   *
+   * @example
+   * await manager.relayOutbox()
+   */
+  async relayOutbox(limit = 20): Promise<number> {
+    if (this.#relayDisabled) return 0
+    const outbox = this.#options.outbox?.()
+    if (outbox === undefined) return 0
+    let claimed: Awaited<ReturnType<OutboxStore['claim']>>
+    try {
+      claimed = await outbox.claim(limit, 60)
+    } catch (error) {
+      // Usually a missing queue_outbox table (an app that never used the outbox): say it once
+      // and stop trying in this process, instead of an error on every idle tick.
+      this.#relayDisabled = true
+      this.#logger.warn('The outbox relay is off in this process: the outbox could not be read.', {
+        error: describeError(error).message,
+        hint: 'Run node strut queue:table && node strut migrate if you dispatch with viaOutbox.',
+      })
+      return 0
+    }
+    const { messages, claim } = claimed
+    let pushed = 0
+    for (const message of messages) {
+      try {
+        const driver = this.connection(message.connection).driver
+        if (driver === undefined) throw new Error(`"${message.connection}" has no queue driver.`)
+        await driver.push(message.queue, message.payload, { id: message.id })
+        await outbox.markDispatched(message.id, claim)
+        pushed++
+      } catch (error) {
+        this.#logger.error(
+          'An outbox row could not be pushed; it is retried when its claim runs out.',
+          {
+            jobId: message.id,
+            connection: message.connection,
+            error: describeError(error).message,
+          },
+        )
+      }
+    }
+    return pushed
   }
 
   /** The `sync` path: attempts back to back, in this process; the final error is thrown. */
@@ -479,6 +761,7 @@ export class QueueManager implements QueueDispatcher {
       connection,
       logger: this.#logger,
       now: () => this.#clock.now(),
+      findBatch: (id) => this.#options.batches?.find(id) ?? Promise.resolve(undefined),
       ...(this.#options.scope === undefined ? {} : { scope: this.#options.scope }),
       ...(options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds }),
     })
@@ -671,6 +954,11 @@ export class QueueManager implements QueueDispatcher {
       await this.#pushStep(next, rest, envelope, deriveId(envelope.id, 'chain-next'))
     }
     if (envelope.unique?.until === 'completed') await this.#releaseUnique(envelope)
+    if (envelope.batch !== undefined) {
+      const recorded = await this.#batches().recordSuccess(envelope.batch.id, envelope.id)
+      if (recorded.counted && recorded.status?.pending === 0)
+        await this.#finishBatch(envelope.batch, envelope.tenantId)
+    }
     this.emit({
       type: 'queue.job.processed',
       connection,
@@ -718,6 +1006,8 @@ export class QueueManager implements QueueDispatcher {
         tenantId: envelope.tenantId,
         signal: controller.signal,
         log: this.#logger.child({ jobId: envelope.id, job: envelope.job, attempt }),
+        batchId: envelope.batch?.id,
+        batch: () => this.findBatchOf(envelope),
         release() {},
         fail() {},
       })
@@ -731,6 +1021,7 @@ export class QueueManager implements QueueDispatcher {
     if (envelope.chainCatch !== undefined)
       await this.#pushStep(envelope.chainCatch, [], envelope, deriveId(envelope.id, 'chain-catch'))
     await this.#releaseUnique(envelope)
+    if (envelope.batch !== undefined) await this.#batchFailure(envelope.batch, envelope)
     this.emit({
       type: 'queue.job.failed',
       connection,
@@ -745,7 +1036,7 @@ export class QueueManager implements QueueDispatcher {
   async #pushStep(
     step: ChainStep,
     rest: readonly ChainStep[],
-    parent: Envelope,
+    parent: Pick<Envelope, 'tenantId' | 'chainCatch'>,
     id: string,
   ): Promise<void> {
     const job = this.jobs.require(step.job)
@@ -754,16 +1045,50 @@ export class QueueManager implements QueueDispatcher {
       ...(step.connection === undefined ? {} : { connection: step.connection }),
     })
     const connectionName = step.connection ?? job.options.connection ?? this.#default
-    const envelope = await this.#envelope(
-      call,
-      connectionName,
-      rest,
-      rest.length > 0 ? parent.chainCatch : undefined,
-      undefined,
+    const envelope = await this.#envelope(call, connectionName, {
+      chain: rest,
+      chainCatch: rest.length > 0 ? parent.chainCatch : undefined,
       id,
-      parent.tenantId,
-    )
+      tenantId: parent.tenantId,
+    })
     await this.#push(this.connection(connectionName), envelope, step.delaySeconds ?? 0, job)
+  }
+
+  /** A batch member failed for good: count it once, run `catch` once, cancel unless allowed. */
+  async #batchFailure(batch: BatchInfo, envelope: Envelope): Promise<void> {
+    const batches = this.#batches()
+    const recorded = await batches.recordFailure(batch.id, envelope.id)
+    if (!recorded.counted) return
+    if (await batches.claimCaught(batch.id)) {
+      if (!batch.allowFailures) await batches.cancel(batch.id)
+      if (batch.onFailure !== undefined)
+        await this.#pushStep(batch.onFailure, [], envelope, deriveId(batch.id, 'batch-failure'))
+    }
+    if (recorded.status?.pending === 0) await this.#finishBatch(batch, envelope.tenantId)
+  }
+
+  /** Nothing pending: claim the finish once, then push `then` (no failures) and `finally`. */
+  async #finishBatch(batch: BatchInfo, tenantId: string | undefined): Promise<void> {
+    const batches = this.#batches()
+    if (!(await batches.claimFinished(batch.id))) return
+    const status = await batches.find(batch.id)
+    const parent: Pick<Envelope, 'tenantId'> = tenantId === undefined ? {} : { tenantId }
+    if (
+      batch.onSuccess !== undefined &&
+      status !== undefined &&
+      status.failed === 0 &&
+      !status.cancelled
+    )
+      await this.#pushStep(batch.onSuccess, [], parent, deriveId(batch.id, 'batch-success'))
+    if (batch.onFinish !== undefined)
+      await this.#pushStep(batch.onFinish, [], parent, deriveId(batch.id, 'batch-finish'))
+  }
+
+  /** The batch of a job's envelope, if any. */
+  findBatchOf(envelope: Envelope): Promise<BatchStatus | undefined> {
+    if (envelope.batch === undefined || this.#options.batches === undefined)
+      return Promise.resolve(undefined)
+    return this.#options.batches.find(envelope.batch.id)
   }
 
   async #releaseUnique(envelope: Envelope): Promise<void> {

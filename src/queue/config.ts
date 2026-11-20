@@ -26,12 +26,14 @@ import type { Clock } from '../core/clock.ts'
 import { type Container, type Token, token } from '../core/container.ts'
 import type { Connection } from '../database/db/connection.ts'
 import { closestMatch } from '../support/str.ts'
+import { type BatchRepository, DatabaseBatchRepository, MemoryBatchRepository } from './batches.ts'
 import { DatabaseQueueDriver } from './drivers/database.ts'
 import { MemoryQueueDriver } from './drivers/memory.ts'
 import { DEFAULT_RETRY_AFTER_SECONDS } from './drivers/shared.ts'
 import { QueueError } from './errors.ts'
 import { checkQueueName } from './job.ts'
 import { type QueueConnection, QueueManager } from './manager.ts'
+import { DatabaseOutboxStore, type OutboxStore } from './outbox.ts'
 import { EnvelopeSigner } from './payload.ts'
 import { JobRegistry } from './registry.ts'
 import {
@@ -75,6 +77,10 @@ export interface QueueConfig {
   readonly failed?: { readonly driver: 'database' | 'memory'; readonly table?: string }
   /** The unique-lock table (database lock store). Default `queue_locks`. */
   readonly locksTable?: string
+  /** The batch tables. Default `job_batches` and `job_batch_jobs`. */
+  readonly batching?: { readonly table?: string; readonly jobsTable?: string }
+  /** The transactional outbox table. Default `queue_outbox`. */
+  readonly outbox?: { readonly table?: string }
   readonly maxPayloadBytes?: number
 }
 
@@ -317,7 +323,31 @@ export function createQueueManager(options: CreateQueueManagerOptions): QueueMan
               clock: options.clock,
             }),
         )
+  const sync = defaultConnection === 'sync'
+  const batches: BatchRepository = sync
+    ? new MemoryBatchRepository({ clock: options.clock })
+    : lazyBatches(
+        () =>
+          new DatabaseBatchRepository({
+            connection: options.database(),
+            tables: {
+              batches: config.batching?.table ?? DEFAULT_QUEUE_TABLES.batches,
+              members: config.batching?.jobsTable ?? DEFAULT_QUEUE_TABLES.batchJobs,
+            },
+            clock: options.clock,
+          }),
+      )
+  let outbox: OutboxStore | undefined
   return new QueueManager({
+    batches,
+    outbox: () => {
+      outbox ??= new DatabaseOutboxStore({
+        connection: options.database(),
+        table: config.outbox?.table ?? DEFAULT_QUEUE_TABLES.outbox,
+        clock: options.clock,
+      })
+      return outbox
+    },
     connections,
     defaultConnection,
     signer: new EnvelopeSigner(
@@ -354,6 +384,24 @@ function lazyFailedStore(make: () => FailedJobStore): FailedJobStore {
     find: (id) => get().find(id),
     forget: (id) => get().forget(id),
     flush: (before) => get().flush(before),
+  }
+}
+
+function lazyBatches(make: () => BatchRepository): BatchRepository {
+  let store: BatchRepository | undefined
+  const get = (): BatchRepository => {
+    store ??= make()
+    return store
+  }
+  return {
+    create: (batch) => get().create(batch),
+    find: (id) => get().find(id),
+    recordSuccess: (batchId, jobId) => get().recordSuccess(batchId, jobId),
+    recordFailure: (batchId, jobId) => get().recordFailure(batchId, jobId),
+    claimFinished: (batchId) => get().claimFinished(batchId),
+    claimCaught: (batchId) => get().claimCaught(batchId),
+    cancel: (batchId) => get().cancel(batchId),
+    prune: (before) => get().prune(before),
   }
 }
 

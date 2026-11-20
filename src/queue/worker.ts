@@ -175,6 +175,8 @@ export class Worker {
         ...(this.#options.timeout === undefined ? {} : { timeoutSeconds: this.#options.timeout }),
       })
       if (result === undefined) {
+        // Idle: move due outbox rows to their queues first (RFC-0006 §8).
+        if ((await this.#manager.relayOutbox()) > 0) continue
         if (this.#options.stopWhenEmpty === true) return finish('empty', WORKER_EXIT.ok)
         await this.#sleep(sleepMs)
         continue

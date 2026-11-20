@@ -511,7 +511,7 @@ describe('chains', () => {
     await runWithDispatcher(h.manager, () =>
       h.manager
         .chain([Step.with({ n: 'a' }), Step.with({ n: 'bad' }), Step.with({ n: 'never' })])
-        .catch(Caught.with({ why: 'x' }))
+        .onFailure(Caught.with({ why: 'x' }))
         .dispatch(),
     )
     while (await h.manager.processNext('main', ['default'])) {}

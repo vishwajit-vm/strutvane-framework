@@ -4,9 +4,11 @@
  *
  * @module
  */
+
+import type { BatchStatus } from '../queue/batches.ts'
 import { QueueManagerToken } from '../queue/config.ts'
 import type { JobCall } from '../queue/job.ts'
-import type { PendingChain, QueueManager } from '../queue/manager.ts'
+import type { PendingBatch, PendingChain, QueueManager } from '../queue/manager.ts'
 import { type FacadeBinding, resolveFacade } from './facade.ts'
 
 const binding: FacadeBinding<QueueManager> = {
@@ -69,13 +71,17 @@ export interface BusFacade {
   dispatchSync(call: JobCall): Promise<void>
   /** Start a chain: each job runs after the previous one succeeded. */
   chain(calls: readonly JobCall[]): PendingChain
+  /** Start a batch: jobs that run in parallel, with onSuccess/onFailure/onFinish jobs. */
+  batch(calls: readonly JobCall[]): PendingBatch
+  /** A batch's progress, or `undefined`. */
+  findBatch(id: string): Promise<BatchStatus | undefined>
 }
 
 /**
  * Dispatch jobs and chains through the current app.
  *
  * @example
- * await Bus.chain([Resize.with({ id }), Publish.with({ id })]).catch(Notify.with({ id })).dispatch()
+ * await Bus.chain([Resize.with({ id }), Publish.with({ id })]).onFailure(Notify.with({ id })).dispatch()
  */
 export const Bus: BusFacade = Object.freeze({
   dispatch: (call: JobCall): Promise<string | undefined> =>
@@ -84,4 +90,8 @@ export const Bus: BusFacade = Object.freeze({
     resolveFacade(busBinding, 'dispatchSync').dispatchSync(call),
   chain: (calls: readonly JobCall[]): PendingChain =>
     resolveFacade(busBinding, 'chain').chain(calls),
+  batch: (calls: readonly JobCall[]): PendingBatch =>
+    resolveFacade(busBinding, 'batch').batch(calls),
+  findBatch: (id: string): Promise<BatchStatus | undefined> =>
+    resolveFacade(busBinding, 'findBatch').findBatch(id),
 })
