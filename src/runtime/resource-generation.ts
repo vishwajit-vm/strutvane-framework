@@ -116,6 +116,7 @@ export function generateResourceRoutes(
   const before = new Set(
     previous
       .split('\n')
+      .map((line) => line.trim())
       .filter((line) => line.startsWith(RESOURCE_MARKER))
       .map((line) => line.slice(RESOURCE_MARKER.length).trim()),
   )
