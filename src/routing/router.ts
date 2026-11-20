@@ -82,6 +82,8 @@ export interface CompiledRoute {
   readonly resourceAction?: string
   /** `true` for a `Route.fallback()`. */
   readonly fallback?: boolean
+  /** Route model binding includes soft-deleted rows (`.withTrashed()`). */
+  readonly withTrashed?: boolean
 }
 
 /**
@@ -228,6 +230,7 @@ function flatten(
             ...scope.excluded,
             ...entry.excludedMiddleware.map((alias) => ({ alias, source: 'route' as const })),
           ],
+          ...(entry.bindsTrashed ? { withTrashed: true } : {}),
         }),
       )
     } else if (entry instanceof RouteGroup) {

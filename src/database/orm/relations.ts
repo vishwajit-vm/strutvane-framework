@@ -87,6 +87,17 @@ export class BelongsToRelation<TRelated extends AnyModelClass>
     )
   }
 
+  /**
+   * The model class on the other side of the relation (what an `?include=` must be authorised
+   * against before its rows are loaded).
+   *
+   * @example
+   * Post.relation('author').relatedModel().name // 'User'
+   */
+  relatedModel(): ModelRuntime {
+    return this.#related
+  }
+
   async eagerLoad(
     parents: readonly ModelBase[],
     name: string,
@@ -181,6 +192,17 @@ export class HasManyRelation<TRelated extends AnyModelClass>
     model.setAttribute(this.#foreignKey, parentKey)
     await model.save()
     return asInstance<TRelated>(model)
+  }
+
+  /**
+   * The model class on the other side of the relation (what an `?include=` must be authorised
+   * against before its rows are loaded).
+   *
+   * @example
+   * Post.relation('author').relatedModel().name // 'User'
+   */
+  relatedModel(): ModelRuntime {
+    return this.#related
   }
 
   async eagerLoad(
@@ -360,6 +382,17 @@ export class BelongsToManyRelation<TRelated extends AnyModelClass>
       await this.attach(toAttach)
       return { attached: toAttach.length, detached: toDetach.length }
     })
+  }
+
+  /**
+   * The model class on the other side of the relation (what an `?include=` must be authorised
+   * against before its rows are loaded).
+   *
+   * @example
+   * Post.relation('author').relatedModel().name // 'User'
+   */
+  relatedModel(): ModelRuntime {
+    return this.#related
   }
 
   async eagerLoad(

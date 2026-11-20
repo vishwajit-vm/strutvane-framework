@@ -19,12 +19,13 @@
  * @module
  */
 
-import { allows, authorize, type Policy } from '../../auth/gate.ts'
+import { allows, authorize, hasAdminRole, type Policy } from '../../auth/gate.ts'
 import { PolicyRegistryToken } from '../../auth/policies.ts'
 import type { IssueInput } from '../../core/errors/errors.ts'
 import { ConflictError, NotFoundError, ValidationError } from '../../core/errors/errors.ts'
 import { BootError } from '../../foundation/boot-error.ts'
 import { currentApplication } from '../../foundation/current.ts'
+import type { AuthUser } from '../../foundation/registry.ts'
 import { UrlGeneratorToken } from '../../routing/url.ts'
 import type { FormRequest } from '../../validation/form-request.ts'
 import { MetadataRequest } from '../../validation/from-metadata.ts'
@@ -59,6 +60,18 @@ export type RecordOf<TModel> = TModel extends ResourceModel<infer TRecord> ? TRe
 const DENY_ALL: Policy<unknown> = Object.freeze({})
 
 /**
+ * Admins may do everything, everyone else nothing: the policy of a generated resource until the
+ * app writes `app/policies/<model>.policy.ts` (blueprint §5: "generated policies allow only the
+ * admin role until you edit them"). Admin means `hasAdminRole()`: `roles` includes `admin`.
+ *
+ * @example
+ * await allows(ADMIN_ONLY, 'delete', user, post) // true only for an admin
+ */
+export const ADMIN_ONLY: Policy<unknown> = Object.freeze({
+  before: (user: AuthUser | null): boolean => hasAdminRole(user),
+})
+
+/**
  * The base for CRUD controllers. Set `model`; set `policy` or let it be discovered; optionally
  * `storeRequest`, `updateRequest`, `indexConstraints()` and `prepareForStore()`.
  *
@@ -88,6 +101,7 @@ export abstract class ResourceController<
    */
   async index(ctx: HttpContext): Promise<Response> {
     await authorize(await this.resolvedPolicy(), 'viewAny', ctx.user)
+    await this.authorizeIncludes(ctx)
     const page = await this.model.paginate(ctx.query, await this.indexConstraints(ctx))
     return ctx.json({ data: page.data, meta: page.meta })
   }
@@ -99,7 +113,9 @@ export abstract class ResourceController<
    * // GET /api/posts/hello-world
    */
   async show(ctx: HttpContext): Promise<Response> {
-    return ctx.json({ data: await this.visible(ctx) })
+    const record = await this.visible(ctx)
+    await this.present(ctx, record)
+    return ctx.json({ data: record })
   }
 
   /**
@@ -134,6 +150,7 @@ export abstract class ResourceController<
     const values = await this.prepareForUpdate({ ...input }, record, ctx)
     await this.assertUnique(values, record)
     await this.withConflictHandling(() => record.updateFromValidated(values))
+    await this.present(ctx, record)
     return ctx.json({ data: record })
   }
 
@@ -148,6 +165,59 @@ export abstract class ResourceController<
     await authorize(await this.resolvedPolicy(), 'delete', ctx.user, record)
     await record.delete()
     return ctx.noContent()
+  }
+
+  /**
+   * `POST /posts/{post}/restore`: bring a soft-deleted record back, if the policy's `view` and
+   * `restore` allow it. The route binds with trashed rows (`.withTrashed()`, which the generated
+   * resource routes set); on a table without soft deletes there is nothing to restore (404).
+   *
+   * @example
+   * // routes: Route.post('/posts/{post}/restore', [PostController, 'restore']).withTrashed()
+   */
+  async restore(ctx: HttpContext): Promise<Response> {
+    const record = await this.visible(ctx)
+    await authorize(await this.resolvedPolicy(), 'restore', ctx.user, record)
+    if (this.model.metadata().softDeletes !== true || typeof record.restore !== 'function')
+      throw new NotFoundError(this.label())
+    await this.withConflictHandling(async () => {
+      await record.restore?.()
+    })
+    await this.present(ctx, record)
+    return ctx.json({ data: record })
+  }
+
+  /**
+   * Every `?include=` names a related model the user may list (`viewAny` on the related model's
+   * policy, deny by default), checked before any row is loaded: an include must never show rows
+   * the related resource's own API would refuse (security review F-02). Names the model refuses
+   * are left to the model, which reports them as 422 `include_not_allowed`.
+   *
+   * @example
+   * await this.authorizeIncludes(ctx)
+   */
+  protected async authorizeIncludes(ctx: HttpContext): Promise<void> {
+    const raw = ctx.query.get('include')
+    if (raw === null || raw === '' || this.model.includable === undefined) return
+    const registry = currentApplication(this.constructor.name).container.make(PolicyRegistryToken)
+    for (const name of new Set(raw.split(',').map((part) => part.trim()))) {
+      const related = this.model.includable(name)
+      if (related === undefined) continue
+      const policy = (await registry.discover(related)) ?? DENY_ALL
+      await authorize(policy, 'viewAny', ctx.user)
+    }
+  }
+
+  /**
+   * Apply `?include=` / `?fields=` to a single record, when the model supports them.
+   *
+   * @example
+   * await this.present(ctx, record)
+   */
+  protected async present(ctx: HttpContext, record: RecordOf<TModel>): Promise<void> {
+    if (this.model.present === undefined) return
+    await this.authorizeIncludes(ctx)
+    await this.model.present(record, ctx.query)
   }
 
   /**
@@ -233,7 +303,20 @@ export abstract class ResourceController<
     if (this.policy !== undefined) return this.policy
     const registry = currentApplication(this.constructor.name).container.make(PolicyRegistryToken)
     const policy = await registry.discover(this.model)
-    return (policy ?? DENY_ALL) as Policy<RecordOf<TModel>>
+    return (policy ?? this.fallbackPolicy() ?? DENY_ALL) as Policy<RecordOf<TModel>>
+  }
+
+  /**
+   * The policy when neither the controller nor `app/policies` has one. `undefined` (the default)
+   * makes boot fail with `missing_policy`, so a hand-written controller can't go live unguarded.
+   * Generated controllers ({@link resourceController}) answer {@link ADMIN_ONLY}: deny by default,
+   * admins only, until the app writes its policy (blueprint §5).
+   *
+   * @example
+   * protected override fallbackPolicy() { return ADMIN_ONLY }
+   */
+  fallbackPolicy(): Policy<RecordOf<TModel>> | undefined {
+    return undefined
   }
 
   /**
@@ -337,7 +420,7 @@ export abstract class ResourceController<
       const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined
       if (!field.unique || (typeof value !== 'string' && typeof value !== 'number')) continue
       if (await this.model.isTaken(field.name, value, exceptKey))
-        issues.push({ path: [field.name], code: 'taken' })
+        issues.push({ path: [field.name], code: 'unique' })
     }
     if (issues.length > 0) throw new ValidationError(issues)
   }
@@ -384,4 +467,39 @@ export abstract class ResourceController<
     for (const name of parameters.slice(0, -1)) params[name] = ctx.param(name)
     return { location: urls.route(showName, params) }
   }
+}
+
+/** One generated controller class per model, so every route of a resource shares it. */
+const generatedControllers = new WeakMap<object, new () => ResourceController<never>>()
+
+/**
+ * A ready `ResourceController` for a model, with nothing to write: what the generated
+ * `routes/resources.gen.ts` uses for every model without its own controller. Calling it twice
+ * with the same model returns the same class, so the resource and its `restore` route share one
+ * controller (and its boot checks).
+ *
+ * @example
+ * const CustomerController = resourceController(Customer)
+ * Route.apiResource('customers', CustomerController)
+ */
+export function resourceController<TModel extends ResourceModel<ResourceRecord>>(
+  model: TModel,
+): new () => ResourceController<TModel> {
+  const cached = generatedControllers.get(model) as
+    | (new () => ResourceController<TModel>)
+    | undefined
+  if (cached !== undefined) return cached
+  class GeneratedResourceController extends ResourceController<TModel> {
+    protected readonly model: TModel = model
+    override fallbackPolicy(): Policy<RecordOf<TModel>> {
+      return ADMIN_ONLY
+    }
+  }
+  // `CustomerController` in route:list, boot errors and logs, as if it were written by hand.
+  Object.defineProperty(GeneratedResourceController, 'name', { value: `${model.name}Controller` })
+  generatedControllers.set(
+    model,
+    GeneratedResourceController as unknown as new () => ResourceController<never>,
+  )
+  return GeneratedResourceController
 }

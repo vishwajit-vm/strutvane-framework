@@ -250,6 +250,30 @@ export function generateMetadata(
   return { version: 1, resources: withSidebarOrder(resources, overrides), internal }
 }
 
+/**
+ * The metadata of one table, derived exactly as {@link generateMetadata} derives it for
+ * `.strutvane/resources.json`, for the runtime (the ORM serves a model's API from the schema
+ * snapshot it already holds, so the API can never disagree with the file the UI reads). Internal
+ * tables get their metadata too, flagged `internal: true`, so the boot check can refuse them by
+ * name. The sidebar order is not computed here (it needs every resource and the overrides).
+ *
+ * @example
+ * resourceMetadataForTable(state, 'posts', models.get('posts')).fields.find((f) => f.name === 'email')?.unique
+ */
+export function resourceMetadataForTable(
+  state: SchemaState,
+  table: string,
+  model?: ModelOptions,
+): ResourceMetadata & { readonly internal?: true } {
+  const found = state.tables.find((candidate) => candidate.name === table)
+  if (found === undefined)
+    throw new RangeError(
+      `The table "${table}" is not in the schema. Create it in a migration and run \`node strut migrate\`.`,
+    )
+  const resource = resourceFor(state, found, model)
+  return isInternal(found) ? { ...resource, internal: true } : resource
+}
+
 /** Flagged `{ internal: true }`, or a framework/identity table whatever its flag says. */
 function isInternal(table: TableState): boolean {
   return table.internal === true || isInternalTable(table.name)

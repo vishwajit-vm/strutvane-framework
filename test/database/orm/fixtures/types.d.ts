@@ -164,6 +164,47 @@ export interface NewTeamProject {
   name: string
 }
 
+/** A row of the `customers` table (the generated CRUD API suite). */
+export interface Customer {
+  id: number
+  name: string
+  email: string
+  status: 'active' | 'inactive'
+  credit_limit: string
+  notes: string | null
+  api_token: string | null
+  created_at: Date | null
+  updated_at: Date | null
+  deleted_at: Date | null
+}
+
+/** What creating a customer needs. */
+export interface NewCustomer {
+  name: string
+  email: string
+  status?: 'active' | 'inactive'
+  credit_limit?: string | number
+  notes?: string | null
+  api_token?: string | null
+}
+
+/** A row of the `orders` table. */
+export interface Order {
+  id: number
+  customer_id: number
+  number: string
+  total: string
+  created_at: Date | null
+  updated_at: Date | null
+}
+
+/** What creating an order needs. */
+export interface NewOrder {
+  customer_id: number
+  number: string
+  total?: string | number
+}
+
 /** Every table, with its four shapes. */
 export interface Tables {
   users: { row: User; insert: NewUser; update: Partial<NewUser>; json: UserJson }
@@ -179,6 +220,8 @@ export interface Tables {
     json: object
   }
   tasks: { row: Task; insert: NewTask; update: Partial<NewTask>; json: object }
+  customers: { row: Customer; insert: NewCustomer; update: Partial<NewCustomer>; json: object }
+  orders: { row: Order; insert: NewOrder; update: Partial<NewOrder>; json: object }
   team_projects: {
     row: TeamProject
     insert: NewTeamProject

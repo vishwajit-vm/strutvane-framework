@@ -8,13 +8,22 @@
  */
 import { PROBLEM_CONTENT_TYPE, type Problem } from '../contracts/index.ts'
 import {
+  ConflictError,
   type ErrorRegistry,
   type IssueInput,
   type Messages,
+  NotFoundError,
   StrutvaneError,
   toProblem,
   ValidationError,
 } from '../core/index.ts'
+import { ReferenceViolationError, UniqueViolationError } from '../database/orm/constraint-errors.ts'
+import {
+  CastError,
+  MassAssignmentError,
+  ModelNotFoundError,
+  TenantRequiredError,
+} from '../database/orm/errors.ts'
 import { FilterError } from '../query/bind.ts'
 import { CursorError, SortError } from '../query/sort.ts'
 
@@ -67,6 +76,8 @@ export function normalizeError(raw: unknown, where: 'query' | 'body' = 'query'):
       },
     )
   }
+  const orm = ormProblem(error)
+  if (orm !== undefined) return orm
   if (error instanceof SortError) {
     return new ValidationError(
       [
@@ -82,6 +93,51 @@ export function normalizeError(raw: unknown, where: 'query' | 'body' = 'query'):
     )
   }
   return error
+}
+
+/**
+ * The ORM's expected errors as problems (RFC-0003 row 4: "DB unique violations are caught and
+ * translated, never leaked as SQL errors"). Only errors a request can cause on purpose are mapped;
+ * every other ORM error stays a 500, because it is a bug in the app's code.
+ *
+ * | ORM error | Problem |
+ * |---|---|
+ * | `UniqueViolationError` on known columns | 422 `validation_failed`, issue `unique` per column |
+ * | `UniqueViolationError`, columns unknown | 409 `conflict` |
+ * | `ReferenceViolationError` `missing` | 422, issue `not_found` on the foreign key (409 `conflict` when unnamed) |
+ * | `ReferenceViolationError` `in_use` | 409 `record_in_use` |
+ * | `ModelNotFoundError` | 404 `not_found` (never 403: it doesn't confirm the row exists) |
+ * | `MassAssignmentError` | 422, issue `unknown_field` |
+ * | `CastError` | 422, issue `invalid` on the column |
+ * | `TenantRequiredError` | 403 `tenant_required` |
+ */
+function ormProblem(error: unknown): StrutvaneError | undefined {
+  const options = { cause: error }
+  if (error instanceof UniqueViolationError)
+    return error.columns.length === 0
+      ? new ConflictError('conflict', undefined, options)
+      : new ValidationError(
+          error.columns.map((column) => ({ path: [column], code: 'unique' })),
+          options,
+        )
+  if (error instanceof ReferenceViolationError) {
+    if (error.kind === 'in_use')
+      return new ConflictError('record_in_use', { resource: error.table }, options)
+    return error.columns.length === 0
+      ? new ConflictError('conflict', undefined, options)
+      : new ValidationError(
+          error.columns.map((column) => ({ path: [column], code: 'not_found' })),
+          options,
+        )
+  }
+  if (error instanceof ModelNotFoundError) return new NotFoundError(undefined, options)
+  if (error instanceof MassAssignmentError)
+    return new ValidationError([{ path: [error.field], code: 'unknown_field' }], options)
+  if (error instanceof CastError)
+    return new ValidationError([{ path: [error.column], code: 'invalid' }], options)
+  if (error instanceof TenantRequiredError)
+    return new StrutvaneError('tenant_required', { status: 403, ...options })
+  return undefined
 }
 
 /** Options for {@link problemResponse}. */

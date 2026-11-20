@@ -108,7 +108,7 @@ describe('F-01 and F-11: start-up checks', () => {
     expect(error.hint).toContain('app/policies/orphan.policy.ts')
   })
 
-  it('refuses {param:field} without a binding, an unbound resource parameter and a missing action', async () => {
+  it('refuses {param:field} without a binding, an unbound parent parameter and a missing action', async () => {
     expect(
       (await bootError(customApp({ web: defineRoutes([Route.get('/things/{thing:slug}', ok)]) })))
         .hint,
@@ -120,11 +120,20 @@ describe('F-01 and F-11: start-up checks', () => {
       (
         await bootError(
           customApp({
-            api: defineRoutes([Route.apiResource('articles', PostsController, { only: ['show'] })]),
+            api: defineRoutes([
+              Route.apiResource('shops.articles', PostsController, { only: ['show'] }),
+            ]),
           }),
         )
       ).code,
     ).toBe('missing_binding')
+    // The resource's own parameter is bound implicitly to the controller's model (FW-5); only a
+    // parent ({shop}) needs an explicit binding.
+    await expect(
+      customApp({
+        api: defineRoutes([Route.apiResource('articles', PostsController, { only: ['show'] })]),
+      }),
+    ).resolves.toBeDefined()
     class Partial {
       index(ctx: HttpContext): Response {
         return ctx.json([])
@@ -205,7 +214,7 @@ describe('ResourceController edges', () => {
       .assertJsonPath('data.bio', 'Hello')
     ;(await alice.patchJson('/api/writers/2', { email: 'bob@example.test' }))
       .assertProblem(422, 'validation_failed')
-      .assertJsonPath('issues.0.code', 'taken')
+      .assertJsonPath('issues.0.code', 'unique')
     ;(await alice.patchJson('/api/writers/2', { api_token: 'mine' })).assertProblem(
       422,
       'validation_failed',

@@ -51,6 +51,7 @@ import { realRoot } from '../support/real-path.ts'
 import { firstAppEnv } from './app-env.ts'
 import { migrationLockTimeoutMs, migrationReplayTimeoutMs } from './migrations.ts'
 import { importDefault, loadDotEnv } from './project.ts'
+import { generateResourceRoutes, registeredLine } from './resource-generation.ts'
 import { isSeeder, type Seeder } from './seeders.ts'
 
 /** Laravel's migration file names; their presence makes a project migration-first. */
@@ -239,8 +240,42 @@ async function afterChange(
 ): Promise<void> {
   for (const file of syncArtifacts(root, replay, (message) => ctx.out.warn(message)))
     ctx.out.info(`Updated ${file}`)
+  await announceResources(ctx, root, replay)
   const drift = schemaDrift(replay.state, await introspect(connection), connection.grammar.dialect)
   for (const line of drift) ctx.out.warn(`Schema drift: ${line}`)
+}
+
+/**
+ * Blueprint §2.4 step 4: regenerate `routes/resources.gen.ts` and announce each new resource
+ * with the DX contract's `registered: API … · UI … · menu "…"` line (FW-4).
+ */
+async function announceResources(
+  ctx: CommandContextLike,
+  root: string,
+  replay: Replay,
+): Promise<void> {
+  const generation = generateResourceRoutes(root, replay.state, readAppModels(root))
+  for (const warning of generation.warnings) ctx.out.warn(warning)
+  for (const file of generation.written) ctx.out.info(`Updated ${file}`)
+  if (generation.manualLink !== undefined)
+    ctx.out.warn(
+      `routes/api.ts was left as it is (it has no single \`export default defineRoutes([\`). Add the generated CRUD routes yourself:\n  ${generation.manualLink.join('\n  ')}`,
+    )
+  if (generation.added.length === 0) return
+  const prefix = await apiPrefixOf(root)
+  for (const resource of generation.added) ctx.out.success(registeredLine(resource, prefix))
+}
+
+/** The API prefix from `config/api.ts` (`/api` when it has none or can't be read). */
+async function apiPrefixOf(root: string): Promise<string> {
+  const file = join(root, 'config', 'api.ts')
+  if (!existsSync(file)) return '/api'
+  try {
+    const config = (await importDefault(file)) as { prefix?: unknown } | undefined
+    return typeof config?.prefix === 'string' ? config.prefix : '/api'
+  } catch {
+    return '/api'
+  }
 }
 
 async function seedWith(
@@ -283,7 +318,7 @@ async function seedWith(
         message:
           options.className === undefined
             ? `${SEEDERS_DIR}/database.seeder.ts was not found. Create it, or run node strut db:seed --class=PostSeeder.`
-            : `No seeder named ${wanted} in ${SEEDERS_DIR}. Seeders there: ${[...byName.keys()].join(', ') || 'none'}.`,
+            : `No seeder named $wantedin $SEEDERS_DIR. Seeders there: $[...byName.keys()].join(', ') || 'none'.`,
       },
     ])
   const ran = await runSeeders(root_, {

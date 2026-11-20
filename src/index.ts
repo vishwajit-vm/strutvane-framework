@@ -151,7 +151,11 @@ export {
   withSigned,
   withThrottle,
 } from './http/app/protections.ts'
-export { Controller, ResourceController } from './http/app/resource-controller.ts'
+export {
+  Controller,
+  ResourceController,
+  resourceController,
+} from './http/app/resource-controller.ts'
 export type { ResourceModel } from './http/app/resource-model.ts'
 // The rate limiter's counter store: bind a shared store (Redis) here for limits across servers.
 export { RateLimitStoreToken } from './http/app/throttle.ts'

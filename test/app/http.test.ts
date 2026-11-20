@@ -182,7 +182,7 @@ describe('store: form requests, policies and problem+json', () => {
     })
     escalation.assertProblem(422, 'validation_failed').assertJsonPath('issues.0.path', ['is_admin'])
     const taken = await admin.postJson('/api/authors', { name: 'Eve', email: 'alice@example.test' })
-    taken.assertProblem(422, 'validation_failed').assertJsonPath('issues.0.code', 'taken')
+    taken.assertProblem(422, 'validation_failed').assertJsonPath('issues.0.code', 'unique')
     const missing = await admin.postJson('/api/authors', { email: 42 })
     expect(
       (missing.json as { issues: { message: string }[] }).issues.map((issue) => issue.message),

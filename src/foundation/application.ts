@@ -188,7 +188,11 @@ import { type AnyProvider, isProviderClass, type ServiceProvider } from './provi
  */
 export interface BindableModel {
   readonly name: string
-  resolveRouteBinding(value: string, field?: string): Promise<object | null>
+  resolveRouteBinding(
+    value: string,
+    field?: string,
+    options?: { readonly withTrashed?: boolean },
+  ): Promise<object | null>
 }
 
 /**
@@ -390,6 +394,8 @@ export class Application implements CoreApplication<object> {
     events: 'none',
   }
   readonly #blueprint: Blueprint
+  /** `#implicitBinding` answers, per controller class. */
+  readonly #implicitModels = new Map<unknown, BindableModel | undefined>()
   readonly #core: CoreApplication<object>
   readonly #middleware = new MiddlewareConfig()
   readonly #exceptions = new ExceptionsConfig()
@@ -1094,7 +1100,8 @@ export class Application implements CoreApplication<object> {
       )
     const model = controller.resourceModel()
     const bindings = this.#blueprint.routing.bindings ?? {}
-    for (const parameter of route.parameters)
+    // The last parameter is the controller's own model (implicit binding); parents need a binding.
+    for (const parameter of route.parameters.slice(0, -1))
       if (bindings[parameter.name] === undefined)
         throw new BootError(
           'missing_binding',
@@ -1103,7 +1110,7 @@ export class Application implements CoreApplication<object> {
         )
     if (controller.explicitPolicy() !== undefined) return
     const policy = await this.make(PolicyRegistryToken).discover(model)
-    if (policy === undefined)
+    if (policy === undefined && controller.fallbackPolicy() === undefined)
       throw new BootError(
         'missing_policy',
         `${controllerClass.name} serves ${model.name} but no policy was found for it.`,
@@ -1333,13 +1340,40 @@ export class Application implements CoreApplication<object> {
 
   async #bindModels(route: CompiledRoute, ctx: Ctx): Promise<void> {
     const bindings = this.#blueprint.routing.bindings ?? {}
+    const implicit = this.#implicitBinding(route)
+    const options = route.withTrashed === true ? { withTrashed: true } : undefined
     for (const parameter of route.parameters) {
-      const model = Object.hasOwn(bindings, parameter.name) ? bindings[parameter.name] : undefined
+      const model =
+        (Object.hasOwn(bindings, parameter.name) ? bindings[parameter.name] : undefined) ??
+        (parameter === route.parameters.at(-1) ? implicit : undefined)
       if (model === undefined) continue
-      const found = await model.resolveRouteBinding(ctx.param(parameter.name), parameter.field)
+      const found = await model.resolveRouteBinding(
+        ctx.param(parameter.name),
+        parameter.field,
+        options,
+      )
       if (found === null || found === undefined) throw new NotFoundError(parameter.name)
       ctx.bindModel(parameter.name, found)
     }
+  }
+
+  /**
+   * Implicit route model binding (Laravel binds by the controller's type hint): a
+   * `ResourceController` route binds its last parameter to the controller's own model, so
+   * `Route.apiResource('customers', CustomerController)` needs no `bindings` entry. An explicit
+   * binding always wins. Resolved once per controller class.
+   */
+  #implicitBinding(route: CompiledRoute): BindableModel | undefined {
+    if (route.action.kind !== 'controller') return undefined
+    const controllerClass = route.action.controller
+    if (this.#implicitModels.has(controllerClass)) return this.#implicitModels.get(controllerClass)
+    let model: BindableModel | undefined
+    if (controllerClass.prototype instanceof ResourceController) {
+      const controller = this.#scope(() => buildUnchecked(this.container, controllerClass))
+      if (controller instanceof ResourceController) model = controller.resourceModel()
+    }
+    this.#implicitModels.set(controllerClass, model)
+    return model
   }
 
   async #invoke(route: CompiledRoute, ctx: Ctx): Promise<Response> {

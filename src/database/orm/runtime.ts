@@ -78,6 +78,8 @@ export function isModelRuntime(value: unknown): value is ModelRuntime {
  */
 export interface RelationContract {
   readonly '~strutvane.relation': true
+  /** The model class on the other side of the relation. */
+  relatedModel(): ModelRuntime
   /** Load this relation for all `parents` with one query; return the loaded models (for nesting). */
   eagerLoad(
     parents: readonly ModelBase[],

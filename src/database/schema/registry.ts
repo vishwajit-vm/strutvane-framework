@@ -186,6 +186,18 @@ export function allTables(): string[] {
   return Object.keys(snapshot?.tables ?? {})
 }
 
+/**
+ * The registered snapshot itself (or `undefined` before boot). The resource layer derives a
+ * table's API metadata from it (relations need every table, not just one). Compare it by identity
+ * to know when a cache built from it is stale: {@link registerSchema} always installs a new object.
+ *
+ * @example
+ * registeredSchema()?.tables['posts']?.columns.length
+ */
+export function registeredSchema(): SchemaSnapshot | undefined {
+  return snapshot
+}
+
 /** A table of the snapshot by name: own entries only (never `constructor` from the prototype). */
 function ownTable(table: string): TableState | undefined {
   const tables = snapshot?.tables

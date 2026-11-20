@@ -26,7 +26,7 @@ export type PolicyResult = boolean | Promise<boolean>
  * @example
  * const ability: Ability = 'update'
  */
-export type Ability = 'viewAny' | 'view' | 'create' | 'update' | 'delete'
+export type Ability = 'viewAny' | 'view' | 'create' | 'update' | 'delete' | 'restore'
 
 /**
  * A policy for one model. Every method is optional, and an absent one means "deny".
@@ -44,6 +44,8 @@ export interface Policy<TModel> {
   create?(user: AuthUser | null): PolicyResult
   update?(user: AuthUser | null, model: TModel): PolicyResult
   delete?(user: AuthUser | null, model: TModel): PolicyResult
+  /** Bring a soft-deleted record back (`POST /posts/{post}/restore`). */
+  restore?(user: AuthUser | null, model: TModel): PolicyResult
 }
 
 /** Abilities that act on one record (the others act on the collection). */

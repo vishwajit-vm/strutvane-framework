@@ -67,6 +67,9 @@ export function isWritable(
   return field.references === undefined || !ownerTables.includes(field.references)
 }
 
+/** A decimal sent as text: digits, an optional sign and fraction, nothing else. */
+const DECIMAL = /^-?\d{1,30}(\.\d{1,30})?$/
+
 function fieldSchema(field: ResourceField): z.ZodType {
   const label = field.label
   const typeError =
@@ -85,8 +88,18 @@ function fieldSchema(field: ResourceField): z.ZodType {
         .number({ error: typeError('a whole number') })
         .int({ error: `${label} must be a whole number.` })
     case 'number':
-    case 'decimal':
       return z.number({ error: typeError('a number') })
+    case 'decimal':
+      // The API returns decimals as strings (exact), so a form that sends one back must be valid;
+      // the ORM then checks the scale against the column.
+      return z
+        .union([z.number(), z.string()], { error: typeError('a number') })
+        .refine(
+          (value) => (typeof value === 'number' ? Number.isFinite(value) : DECIMAL.test(value)),
+          {
+            error: `${label} must be a number.`,
+          },
+        )
     case 'boolean':
       return z.boolean({ error: typeError('true or false') })
     case 'datetime':

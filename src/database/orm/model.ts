@@ -22,9 +22,15 @@
  * knows its table and options.
  */
 
+import type {
+  Constraint,
+  ResourceModel,
+  ResourcePage,
+  RouteBindingOptions,
+} from '../../http/app/resource-model.ts'
 import { isHiddenColumn, isPrivilegeColumn, isSecretColumn } from '../../schema/columns.ts'
 import type { Connection } from '../db/connection.ts'
-import type { Row } from '../db/driver.ts'
+import type { QueryResult, Row } from '../db/driver.ts'
 import { defaultConnection } from '../db/manager.ts'
 import {
   type ColumnOf,
@@ -40,6 +46,7 @@ import { assertIdentifier, sql } from '../sql/fragment.ts'
 import { Builder, loadRelations, parseRelationPaths } from './builder.ts'
 import { applyCast, type Cast, fromDatabase, toDatabase } from './casts.ts'
 import { ormConfig } from './config.ts'
+import { translateConstraintError } from './constraint-errors.ts'
 import {
   LazyLoadingError,
   MassAssignmentError,
@@ -49,6 +56,7 @@ import {
 } from './errors.ts'
 import { currentModelEvents, type ModelEventVerb, modelEventName } from './events.ts'
 import { uuidv7 } from './keys.ts'
+import type { Page } from './pagination.ts'
 import {
   type BelongsTo,
   type BelongsToMany,
@@ -57,6 +65,17 @@ import {
   type HasMany,
   HasManyRelation,
 } from './relations.ts'
+import {
+  bindRoute,
+  includableModel,
+  isResourceModel,
+  isValueTaken,
+  listForRequest,
+  type OrmResourceMetadata,
+  presentRecord,
+  resourceMetadataOf,
+  routeKeyOf,
+} from './resource.ts'
 import {
   attribute,
   isModelRuntime,
@@ -138,6 +157,8 @@ export class ModelBase {
   #persisted = false
   /** Arrived in a multi-row result: loading a relation on it alone is the N+1 pattern. */
   #fromList = false
+  /** `setVisible()`: when set, only these keys are serialized. */
+  #visible: ReadonlySet<string> | undefined
 
   // -------------------------------------------------------------------------------------------
   // Static side: what `Post.something()` does
@@ -352,6 +373,118 @@ export class ModelBase {
   }
 
   // -------------------------------------------------------------------------------------------
+  // The resource contract: what `ResourceController` asks of a model (`resource.ts`)
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * The mass-assignment allow-list given to `Model()`, as `ResourceController` reads it.
+   *
+   * @example
+   * Customer.fillable // ['name', 'email']
+   */
+  static get fillable(): readonly string[] | undefined {
+    return this.options.fillable
+  }
+
+  /**
+   * This model's resource metadata: labels, fields, allow-lists and relations, exactly as
+   * `.strutvane/resources.json` describes the table (derived from the same schema snapshot).
+   *
+   * @example
+   * Customer.metadata().label.plural // 'Customers'
+   */
+  static metadata(): OrmResourceMetadata {
+    return resourceMetadataOf(this)
+  }
+
+  /**
+   * One page. With a request's query string (what `ResourceController.index` passes), every
+   * name is checked against the allow-lists first; with numbers, Eloquent's `Post::paginate(25)`.
+   *
+   * @example
+   * await Customer.paginate(new URLSearchParams('filter[active][eq]=true&sort=name'), [])
+   * await Customer.paginate(25, 2)
+   */
+  static paginate(
+    queryOrPerPage?: URLSearchParams | number,
+    constraintsOrPage?: readonly Constraint[] | number,
+  ): Promise<ResourcePage<ModelBase> | Page<ModelBase>> {
+    if (queryOrPerPage instanceof URLSearchParams)
+      return listForRequest(
+        this,
+        queryOrPerPage,
+        Array.isArray(constraintsOrPage) ? constraintsOrPage : [],
+      )
+    return this.query().paginate(
+      queryOrPerPage,
+      typeof constraintsOrPage === 'number' ? constraintsOrPage : undefined,
+    )
+  }
+
+  /**
+   * Insert values a controller already validated and narrowed to `fillable` (plus what its own
+   * code set in `prepareForStore`, such as an owner id). Never pass raw request data here.
+   *
+   * @example
+   * await Customer.createFromValidated({ name: 'Acme', email: 'ops@acme.test' })
+   */
+  static createFromValidated(values: Readonly<Record<string, unknown>>): Promise<ModelBase> {
+    return this.forceCreate(values)
+  }
+
+  /**
+   * Route model binding: the row whose `field` (the primary key by default) equals the URL value,
+   * within the tenant; `null` when there is none or the value is malformed.
+   *
+   * @example
+   * await Customer.resolveRouteBinding('7') // or null
+   */
+  static resolveRouteBinding(
+    value: string,
+    field?: string,
+    options?: RouteBindingOptions,
+  ): Promise<ModelBase | null> {
+    return bindRoute(this, value, field, options?.withTrashed === true)
+  }
+
+  /**
+   * Does another row (soft-deleted ones included) already hold `value` in `column`?
+   *
+   * @example
+   * await Customer.isTaken('email', 'ops@acme.test', customer.id)
+   */
+  static isTaken(
+    column: string,
+    value: string | number,
+    exceptKey?: string | number,
+  ): Promise<boolean> {
+    return isValueTaken(this, column, value, exceptKey)
+  }
+
+  /**
+   * The model behind an `?include=` name, or `undefined` when it may not be included.
+   *
+   * @example
+   * Customer.includable('orders')?.name // 'Order'
+   */
+  static includable(name: string): ResourceModel | undefined {
+    const related = includableModel(this, name)
+    return isResourceModel(related) ? related : undefined
+  }
+
+  /**
+   * Apply `?include=` and `?fields=` to one record before it is returned.
+   *
+   * @example
+   * await Customer.present(customer, new URLSearchParams('include=orders'))
+   */
+  static present(record: object, query: URLSearchParams): Promise<void> {
+    if (!(record instanceof ModelBase))
+      throw new OrmUsageError('not_a_model', 'present() needs a model instance.')
+    return presentRecord(this, record, query)
+  }
+
+  // -------------------------------------------------------------------------------------------
   // Instance side: what `post.something()` does
   // -------------------------------------------------------------------------------------------
 
@@ -376,6 +509,40 @@ export class ModelBase {
    */
   isPersisted(): boolean {
     return this.#persisted
+  }
+
+  /**
+   * The value that identifies this row in a URL: `field`, or the primary key (`UrlRoutable`, so
+   * `route('customers.show', { customer })` works).
+   *
+   * @example
+   * customer.routeKey() // 7
+   */
+  routeKey(field?: string): string | number {
+    return routeKeyOf(this, field)
+  }
+
+  /**
+   * Save values a controller already validated and narrowed to `fillable`.
+   *
+   * @example
+   * await customer.updateFromValidated({ name: 'Acme Ltd' })
+   */
+  async updateFromValidated(values: Readonly<Record<string, unknown>>): Promise<void> {
+    this.forceFill(values)
+    await this.save()
+  }
+
+  /**
+   * Serialize only these keys (columns or loaded relations), Laravel's `setVisible()`: what a
+   * `?fields=` sparse fieldset uses. Hidden columns stay hidden whatever this says.
+   *
+   * @example
+   * customer.setVisible(['id', 'name']).toJSON() // { id: 7, name: 'Acme' }
+   */
+  setVisible(keys: readonly string[]): this {
+    this.#visible = new Set(keys)
+    return this
   }
 
   /**
@@ -531,10 +698,15 @@ export class ModelBase {
     const connection = this.runtime().connection()
     const where = this.#keyConditions(info)
     assertWriteScoped(info.name, where)
-    const { rowsAffected } = await connection.run(
-      markScoped(compileDelete(info.name, where, connection.grammar)),
-      this.#runOptions(info),
-    )
+    let rowsAffected: number
+    try {
+      ;({ rowsAffected } = await connection.run(
+        markScoped(compileDelete(info.name, where, connection.grammar)),
+        this.#runOptions(info),
+      ))
+    } catch (error) {
+      throw translateConstraintError(error, info.name, 'delete') ?? error
+    }
     if (rowsAffected === 0) throw new ModelNotFoundError(info.name, attribute(this, 'id'))
     this.#persisted = false
     await this.#announce('deleted', { soft: false })
@@ -602,7 +774,7 @@ export class ModelBase {
     const hidden = this.runtime().settings().hidden
     const json: Record<string, unknown> = {}
     for (const key of Object.keys(this)) {
-      if (hidden.has(key)) continue
+      if (hidden.has(key) || (this.#visible !== undefined && !this.#visible.has(key))) continue
       json[key] = jsonValue(attribute(this, key))
     }
     return json
@@ -716,10 +888,16 @@ export class ModelBase {
       (slug) =>
         record[slug.name] === undefined || record[slug.name] === null || record[slug.name] === '',
     )
-    const row =
-      missingSlugs.length === 0
-        ? await this.#insertRow(info, record)
-        : await this.#insertWithSlugs(info, record, missingSlugs)
+    let row: Row
+    try {
+      row =
+        missingSlugs.length === 0
+          ? await this.#insertRow(info, record)
+          : await this.#insertWithSlugs(info, record, missingSlugs)
+    } catch (error) {
+      // A duplicate or a dangling reference is the caller's mistake: name the columns (FW-10).
+      throw translateConstraintError(error, info.name, 'write') ?? error
+    }
     this.#assignRow(row)
     this.#persisted = true
   }
@@ -872,10 +1050,15 @@ export class ModelBase {
     const connection = runtime.connection()
     const where = this.#keyConditions(info)
     assertWriteScoped(info.name, where)
-    const result = await connection.run(
-      markScoped(compileUpdate(info.name, changes, where, connection.grammar, true)),
-      this.#runOptions(info),
-    )
+    let result: QueryResult
+    try {
+      result = await connection.run(
+        markScoped(compileUpdate(info.name, changes, where, connection.grammar, true)),
+        this.#runOptions(info),
+      )
+    } catch (error) {
+      throw translateConstraintError(error, info.name, 'write') ?? error
+    }
     // Without RETURNING (MySQL) the row is read back with the same key and tenant conditions.
     const row = connection.grammar.supportsUpdateReturning
       ? result.rows[0]
@@ -965,6 +1148,9 @@ export class ModelBase {
 export interface ModelInstanceMethods<TTable extends TableName, TOptions>
   extends ModelMarker<TTable, TOptions> {
   isPersisted(): boolean
+  routeKey(field?: ColumnOf<TTable>): string | number
+  updateFromValidated(values: Readonly<Record<string, unknown>>): Promise<void>
+  setVisible(keys: readonly string[]): this
   setAttribute<TColumn extends ColumnOf<TTable>>(
     column: TColumn,
     value: Attributes<TTable, TOptions>[TColumn],
@@ -1050,6 +1236,30 @@ export interface ModelClass<TTable extends TableName, TOptions> {
   ): QueryBuilder<TSelf, InstanceOf<TSelf>>
   withTrashed<TSelf extends AnyModelClass>(this: TSelf): QueryBuilder<TSelf, InstanceOf<TSelf>>
   onlyTrashed<TSelf extends AnyModelClass>(this: TSelf): QueryBuilder<TSelf, InstanceOf<TSelf>>
+  // The resource contract (`ResourceController`; see `resource.ts`). Typed with the base
+  // instance (not `this`), so `typeof Post` is a `ResourceModel` whose records have the columns.
+  readonly fillable: readonly string[] | undefined
+  metadata(): OrmResourceMetadata
+  paginate(
+    query: URLSearchParams,
+    constraints?: readonly Constraint[],
+  ): Promise<ResourcePage<ModelInstance<TTable, TOptions>>>
+  paginate<TSelf extends AnyModelClass>(
+    this: TSelf,
+    perPage?: number,
+    page?: number,
+  ): Promise<Page<InstanceOf<TSelf>>>
+  createFromValidated(
+    values: Readonly<Record<string, unknown>>,
+  ): Promise<ModelInstance<TTable, TOptions>>
+  resolveRouteBinding(
+    value: string,
+    field?: string,
+    options?: RouteBindingOptions,
+  ): Promise<ModelInstance<TTable, TOptions> | null>
+  isTaken(column: string, value: string | number, exceptKey?: string | number): Promise<boolean>
+  includable(name: string): ResourceModel | undefined
+  present(record: object, query: URLSearchParams): Promise<void>
 }
 
 /**

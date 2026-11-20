@@ -160,8 +160,14 @@ export class LazyLoadingError extends OrmError {
  */
 export class CastError extends OrmError {
   override readonly name = 'CastError'
+  /** The table whose column refused the value. */
+  readonly table: string
+  /** The column that refused the value (the HTTP layer reports it as the field of a 422 issue). */
+  readonly column: string
 
   constructor(table: string, column: string, detail: string) {
     super('invalid_value', `Can't store that value in "${table}.${column}": ${detail}.`)
+    this.table = table
+    this.column = column
   }
 }

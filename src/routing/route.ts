@@ -183,6 +183,7 @@ interface RouteInit<TPath extends string> {
   readonly routeName: string | undefined
   readonly middleware: readonly string[]
   readonly excluded: readonly string[]
+  readonly withTrashed?: boolean
 }
 
 /**
@@ -210,6 +211,8 @@ export class DefinedRoute<TName extends string, TPath extends string>
   readonly middlewareList: readonly string[]
   /** Aliases this route opts out of (`.withoutMiddleware('csrf')`), flagged by `route:list --security`. */
   readonly excludedMiddleware: readonly string[]
+  /** Route model binding also finds soft-deleted rows (`.withTrashed()`). */
+  readonly bindsTrashed: boolean
 
   constructor(init: RouteInit<TPath>) {
     this.methods = init.methods
@@ -218,6 +221,7 @@ export class DefinedRoute<TName extends string, TPath extends string>
     this.routeName = init.routeName
     this.middlewareList = init.middleware
     this.excludedMiddleware = init.excluded
+    this.bindsTrashed = init.withTrashed === true
   }
 
   /**
@@ -263,6 +267,17 @@ export class DefinedRoute<TName extends string, TPath extends string>
     )
   }
 
+  /**
+   * Let route model binding find soft-deleted rows too (Laravel's `->withTrashed()`): what a
+   * `restore` route needs, since every other route answers 404 for a deleted row.
+   *
+   * @example
+   * Route.post('/posts/{post}/restore', [PostController, 'restore']).withTrashed()
+   */
+  withTrashed(): DefinedRoute<TName, TPath> {
+    return replace(this, new DefinedRoute<TName, TPath>({ ...this.#init(), withTrashed: true }))
+  }
+
   #init(): RouteInit<TPath> {
     return {
       methods: this.methods,
@@ -271,6 +286,7 @@ export class DefinedRoute<TName extends string, TPath extends string>
       routeName: this.routeName,
       middleware: this.middlewareList,
       excluded: this.excludedMiddleware,
+      withTrashed: this.bindsTrashed,
     }
   }
 }

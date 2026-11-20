@@ -393,14 +393,17 @@ export class Builder<TClass extends AnyModelClass, TResult> {
   }
 
   /**
-   * Free-text search: rows where any of `columns` contains `term`. Blank terms are ignored.
+   * Free-text search: rows where any of `columns` contains `term`, or any of `exactColumns`
+   * (ids, numbers) equals it. An exact column is only compared when the term is a valid value for
+   * it (`12` for an id, never `abc`), so a text search never becomes a cast error. Blank terms
+   * are ignored.
    *
    * @example
-   * Post.query().search(request.query.search, ['title', 'body'])
+   * Post.query().search(request.query.search, ['title', 'body'], ['id'])
    */
-  search(term: string, columns: readonly string[]): this {
+  search(term: string, columns: readonly string[], exactColumns: readonly string[] = []): this {
     const trimmed = term.trim()
-    if (trimmed === '' || columns.length === 0) return this
+    if (trimmed === '' || columns.length + exactColumns.length === 0) return this
     assertSearchText(trimmed)
     assertWellFormed(this.#model.table, 'search', trimmed)
     const nodes: WhereNode[] = columns.map((column) => ({
@@ -408,6 +411,14 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       conjunction: 'or',
       fragment: this.#containsFragment(this.#requestColumn(column), trimmed),
     }))
+    for (const column of exactColumns) {
+      const ref = this.#requestColumn(column)
+      const bound = this.#bindIfValid(ref, trimmed)
+      if (bound !== undefined)
+        nodes.push({ kind: 'compare', conjunction: 'or', column: ref, operator: '=', value: bound })
+    }
+    // Only numeric columns, and the term is a word: nothing can match.
+    if (nodes.length === 0) nodes.push({ kind: 'boolean', conjunction: 'and', value: false })
     this.#where.push({ kind: 'group', conjunction: 'and', nodes })
     return this
   }
@@ -987,6 +998,16 @@ export class Builder<TClass extends AnyModelClass, TResult> {
       stored,
       this.#model.connection().grammar.dialect,
     )
+  }
+
+  /** {@link #bind}, or `undefined` when the value doesn't fit the column (a word for an id). */
+  #bindIfValid(ref: ColumnRef, value: unknown): unknown {
+    try {
+      return this.#bind(ref, value)
+    } catch (error) {
+      if (error instanceof CastError) return undefined
+      throw error
+    }
   }
 
   #definition(name: string): ColumnDef {

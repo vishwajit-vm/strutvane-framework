@@ -96,6 +96,19 @@ export interface ResourceMetadata {
   readonly fields: readonly ResourceField[]
   /** Set by the schema's `{ internal: true }`: never served by an auto resource controller. */
   readonly internal?: boolean
+  /** The table has `deleted_at`: deletes are soft, and `restore` brings a row back. */
+  readonly softDeletes?: boolean
+}
+
+/**
+ * How a route parameter is bound: `withTrashed` also finds soft-deleted rows (Laravel's
+ * `->withTrashed()` on a route), which only the `restore` route asks for.
+ *
+ * @example
+ * await Post.resolveRouteBinding('7', undefined, { withTrashed: true })
+ */
+export interface RouteBindingOptions {
+  readonly withTrashed?: boolean
 }
 
 /**
@@ -122,6 +135,8 @@ export interface ResourceRecord extends UrlRoutable {
   updateFromValidated(values: Readonly<Record<string, unknown>>): Promise<void>
   /** Delete (softly, when the table has `deleted_at`). */
   delete(): Promise<void>
+  /** Bring a soft-deleted record back (only on tables with `deleted_at`). */
+  restore?(): Promise<unknown>
 }
 
 /**
@@ -134,16 +149,27 @@ export interface ResourceModel<TRecord extends ResourceRecord = ResourceRecord> 
   /** The class name, for messages and policy discovery. */
   readonly name: string
   /** The mass-assignment allow-list. Without it, the metadata's rules apply. */
-  readonly fillable?: readonly string[]
+  readonly fillable?: readonly string[] | undefined
   metadata(): ResourceMetadata
   paginate(
     query: URLSearchParams,
     constraints: readonly Constraint[],
   ): Promise<ResourcePage<TRecord>>
   createFromValidated(values: Readonly<Record<string, unknown>>): Promise<TRecord>
-  resolveRouteBinding(value: string, field?: string): Promise<TRecord | null>
+  resolveRouteBinding(
+    value: string,
+    field?: string,
+    options?: RouteBindingOptions,
+  ): Promise<TRecord | null>
   /** `true` if any row (soft-deleted ones too) has `column = value`, ignoring the row `exceptKey`. */
   isTaken(column: string, value: string | number, exceptKey?: string | number): Promise<boolean>
+  /**
+   * The model behind an `?include=` name, so the controller can check the related model's
+   * policy (`viewAny`) before its rows are loaded; `undefined` when the name may not be included.
+   */
+  includable?(name: string): ResourceModel | undefined
+  /** Apply `?include=` and `?fields=` to one record (`show`, `update`, `restore`). */
+  present?(record: TRecord, query: URLSearchParams): Promise<void>
 }
 
 /**

@@ -26,6 +26,7 @@ export { sqliteDriver } from './db/sqlite-driver.ts'
 export { Builder, type FilterOperator } from './orm/builder.ts'
 export { type Cast, cast, json } from './orm/casts.ts'
 export { configureOrm, type OrmConfig, type UnsafeTenancyEvent } from './orm/config.ts'
+export { ReferenceViolationError, UniqueViolationError } from './orm/constraint-errors.ts'
 export {
   CastError,
   LazyLoadingError,
@@ -47,6 +48,11 @@ export {
 export { loadMany, Model, ModelBase, type ModelClass, type ModelInstance } from './orm/model.ts'
 export type { CursorPage, Page } from './orm/pagination.ts'
 export type { BelongsTo, BelongsToMany, HasMany } from './orm/relations.ts'
+export {
+  MAX_PAGE_DEPTH,
+  type OrmResourceMetadata,
+  type ResourceModelOptions,
+} from './orm/resource.ts'
 export { currentTenant, runWithTenant } from './orm/tenancy.ts'
 export { TenantScopeMissingError, unsafeRaw } from './orm/tenant-scope.ts'
 export type {
