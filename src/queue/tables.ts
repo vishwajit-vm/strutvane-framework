@@ -63,7 +63,7 @@ export async function createQueueTables(
     const existing = await connection.run(
       sql`SELECT COUNT(*) AS n FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ${tables.jobs} AND index_name = ${`${tables.jobs}_queue_available_at_index`}`,
     )
-    if (Number(existing.rows[0]?.n ?? 0) === 0)
+    if (Number(existing.rows[0]?.['n'] ?? 0) === 0)
       await connection.run(sql`CREATE INDEX ${index} ON ${jobs} (queue, available_at)`)
   } else {
     await connection.run(sql`CREATE INDEX IF NOT EXISTS ${index} ON ${jobs} (queue, available_at)`)

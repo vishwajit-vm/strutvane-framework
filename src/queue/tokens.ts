@@ -26,5 +26,6 @@ export interface QueueDispatcher {
  * @example
  * app.make(QueueDispatcherToken)
  */
-export const QueueDispatcherToken: Token<QueueDispatcher> =
-  token<QueueDispatcher>('strutvane.queue.dispatcher')
+export const QueueDispatcherToken: Token<QueueDispatcher> = token<QueueDispatcher>(
+  'strutvane.queue.dispatcher',
+)

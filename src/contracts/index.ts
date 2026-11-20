@@ -39,7 +39,6 @@ export type {
   SortDirective,
 } from './list-query.ts'
 export { LIST_QUERY_LIMITS } from './list-query.ts'
-export type { PushOptions, QueueDriver, QueueLockStore, ReservedJob } from './queue.ts'
 export type { LogError, LogFields, Logger, LogLevel, LogRecord } from './logger.ts'
 export { LOG_LEVEL_SEVERITY, LOG_LEVELS } from './logger.ts'
 export type {
@@ -79,6 +78,7 @@ export type {
   TextOperator,
 } from './query-filter.ts'
 export { FILTER_OPERATORS } from './query-filter.ts'
+export type { PushOptions, QueueDriver, QueueLockStore, ReservedJob } from './queue.ts'
 export type {
   InferInput,
   InferOutput,

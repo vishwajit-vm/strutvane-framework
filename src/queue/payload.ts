@@ -36,7 +36,7 @@ export const MAX_PAYLOAD_DEPTH = 32
  */
 export const DEFAULT_MAX_PAYLOAD_BYTES = 65_535
 /** The hard ceiling a config may raise the limit to (the Redis driver's limit). */
-export const MAX_PAYLOAD_BYTES_CEILING = 1024 * 1024
+export const MAX_PAYLOAD_BYTES_CEILING: number = 1024 * 1024
 
 /**
  * What the worker needs to retry a job, as it travels in the envelope.
@@ -167,7 +167,11 @@ function check(value: unknown, path: string, depth: number, seen: Set<object>): 
     }
     for (const key of Object.keys(value)) {
       if (DANGEROUS_KEYS.has(key))
-        throw notPlain(`${path}.${key}`, 'a reserved key', 'Rename the key: __proto__, constructor and prototype are refused in job data.')
+        throw notPlain(
+          `${path}.${key}`,
+          'a reserved key',
+          'Rename the key: __proto__, constructor and prototype are refused in job data.',
+        )
       if (isSensitive(key)) {
         throw new QueueError(
           'queue_payload_sensitive',
@@ -261,11 +265,19 @@ export class EnvelopeSigner {
     if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_PAYLOAD_BYTES_CEILING)
       throw tampered('it is not a string within the size ceiling')
     let parsed: unknown
+    let dangerous = false
     try {
-      parsed = JSON.parse(text, dropDangerousKeys)
+      // Drop prototype-pollution keys while parsing, and refuse the row: dispatch never writes them.
+      parsed = JSON.parse(text, (key: string, value: unknown) => {
+        if (!DANGEROUS_KEYS.has(key)) return value
+        dangerous = true
+        return undefined
+      })
     } catch {
       throw tampered('it is not valid JSON')
     }
+    if (dangerous)
+      throw tampered('it contains a reserved key (__proto__, constructor or prototype)')
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
       throw tampered('it is not a JSON object')
     const { sig, ...rest } = parsed as Record<string, unknown>
@@ -305,11 +317,6 @@ function tampered(why: string): QueueError {
   )
 }
 
-/** A JSON.parse reviver that drops keys used for prototype pollution (dispatch refuses them). */
-function dropDangerousKeys(key: string, value: unknown): unknown {
-  return DANGEROUS_KEYS.has(key) ? undefined : value
-}
-
 const isInt = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value)
 const isStr = (value: unknown): value is string => typeof value === 'string'
@@ -318,37 +325,38 @@ function isStep(value: unknown): value is ChainStep {
   if (value === null || typeof value !== 'object') return false
   const step = value as Record<string, unknown>
   return (
-    isStr(step.job) &&
+    isStr(step['job']) &&
     'data' in step &&
-    (step.queue === undefined || isStr(step.queue)) &&
-    (step.connection === undefined || isStr(step.connection)) &&
-    (step.delaySeconds === undefined || isInt(step.delaySeconds))
+    (step['queue'] === undefined || isStr(step['queue'])) &&
+    (step['connection'] === undefined || isStr(step['connection'])) &&
+    (step['delaySeconds'] === undefined || isInt(step['delaySeconds']))
   )
 }
 
 function isEnvelope(value: Record<string, unknown>): value is Record<string, unknown> & Envelope {
-  const backoff = value.backoff
-  const unique = value.unique as Record<string, unknown> | undefined
+  const backoff = value['backoff']
+  const unique = value['unique'] as Record<string, unknown> | undefined
   return (
-    value.v === 1 &&
-    isStr(value.id) &&
-    isStr(value.job) &&
+    value['v'] === 1 &&
+    isStr(value['id']) &&
+    isStr(value['job']) &&
     'data' in value &&
-    isStr(value.queue) &&
-    isStr(value.connection) &&
-    isInt(value.dispatchedAt) &&
-    isInt(value.tries) &&
-    isInt(value.timeout) &&
+    isStr(value['queue']) &&
+    isStr(value['connection']) &&
+    isInt(value['dispatchedAt']) &&
+    isInt(value['tries']) &&
+    isInt(value['timeout']) &&
     (backoff === 'exponential' || (Array.isArray(backoff) && backoff.every(isInt))) &&
-    (value.retryUntil === undefined || isInt(value.retryUntil)) &&
-    (value.tenantId === undefined || isStr(value.tenantId)) &&
-    (value.chain === undefined || (Array.isArray(value.chain) && value.chain.every(isStep))) &&
-    (value.chainCatch === undefined || isStep(value.chainCatch)) &&
+    (value['retryUntil'] === undefined || isInt(value['retryUntil'])) &&
+    (value['tenantId'] === undefined || isStr(value['tenantId'])) &&
+    (value['chain'] === undefined ||
+      (Array.isArray(value['chain']) && value['chain'].every(isStep))) &&
+    (value['chainCatch'] === undefined || isStep(value['chainCatch'])) &&
     (unique === undefined ||
       (typeof unique === 'object' &&
         unique !== null &&
-        isStr(unique.key) &&
-        isStr(unique.owner) &&
-        (unique.until === 'processing' || unique.until === 'completed')))
+        isStr(unique['key']) &&
+        isStr(unique['owner']) &&
+        (unique['until'] === 'processing' || unique['until'] === 'completed')))
   )
 }

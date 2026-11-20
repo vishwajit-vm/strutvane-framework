@@ -18,7 +18,7 @@ const JOB_NAME = /^[a-z0-9][a-z0-9._:-]{0,127}$/
 export const QUEUE_NAME: RegExp = /^[A-Za-z0-9_.-]{1,64}$/
 
 /** The longest delay or backoff the queue accepts: 30 days. */
-export const MAX_DELAY_SECONDS = 30 * 24 * 3600
+export const MAX_DELAY_SECONDS: number = 30 * 24 * 3600
 
 const BRAND: unique symbol = Symbol.for('strutvane.job')
 
@@ -136,7 +136,9 @@ export interface RegisteredJob {
   /** The unique lock settings for this data, if the job is unique. */
   uniqueLock(
     data: unknown,
-  ): { readonly key: string; readonly for: number; readonly until: 'processing' | 'completed' } | undefined
+  ):
+    | { readonly key: string; readonly for: number; readonly until: 'processing' | 'completed' }
+    | undefined
   /** Validate data with the job's schema (or pass it through). Throws `queue_payload_invalid`. */
   parse(data: unknown): Promise<unknown>
   perform(data: unknown, ctx: JobContext): Promise<void>
@@ -248,7 +250,12 @@ function invalidOption(name: string, option: string, value: unknown, hint: strin
  * seconds(60, 'delay', 'job') // 60
  */
 export function checkSeconds(value: unknown, option: string, name: string, min = 0): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > MAX_DELAY_SECONDS)
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < min ||
+    value > MAX_DELAY_SECONDS
+  )
     throw invalidOption(
       name,
       option,
@@ -292,7 +299,9 @@ function resolveOptions(config: JobOptions & { readonly name: string }): Resolve
   if (backoff !== 'exponential' && backoff.length === 0)
     throw invalidOption(name, 'backoff', '[]', 'Give at least one delay, or leave backoff out.')
   const retryUntil =
-    config.retryUntil === undefined ? undefined : checkSeconds(config.retryUntil, 'retryUntil', name, 1)
+    config.retryUntil === undefined
+      ? undefined
+      : checkSeconds(config.retryUntil, 'retryUntil', name, 1)
   if (config.queue !== undefined) checkQueueName(config.queue)
   return Object.freeze({
     queue: config.queue,
@@ -337,7 +346,9 @@ export function defineJob<TData>(config: JobConfig<TData>): JobDefinition<TData>
     const result = await schema['~standard'].validate(data)
     if (result.issues !== undefined) {
       const first = result.issues[0]
-      const where = first?.path?.map((p) => (typeof p === 'object' ? String(p.key) : String(p))).join('.')
+      const where = first?.path
+        ?.map((p) => (typeof p === 'object' ? String(p.key) : String(p)))
+        .join('.')
       throw new QueueError(
         'queue_payload_invalid',
         `The "${name}" job's data is invalid${where ? ` at ${where}` : ''}: ${first?.message ?? 'schema validation failed'}.`,
@@ -355,8 +366,17 @@ export function defineJob<TData>(config: JobConfig<TData>): JobDefinition<TData>
       if (unique === undefined) return undefined
       const key = unique.key(data as TData)
       if (typeof key !== 'string' || key === '' || key.length > 200)
-        throw invalidOption(name, 'unique.key()', key, 'Return a non-empty string of at most 200 characters.')
-      return { key: `queue:unique:${name}:${key}`, for: unique.for, until: unique.until ?? 'processing' }
+        throw invalidOption(
+          name,
+          'unique.key()',
+          key,
+          'Return a non-empty string of at most 200 characters.',
+        )
+      return {
+        key: `queue:unique:${name}:${key}`,
+        for: unique.for,
+        until: unique.until ?? 'processing',
+      }
     },
     parse,
     async perform(data, ctx) {
@@ -369,7 +389,9 @@ export function defineJob<TData>(config: JobConfig<TData>): JobDefinition<TData>
       return new JobCall(definition, data)
     },
     dispatch(data, dispatchOptions = {}) {
-      return dispatcher(`${name}.dispatch()`).dispatch(new JobCall(definition, data, dispatchOptions))
+      return dispatcher(`${name}.dispatch()`).dispatch(
+        new JobCall(definition, data, dispatchOptions),
+      )
     },
     dispatchSync(data) {
       return dispatcher(`${name}.dispatchSync()`).dispatchSync(new JobCall(definition, data))

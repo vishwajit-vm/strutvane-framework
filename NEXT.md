@@ -1,3 +1,51 @@
+# v2/queues: queues and background work (0.3, RFC-0006)
+
+Branch from `main` e395315. Design: hub `docs/rfcs/0006-queues-and-background-work.md` (Draft, hub
+commit 01f1f6a). Never merged or pushed by the implementing agent.
+
+## Done
+- Contract types in `src/contracts/queue.ts` (`QueueDriver`, `ReservedJob`, `PushOptions`,
+  `QueueLockStore`): the `@strutvane/redis` proposal plus optional `id` (idempotent push),
+  `extend`, `close`.
+- `src/queue/`: `errors.ts` (`QueueError`, lowercase codes + hints), `payload.ts` (plain-data and
+  secret-key checks, canonical JSON, HMAC-signed envelope, prototype-pollution refusal), `job.ts`
+  (`defineJob`, `JobCall`, options, `backoffDelay`), `registry.ts`, `tokens.ts`, `events.ts`,
+  `runner.ts` (one attempt: tenant, scope, timeout + abort signal), `manager.ts` (connections,
+  dispatch, afterCommit hook point, unique locks, chains + catch with derived ids, sync path,
+  poison handling, failed store, `retryFailed`), `worker.ts` (loop, SIGTERM-style `stop()`,
+  memory/max-jobs/max-time/stop-when-empty, restart signal, timed-out exit code 2),
+  `drivers/memory.ts`, `drivers/database.ts` (CAS claim, reservation-token ack/release),
+  `stores.ts` (memory + database failed-job and lock stores), `tables.ts` (`createQueueTables`
+  DDL + the `queue:table` migration text), `driver-contract.ts` (runner-agnostic contract cases).
+- Tests `test/queue/`: payload 37, lifecycle 31, driver contract 60 (memory + SQLite + PGlite +
+  real MySQL 8.4 / MariaDB 11.4 / PostgreSQL 18 with two pools racing). *(agent-reported)*
+
+## Next (in order)
+1. Worker tests (stop() drains the current job, limits, restart signal, timed-out exit) and a
+   real-process SIGTERM test of `queue:work`.
+2. `Connection.afterCommit()` in `src/database/db/connection.ts` (+ savepoint semantics) and wire
+   `transactions` into the manager; tests on every engine.
+3. Config + boot: `config/queue.ts` reader (`QUEUE_CONNECTION`, connections, failed, retryAfter
+   vs timeout check), bind `QueueManager`/`QueueDispatcherToken` in `Application#bindDefaults`,
+   `app/jobs` discovery, `QueueManager.extend()` for add-on drivers, `.env.example` key.
+4. Commands: `queue:table`, `queue:work`, `queue:restart`, `queue:failed`, `queue:retry`,
+   `queue:forget`, `queue:flush`, `queue:clear`; facades `Queue` / `Bus` replace the
+   coming-soon placeholders; `/queue` subpath export + `driver-contract` in `/testing`.
+5. Batches (`job_batches` + `job_batch_jobs`, CAS bookkeeping) and the transactional outbox +
+   relay (RFC §7.1, §8).
+6. Per-process worker log file once ADR-0022 logging is on main; class jobs (RFC §1.2).
+7. RFC amendments to make: default payload cap is 64 KiB (portable TEXT), not 256 KiB; dispatch
+   API is `Job.dispatch(data, options)` / `Job.with(data).delay().dispatch()` (no thenable);
+   `maxExceptions` deferred.
+8. README section, changeset (minor, pre `next`), full gate 3×.
+
+## How to verify
+```bash
+npm ci
+npx vitest run test/queue            # needs Docker for the MySQL/MariaDB/PostgreSQL cases
+npm run ci                           # the full gate (lint, typecheck, coverage, build, smoke)
+```
+
 # v2/merge-0.2: what is left after the merge
 
 `v2/app-core` and `v2/data-layer` merged into one release candidate for `@strutvane/framework`
