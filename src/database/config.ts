@@ -13,6 +13,10 @@
  * For SQLite, `DB_DATABASE` is the file (default `database/database.sqlite`, #96), relative to the
  * project root, or `:memory:`.
  *
+ * An extra connection (`config/database.ts` → `connections`, CONSISTENCY #132) reads the same keys
+ * with its own prefix (`DB_REPORTS_HOST`, …) and names its engine with `DB_REPORTS_DRIVER`; see
+ * {@link DatabaseKeys} and `foundation/database-connections.ts`.
+ *
  * Every problem is reported at once, naming the key (an `EnvValidationError`: the CLI shows it as
  * a configuration error, exit 3). A MySQL-family server is identified from `VERSION()` at connect
  * time, so an XAMPP machine (MariaDB) configured as `mysql` still gets the MariaDB grammar (#43).
@@ -89,6 +93,20 @@ const URL_SCHEMES: Readonly<Record<string, DatabaseConnectionName>> = {
 /** The default SQLite file, relative to the project root (Laravel's). */
 export const DEFAULT_SQLITE_FILE = 'database/database.sqlite'
 
+/**
+ * The engine a driver name means (`postgres` → `pgsql`), or `undefined` for a name that is not an
+ * engine. An extra connection called `mysql`, `pgsql` or `sqlite` uses that engine by default.
+ *
+ * @example
+ * databaseEngineOf('postgres') // 'pgsql'
+ * databaseEngineOf('reports') // undefined
+ */
+export function databaseEngineOf(name: string): DatabaseConnectionName | undefined {
+  return Object.hasOwn(CONNECTIONS, name.toLowerCase())
+    ? CONNECTIONS[name.toLowerCase()]
+    : undefined
+}
+
 const value = (env: EnvSource, key: string): string | undefined => {
   const raw = env[key]?.trim()
   return raw === undefined || raw === '' ? undefined : raw
@@ -105,21 +123,46 @@ function schemeOf(url: string | undefined): string | undefined {
 }
 
 /**
- * Read the `DB_*` keys. Throws an `EnvValidationError` listing every problem, without echoing
- * secret values.
+ * Which keys {@link databaseSettings} reads. The default connection reads `DB_*`; an extra
+ * connection (`config/database.ts` → `connections.reports`) reads `DB_REPORTS_*`, so every problem
+ * names the key the developer has to fix.
+ *
+ * @example
+ * const keys: DatabaseKeys = { prefix: 'DB_REPORTS_', driverKey: 'DB_REPORTS_DRIVER' }
+ */
+export interface DatabaseKeys {
+  /** Prepended to `URL`, `HOST`, `PORT`, … Default `DB_`. */
+  readonly prefix?: string
+  /** The key that names the engine. Default `DB_CONNECTION`. */
+  readonly driverKey?: string
+}
+
+/**
+ * Read the `DB_*` keys (or another connection's prefixed keys, see {@link DatabaseKeys}). Throws
+ * an `EnvValidationError` listing every problem, without echoing secret values.
  *
  * @example
  * databaseSettings({ DB_CONNECTION: 'pgsql', DB_DATABASE: 'app' }, '/srv/app').port // 5432
+ * databaseSettings({ DB_REPORTS_DRIVER: 'sqlite', DB_REPORTS_DATABASE: 'r.sqlite' }, root, {
+ *   prefix: 'DB_REPORTS_', driverKey: 'DB_REPORTS_DRIVER',
+ * }).filename // '<root>/r.sqlite'
  */
-export function databaseSettings(env: EnvSource, root: string): DatabaseSettings {
+export function databaseSettings(
+  env: EnvSource,
+  root: string,
+  keys: DatabaseKeys = {},
+): DatabaseSettings {
+  const prefix = keys.prefix ?? 'DB_'
+  const driverKey = keys.driverKey ?? 'DB_CONNECTION'
+  const key = (name: string): string => `${prefix}${name}`
   const problems: EnvProblem[] = []
-  const url = value(env, 'DB_URL')
-  // Without DB_CONNECTION, a DB_URL says which engine it is.
-  const name = (value(env, 'DB_CONNECTION') ?? schemeOf(url) ?? 'mysql').toLowerCase()
+  const url = value(env, key('URL'))
+  // Without a driver key, a URL says which engine it is.
+  const name = (value(env, driverKey) ?? schemeOf(url) ?? 'mysql').toLowerCase()
   let connection = CONNECTIONS[name]
   if (connection === undefined) {
     problems.push({
-      key: 'DB_CONNECTION',
+      key: driverKey,
       message: `must be mysql, mariadb, pgsql (or postgres) or sqlite, not "${name}"`,
     })
     connection = 'mysql'
@@ -130,52 +173,55 @@ export function databaseSettings(env: EnvSource, root: string): DatabaseSettings
       scheme = new URL(url).protocol
     } catch {
       problems.push({
-        key: 'DB_URL',
+        key: key('URL'),
         message: 'is not a valid URL (e.g. mysql://user:pass@host:3306/app)',
       })
     }
     const family = scheme === undefined ? undefined : URL_SCHEMES[scheme]
     if (scheme !== undefined && family === undefined)
       problems.push({
-        key: 'DB_URL',
+        key: key('URL'),
         message: 'must start with mysql://, mariadb://, postgres:// or postgresql://',
       })
     else if (family !== undefined && (family === 'pgsql') !== (connection === 'pgsql'))
       problems.push({
-        key: 'DB_URL',
-        message: `is a ${family === 'pgsql' ? 'PostgreSQL' : 'MySQL/MariaDB'} URL but DB_CONNECTION is ${name}`,
+        key: key('URL'),
+        message: `is a ${family === 'pgsql' ? 'PostgreSQL' : 'MySQL/MariaDB'} URL but ${driverKey} is ${name}`,
       })
   }
-  const portText = value(env, 'DB_PORT')
+  const portText = value(env, key('PORT'))
   const port = portText === undefined ? DEFAULT_PORT[connection] : Number(portText)
   if (!Number.isInteger(port) || port < 0 || port > 65_535)
-    problems.push({ key: 'DB_PORT', message: 'must be a port number from 1 to 65535' })
-  const sslMode = value(env, 'DB_SSLMODE')?.toLowerCase()
+    problems.push({ key: key('PORT'), message: 'must be a port number from 1 to 65535' })
+  const sslMode = value(env, key('SSLMODE'))?.toLowerCase()
   if (sslMode !== undefined && !SSL_MODES.has(sslMode))
     problems.push({
-      key: 'DB_SSLMODE',
+      key: key('SSLMODE'),
       message: 'must be disable, prefer, require, verify-ca or verify-full',
     })
-  const caPath = value(env, 'DB_SSL_CA')
+  const caPath = value(env, key('SSL_CA'))
   let sslCa: string | undefined
   if (caPath !== undefined) {
     try {
       sslCa = readFileSync(isAbsolute(caPath) ? caPath : resolve(root, caPath), 'utf8')
     } catch {
-      problems.push({ key: 'DB_SSL_CA', message: `cannot read the CA certificate file ${caPath}` })
+      problems.push({
+        key: key('SSL_CA'),
+        message: `cannot read the CA certificate file ${caPath}`,
+      })
     }
   }
   if (problems.length > 0) throw new EnvValidationError(problems)
 
-  const database = value(env, 'DB_DATABASE')
-  const password = env['DB_PASSWORD']
-  const socket = value(env, 'DB_SOCKET')
+  const database = value(env, key('DATABASE'))
+  const password = env[key('PASSWORD')]
+  const socket = value(env, key('SOCKET'))
   const base = {
     connection,
-    host: value(env, 'DB_HOST') ?? '127.0.0.1',
+    host: value(env, key('HOST')) ?? '127.0.0.1',
     port,
     database: database ?? (connection === 'sqlite' ? DEFAULT_SQLITE_FILE : 'strutvane'),
-    username: value(env, 'DB_USERNAME') ?? (connection === 'pgsql' ? 'postgres' : 'root'),
+    username: value(env, key('USERNAME')) ?? (connection === 'pgsql' ? 'postgres' : 'root'),
     ...(password !== undefined && password !== '' ? { password } : {}),
     ...(url !== undefined && connection !== 'sqlite' ? { url } : {}),
     ...(socket !== undefined ? { socket } : {}),

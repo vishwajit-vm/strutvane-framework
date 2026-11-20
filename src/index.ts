@@ -114,6 +114,13 @@ export {
   defineConfig,
 } from './foundation/config.ts'
 export { DatabaseConnectionToken } from './foundation/database.ts'
+export {
+  connectionEnvPrefix,
+  type DatabaseConnectionDeclaration,
+  DatabaseManager,
+  type DatabaseManagerOptions,
+  DatabaseManagerToken,
+} from './foundation/database-connections.ts'
 export { APP_ENVIRONMENTS, Env } from './foundation/env.ts'
 export { app, config, now, redirect } from './foundation/helpers.ts'
 export { loadApplication } from './foundation/load.ts'

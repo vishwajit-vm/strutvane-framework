@@ -16,6 +16,10 @@
  * network and a timeout), never imported into the CLI's own process. In production
  * (`APP_ENV=production`) every command that writes needs `--force` (Laravel's behaviour, #78).
  *
+ * Every command except `sync` takes `--database=<name>`: the same migrations (or seeders) on an
+ * extra connection declared in `config/database.ts` (its `DB_<NAME>_*` keys; CONSISTENCY #132),
+ * which keeps its own `migrations` table. Without it, the default `DB_*` connection.
+ *
  * The v1 (`defineModel`) commands still run for v1 projects: {@link isMigrationFirst} decides.
  *
  * @module
@@ -24,13 +28,29 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CommandContextLike, ContributedCommand } from '../commands.ts'
 import { ValidationError } from '../core/index.ts'
-import { databaseSettings, describeDatabase, openDatabase } from '../database/config.ts'
+import {
+  type DatabaseSettings,
+  databaseSettings,
+  describeDatabase,
+  openDatabase,
+} from '../database/config.ts'
 import type { Connection } from '../database/db/connection.ts'
+import {
+  DEFAULT_CONNECTION,
+  forgetConnection,
+  isConnectionName,
+  useConnection,
+} from '../database/db/manager.ts'
 import { configureOrm } from '../database/orm/config.ts'
 import { registerSchema } from '../database/schema/registry.ts'
 import { runSeeders, seederNameForFile } from '../database/seeding/run.ts'
 import type { SeederLike } from '../database/seeding/seeder.ts'
 import { assertTenantId } from '../database/types.ts'
+import {
+  declaredConnections,
+  namedConnectionSettings,
+  readConnectionsFromConfig,
+} from '../foundation/database-connections.ts'
 import { introspect, schemaDrift } from '../migrations/introspect.ts'
 import {
   fresh,
@@ -192,16 +212,57 @@ async function withMigrationConnection<T>(
   work: (connection: Connection) => Promise<T>,
 ): Promise<T> {
   const env = commandEnv(ctx)
-  const settings = databaseSettings(env, root)
-  ctx.out.info(`Database: ${describeDatabase(settings)}`)
+  const { name, settings } = await commandDatabase(ctx, root)
+  ctx.out.info(`Database: ${describeDatabase(settings)}${name === undefined ? '' : ` (${name})`}`)
   const connection = await openDatabase(settings, {
     forMigrations: { lockTimeoutMs: migrationLockTimeoutMs(env) },
   })
+  // `--seed`: a seeded model that declares this connection finds it by name too.
+  if (name !== undefined) useConnection(connection, name)
   try {
     return await work(connection)
   } finally {
+    if (name !== undefined) forgetConnection(name)
     await connection.close()
   }
+}
+
+/**
+ * The connection a command works on: `--database=<name>` (an extra connection declared in
+ * `config/database.ts`, read exactly as the app reads it), or the default `DB_*` one.
+ */
+async function commandDatabase(
+  ctx: CommandContextLike,
+  root: string,
+): Promise<{ readonly name?: string; readonly settings: DatabaseSettings }> {
+  const env = commandEnv(ctx)
+  const name = str(ctx.flags['database'])
+  if (name === undefined || name === DEFAULT_CONNECTION)
+    return { settings: databaseSettings(env, root) }
+  if (!isConnectionName(name))
+    throw new ValidationError([
+      {
+        path: ['--database'],
+        code: 'invalid_connection_name',
+        message:
+          '--database must name a connection from config/database.ts (lowercase letters, digits and _).',
+      },
+    ])
+  const declared = declaredConnections(await readConnectionsFromConfig(root, env))
+  const declaration = declared.get(name)
+  if (declaration === undefined)
+    throw new ValidationError([
+      {
+        path: ['--database'],
+        code: 'unknown_connection',
+        message:
+          declared.size === 0
+            ? `config/database.ts declares no connection called ${name}. Add it under connections (e.g. ${name}: { driver: 'pgsql' }) and set its DB_${name.toUpperCase()}_* keys in .env.`
+            : `config/database.ts declares no connection called ${name}. Declared: ${[...declared.keys()].join(', ')}.`,
+      },
+    ])
+  const environment = firstAppEnv(ctx.appEnv, env['APP_ENV']) ?? 'production'
+  return { name, settings: namedConnectionSettings(name, declaration, env, root, environment) }
 }
 
 function reporter(ctx: CommandContextLike): (event: MigrationEvent) => void {
@@ -413,8 +474,10 @@ export async function seedV2(
   requireForce(ctx, appEnv, 'db:seed')
   const className = str(ctx.flags['class'])
   const replay = await replayProject(root, replayTimeout(ctx))
-  const settings = databaseSettings(commandEnv(ctx), root)
+  const { name, settings } = await commandDatabase(ctx, root)
   const connection = await openDatabase(settings)
+  // A seeded model that declares this connection (`connection: 'reports'`) finds it by name too.
+  if (name !== undefined) useConnection(connection, name)
   try {
     const ran = await seedWith(ctx, root, connection, replay, {
       appEnv,
@@ -423,6 +486,7 @@ export async function seedV2(
     })
     return { data: { ran } }
   } finally {
+    if (name !== undefined) forgetConnection(name)
     await connection.close()
   }
 }
@@ -439,6 +503,11 @@ const isolatedFlag = {
   type: 'boolean',
   description: "Don't wait when another migrate holds the lock: report it and do nothing",
 } as const
+const databaseFlag = {
+  type: 'string',
+  description:
+    'Use this connection from config/database.ts (its DB_<NAME>_* keys) instead of the default DB_* one',
+} as const
 const replayTimeoutFlag = {
   type: 'string',
   description:
@@ -447,6 +516,7 @@ const replayTimeoutFlag = {
 
 /** The flags of `migrate:status` for migration-first projects. */
 export const STATUS_V2_FLAGS: NonNullable<ContributedCommand['flags']> = {
+  database: databaseFlag,
   'replay-timeout': replayTimeoutFlag,
 }
 
@@ -463,6 +533,7 @@ export const MIGRATE_V2_FLAGS: NonNullable<ContributedCommand['flags']> = {
   seed: seedFlag,
   force: forceFlag,
   isolated: isolatedFlag,
+  database: databaseFlag,
   'replay-timeout': replayTimeoutFlag,
 }
 
@@ -471,6 +542,7 @@ export const SEED_V2_FLAGS: NonNullable<ContributedCommand['flags']> = {
   class: { type: 'string', description: 'Run one seeder, e.g. PostSeeder' },
   tenant: { type: 'string', description: 'Seed inside this tenant (a UUID)' },
   force: forceFlag,
+  database: databaseFlag,
   'replay-timeout': replayTimeoutFlag,
 }
 
@@ -486,6 +558,7 @@ function maintenanceCommand(
     flags: {
       force: forceFlag,
       isolated: isolatedFlag,
+      database: databaseFlag,
       'replay-timeout': replayTimeoutFlag,
       ...flags,
     },

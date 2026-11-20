@@ -61,7 +61,7 @@ import {
   MessagesToken,
 } from '../core/tokens.ts'
 import type { Connection } from '../database/db/connection.ts'
-import { runWithConnection } from '../database/db/manager.ts'
+import { runWithConnections } from '../database/db/manager.ts'
 import { OrmUsageError } from '../database/orm/errors.ts'
 import { type ModelEventDispatcher, runWithModelEvents } from '../database/orm/events.ts'
 import { runWithTenant } from '../database/orm/tenancy.ts'
@@ -166,11 +166,13 @@ import {
 import { runInApplication } from './current.ts'
 import {
   bindDatabase,
+  bindDatabaseManager,
   configureTenancy,
   DatabaseConnectionToken,
   databaseEnv,
   loadSchemaSnapshot,
 } from './database.ts'
+import { DatabaseManagerToken } from './database-connections.ts'
 import { type EnvSource, loadEnvSource } from './env.ts'
 import { buildUnchecked } from './inject.ts'
 import { ListenerRegistry } from './listeners.ts'
@@ -618,8 +620,8 @@ export class Application implements CoreApplication<object> {
    */
   #scope<TResult>(work: () => TResult): TResult {
     return runInApplication(this, () =>
-      runWithConnection(
-        () => this.#connection(),
+      runWithConnections(
+        { default: () => this.#connection(), named: (name) => this.#namedConnection(name) },
         () => runWithModelEvents(this.#modelEvents, work),
       ),
     )
@@ -631,6 +633,16 @@ export class Application implements CoreApplication<object> {
     throw new OrmUsageError(
       'no_connection',
       "The database connection is bound when the app boots, so models can't query before that (for example in a provider's register()). Query from boot(), a request or a command; `await app.boot()` first in scripts and tests.",
+    )
+  }
+
+  /** An extra connection from `config/database.ts` (CONSISTENCY #132), checked on first use. */
+  #namedConnection(name: string): Connection {
+    if (this.container.has(DatabaseManagerToken))
+      return this.make(DatabaseManagerToken).connection(name)
+    throw new OrmUsageError(
+      'no_connection',
+      `The "${name}" database connection is bound when the app boots, so models can't query it before that. Query from boot(), a request or a command; \`await app.boot()\` first in scripts and tests.`,
     )
   }
 
@@ -809,6 +821,13 @@ export class Application implements CoreApplication<object> {
     bindDatabase(container, {
       basePath: this.basePath,
       env: () => databaseEnv(config, boot.env, environment),
+    })
+    bindDatabaseManager(container, {
+      basePath: this.basePath,
+      environment,
+      env: () => boot.env,
+      connections: () =>
+        config.has('database.connections') ? config.get('database.connections') : undefined,
     })
     const appUrl = config.string('app.url', 'http://localhost')
     const sessionCookie = container.has(SessionCookieToken)

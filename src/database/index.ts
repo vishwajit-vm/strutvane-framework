@@ -8,8 +8,16 @@ export { type AfterCommitCallback, Connection, type QueryEvent } from './db/conn
 export type { Driver, DriverSession, QueryResult, Row } from './db/driver.ts'
 export {
   afterCommit,
+  type ConnectionResolver,
+  connectionNamed,
+  type DatabaseHelper,
+  DEFAULT_CONNECTION,
+  db,
   defaultConnection,
+  forgetConnection,
+  isConnectionName,
   runWithConnection,
+  runWithConnections,
   transaction,
   useConnection,
 } from './db/manager.ts'

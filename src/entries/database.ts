@@ -33,9 +33,11 @@ export type { JsonValue } from '../database/schema/registry.ts'
 export interface TableRegistry {}
 export {
   type DatabaseConnectionName,
+  type DatabaseKeys,
   type DatabaseSettings,
   type DatabaseSslMode,
   DEFAULT_SQLITE_FILE,
+  databaseEngineOf,
   databaseSettings,
   describeDatabase,
   type OpenDatabaseOptions,

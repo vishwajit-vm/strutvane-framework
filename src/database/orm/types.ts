@@ -47,6 +47,12 @@ export interface ModelOptions<TTable extends TableName> {
   readonly casts?: { readonly [TColumn in ColumnOf<TTable>]?: Cast<unknown> }
   /** Default page size for `paginate()` (Laravel's `$perPage`). Default 15. */
   readonly perPage?: number
+  /**
+   * The database connection this model uses (Laravel's `$connection`): a name declared under
+   * `connections` in `config/database.ts`. Default: the `DB_*` connection. Checked on the first
+   * query, never at import.
+   */
+  readonly connection?: string
 }
 
 /** A column that may appear in `fillable`: any insertable column except Strutvane's own. */

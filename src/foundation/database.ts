@@ -30,6 +30,11 @@ import { registerSchema } from '../database/schema/registry.ts'
 import { parseSchemaSnapshot } from '../schema/snapshot.ts'
 import { BootError } from './boot-error.ts'
 import type { ConfigRepository } from './config.ts'
+import {
+  DatabaseManager,
+  type DatabaseManagerOptions,
+  DatabaseManagerToken,
+} from './database-connections.ts'
 import type { EnvSource } from './env.ts'
 
 /**
@@ -103,6 +108,30 @@ export function bindDatabase(
     DatabaseConnectionToken,
     () => openDatabaseLazily(databaseSettings(options.env(), options.basePath)),
     { dispose: (connection) => connection.close() },
+  )
+}
+
+/**
+ * Bind the {@link DatabaseManager} (the extra connections of `config/database.ts`), unless a
+ * provider or a test bound one already. Nothing is read or opened here: each connection is checked
+ * and opened when it is first used (CONSISTENCY #132), and closed on shutdown.
+ *
+ * @example
+ * bindDatabaseManager(app.container, { basePath, environment, env: () => source, connections: () => undefined })
+ */
+export function bindDatabaseManager(
+  container: Container,
+  options: Omit<DatabaseManagerOptions, 'defaultConnection'>,
+): void {
+  if (container.has(DatabaseManagerToken)) return
+  container.singleton(
+    DatabaseManagerToken,
+    () =>
+      new DatabaseManager({
+        ...options,
+        defaultConnection: () => container.make(DatabaseConnectionToken),
+      }),
+    { dispose: (manager) => manager.close() },
   )
 }
 

@@ -25,7 +25,7 @@
 import { isHiddenColumn, isPrivilegeColumn, isSecretColumn } from '../../schema/columns.ts'
 import type { Connection } from '../db/connection.ts'
 import type { Row } from '../db/driver.ts'
-import { defaultConnection } from '../db/manager.ts'
+import { assertConnectionName, connectionNamed } from '../db/manager.ts'
 import {
   type ColumnOf,
   SYSTEM_COLUMNS,
@@ -104,6 +104,7 @@ interface RuntimeOptions {
   readonly hidden?: readonly string[]
   readonly casts?: Readonly<Record<string, Cast<unknown> | undefined>>
   readonly perPage?: number
+  readonly connection?: string
 }
 
 /** Columns Strutvane fills itself: keys, timestamps, soft deletes and the configured tenant column. */
@@ -116,6 +117,8 @@ function isSystemColumn(column: string): boolean {
 }
 const SLUG_ATTEMPTS = 5
 const settingsCache = new WeakMap<object, ModelSettings>()
+/** `Post.on('archive')`, made once per model class and connection name. */
+const boundCache = new WeakMap<object, Map<string, typeof ModelBase>>()
 const relationCache = new WeakMap<object, Map<string, RelationContract>>()
 
 /**
@@ -173,14 +176,47 @@ export class ModelBase {
     return settings
   }
 
+  /** Set on the subclasses {@link ModelBase.on} makes: the connection they are bound to. */
+  static readonly boundConnection: string | undefined = undefined
+
   /**
-   * The connection this model uses.
+   * The connection this model uses: the one `on()` bound it to, else its `connection` option
+   * (Laravel's `$connection`), else the default `DB_*` connection. Resolved on every call, so a
+   * request always gets its own application's connection.
    *
    * @example
    * Post.connection().inTransaction()
    */
   static connection(): Connection {
-    return defaultConnection()
+    return connectionNamed(this.boundConnection ?? this.options.connection)
+  }
+
+  /**
+   * This model on another connection, for the queries and saves made through it (Laravel's
+   * `Post::on('archive')`). It is a subclass of the model, so instances are still `instanceof
+   * Post`, and every query, save, `afterCommit` and model event uses `name`. Relations keep their
+   * own models' connections. Made once per model and name.
+   *
+   * @example
+   * const old = await Post.on('archive').where('year', 2019).get()
+   * await Post.on('archive').create({ title: 'Moved' })
+   */
+  static on(name: string): typeof ModelBase {
+    assertConnectionName(name)
+    let byName = boundCache.get(this)
+    if (byName === undefined) {
+      byName = new Map()
+      boundCache.set(this, byName)
+    }
+    const cached = byName.get(name)
+    if (cached !== undefined) return cached
+    class Bound extends this {
+      static override readonly boundConnection: string = name
+    }
+    // Error messages and model events name the app's class, not "Bound".
+    Object.defineProperty(Bound, 'name', { value: this.name })
+    byName.set(name, Bound)
+    return Bound
   }
 
   /**
@@ -1050,6 +1086,10 @@ export interface ModelClass<TTable extends TableName, TOptions> {
   ): QueryBuilder<TSelf, InstanceOf<TSelf>>
   withTrashed<TSelf extends AnyModelClass>(this: TSelf): QueryBuilder<TSelf, InstanceOf<TSelf>>
   onlyTrashed<TSelf extends AnyModelClass>(this: TSelf): QueryBuilder<TSelf, InstanceOf<TSelf>>
+  /** This model on the connection `name` (declared in `config/database.ts`): Laravel's `on()`. */
+  on<TSelf extends AnyModelClass>(this: TSelf, name: string): TSelf
+  /** The connection this model uses (its `connection` option, or the default one). */
+  connection(): Connection
 }
 
 /**
@@ -1067,6 +1107,9 @@ export function Model<
 >(table: TTable, options?: TOptions): ModelClass<TTable, TOptions> {
   assertIdentifier(table)
   const runtimeOptions: RuntimeOptions = options ?? {}
+  // A bad name is a typo in code: refuse it at import. Whether it is declared is checked on the
+  // first query, because config/database.ts is the app's, read at boot.
+  if (runtimeOptions.connection !== undefined) assertConnectionName(runtimeOptions.connection)
   class TableModel extends ModelBase {
     static override readonly table: string = table
     static override readonly options: RuntimeOptions = runtimeOptions
