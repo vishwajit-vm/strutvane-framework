@@ -123,7 +123,7 @@
     "diff": "9.0.0",
     "drizzle-kit": "0.31.11",
     "drizzle-orm": "0.45.4",
-    "hono": "4.13.18",
+    "hono": "4.13.19",
     "magicast": "0.5.5",
     "node-diff3": "3.2.1",
     "oxc-parser": "0.158.0",
