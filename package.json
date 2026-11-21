@@ -125,7 +125,7 @@
     "drizzle-orm": "0.45.4",
     "hono": "4.13.18",
     "magicast": "0.5.5",
-    "node-diff3": "3.2.1",
+    "node-diff3": "4.0.0",
     "oxc-parser": "0.158.0",
     "zod": "4.6.7"
   },
