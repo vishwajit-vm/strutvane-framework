@@ -5,11 +5,14 @@
  * // config/filesystems.ts
  * export default defineConfig({
  *   default: 'local',
- *   disks: { local: { driver: 'local', root: 'storage/app' } },
+ *   disks: { local: { driver: 'local', root: 'storage/app/private' } },
  * })
  * ```
  *
- * - Without the file, the app gets one private `local` disk at `<root>/storage/app`.
+ * - Without the file, the app gets one private `local` disk at `<root>/storage/app/private`
+ *   (Laravel 11's layout): never the parent of the public disk's `storage/app/public`.
+ * - Two local disks may not share a folder or sit inside each other: a private disk around the
+ *   public one would let `storage:link` (or the public mount) reach private files.
  * - Relative roots resolve against the project root, never the working directory.
  * - Every disk signs temporary links with a key derived from `signingSecret`, else `config/app.ts`
  *   `key`, else `APP_KEY` (HKDF subkey, see storage/signing.ts). Disks with a secret are served at
@@ -19,11 +22,12 @@
  * Failure scenarios (each throws at boot, naming the setting):
  * - an unknown `driver` (cloud drivers come from `@strutvane/files` via `StorageManager.extend`);
  * - a `default` that names no configured disk;
- * - a signing secret shorter than 32 bytes (a weak key would make links forgeable).
+ * - a signing secret shorter than 32 bytes (a weak key would make links forgeable);
+ * - two local disks whose roots are the same folder or nested.
  *
  * @module
  */
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { StorageDisk } from '../contracts/index.ts'
 import { createLocalDisk } from '../storage/local-disk.ts'
 import { createMemoryDisk } from '../storage/memory-disk.ts'
@@ -32,7 +36,10 @@ import type { SignedFileOptions } from '../storage/serve-signed.ts'
 /** One disk in `config/filesystems.ts`. */
 export interface AppDiskConfig {
   readonly driver: 'local' | 'memory'
-  /** Folder for `local` disks (relative to the project root). Default `storage/<disk name>`. */
+  /**
+   * Folder for `local` disks (relative to the project root). Default `storage/app/private` for
+   * `local`, `storage/app/public` for `public`, else `storage/<disk name>`.
+   */
   readonly root?: string
   readonly visibility?: 'private' | 'public'
   /** Base URL for public files. */
@@ -68,16 +75,20 @@ export function storageFromConfig(
   const entries = Object.entries(config?.disks ?? { local: { driver: 'local' as const } })
   const disks: StorageDisk[] = []
   const signedFiles: SignedFileOptions[] = []
+  const roots: { readonly name: string; readonly root: string }[] = []
   for (const [name, disk] of entries) {
     const signing = secret !== undefined ? { signingSecret: secret } : {}
     const common = { name, ...signing, ...(disk.url ? { url: disk.url } : {}) }
     if (disk.driver === 'local') {
-      const folder = disk.root ?? join('storage', name === 'local' ? 'app' : name)
+      const folder = disk.root ?? defaultLocalRoot(name)
+      const root = resolve(isAbsolute(folder) ? folder : join(options.root, folder))
+      assertSeparateRoot(roots, name, root)
+      roots.push({ name, root })
       disks.push(
         createLocalDisk({
           ...common,
           ...(disk.visibility ? { visibility: disk.visibility } : {}),
-          root: isAbsolute(folder) ? folder : join(options.root, folder),
+          root,
         }),
       )
     } else if (disk.driver === 'memory') {
@@ -93,4 +104,36 @@ export function storageFromConfig(
   if (!disks.some((d) => d.name === defaultDisk))
     throw new Error(`config/filesystems.ts: default disk "${defaultDisk}" is not configured`)
   return { default: defaultDisk, disks, signedFiles }
+}
+
+/**
+ * Where a `local` disk lives when its config names no `root`: `storage/app/private` for
+ * `local` and `storage/app/public` for `public` (Laravel 11), `storage/<name>` otherwise.
+ *
+ * @example
+ * defaultLocalRoot('local') // 'storage/app/private'
+ */
+export function defaultLocalRoot(name: string): string {
+  if (name === 'local') return join('storage', 'app', 'private')
+  if (name === 'public') return join('storage', 'app', 'public')
+  return join('storage', name)
+}
+
+/** Throw when `root` is, contains, or sits inside the root of an earlier local disk. */
+function assertSeparateRoot(
+  earlier: readonly { readonly name: string; readonly root: string }[],
+  name: string,
+  root: string,
+): void {
+  // Windows and macOS folders are case-insensitive by default: compare as the file system would.
+  const fold = (path: string): string => (process.platform === 'linux' ? path : path.toLowerCase())
+  const within = (inner: string, outer: string): boolean =>
+    fold(inner) === fold(outer) ||
+    fold(inner).startsWith(fold(outer.endsWith(sep) ? outer : outer + sep))
+  for (const other of earlier) {
+    if (!within(root, other.root) && !within(other.root, root)) continue
+    throw new Error(
+      `config/filesystems.ts: the disks "${other.name}" (${other.root}) and "${name}" (${root}) share a folder or one sits inside the other, so one disk's files (private ones included) would be reachable through the other. Give each local disk its own folder, e.g. local: storage/app/private and public: storage/app/public.`,
+    )
+  }
 }

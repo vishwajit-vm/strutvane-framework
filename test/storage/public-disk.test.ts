@@ -44,7 +44,7 @@ const appConfig = defineConfig((env) => ({
 const filesystems = defineConfig((env) => ({
   default: env.string('FILESYSTEM_DISK', 'local'),
   disks: {
-    local: { driver: 'local', root: 'storage/app', visibility: 'private' },
+    local: { driver: 'local', root: 'storage/app/private', visibility: 'private' },
     public: {
       driver: 'local',
       root: 'storage/app/public',

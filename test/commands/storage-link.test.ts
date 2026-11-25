@@ -5,8 +5,13 @@
 import { lstatSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { linkStorage, storageLinks } from '../../src/console/commands/app/storage-link.ts'
+import {
+  linkStorage,
+  privateFilesIn,
+  storageLinks,
+} from '../../src/console/commands/app/storage-link.ts'
 import { defineConfig } from '../../src/foundation/config.ts'
+import { createLocalDisk } from '../../src/storage/local-disk.ts'
 import { appFolder, buildApp, cleanupFolders, strut, testConfig } from './helpers.ts'
 
 afterEach(cleanupFolders)
@@ -62,6 +67,53 @@ describe('storage:link', () => {
       /links somewhere else/,
     )
     expect(linkStorage(root, 'public/storage', 'storage/app/public', true).status).toBe('replaced')
+  })
+
+  it('refuses to link a folder holding files a disk stored as private (F-M5)', async () => {
+    const base = appFolder()
+    const target = join(base, 'storage', 'app', 'public')
+    const disk = createLocalDisk({ name: 'public', root: target })
+    await disk.put('avatars/7.png', 'png', { visibility: 'public', contentType: 'image/png' })
+    for (const key of ['invoices/1.pdf', 'invoices/2.pdf', 'a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'])
+      await disk.put(key, 'secret', { contentType: 'application/pdf' })
+    writeFileSync(join(target, 'by-hand.txt'), 'put there by the developer')
+    expect(await privateFilesIn(target)).toEqual([
+      'a.pdf',
+      'b.pdf',
+      'c.pdf',
+      'd.pdf',
+      'invoices/1.pdf',
+      'invoices/2.pdf',
+    ])
+    const refused = await strut(['storage:link', '--json'], { cwd: base })
+    expect(refused.code).not.toBe(0)
+    const error = refused.json().error
+    expect(error?.code).toBe('storage_link_private_files')
+    expect(JSON.stringify(error)).toContain('a.pdf, b.pdf, c.pdf, d.pdf, invoices/1.pdf and 1 more')
+    expect(() => lstatSync(join(base, 'public', 'storage'))).toThrow()
+    // --force does not override it; once the private files are gone, the link is made.
+    expect((await strut(['storage:link', '--force', '--json'], { cwd: base })).code).not.toBe(0)
+    for (const key of ['invoices/1.pdf', 'invoices/2.pdf', 'a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'])
+      await disk.delete(key)
+    const linked = await strut(['storage:link', '--json'], { cwd: base })
+    expect(linked.code, linked.stderr).toBe(0)
+  })
+
+  it('treats unreadable metadata as private, and moves an old in-root metadata folder out first', async () => {
+    const base = appFolder()
+    const target = join(base, 'storage', 'app', 'public')
+    mkdirSync(join(target, '.strutvane-meta'), { recursive: true })
+    writeFileSync(join(target, 'old.txt'), 'x')
+    writeFileSync(join(target, '.strutvane-meta', 'old.txt.json'), '{"visibility":"private"}')
+    writeFileSync(join(target, 'broken.txt'), 'x')
+    const disk = createLocalDisk({ name: 'public', root: target })
+    await disk.put('fine.txt', 'x', { visibility: 'public', contentType: 'text/plain' })
+    writeFileSync(
+      join(base, 'storage', 'app', '.strutvane-disks', 'public', 'meta', 'broken.txt.json'),
+      '{oops',
+    )
+    expect(await privateFilesIn(target)).toEqual(['broken.txt', 'old.txt'])
+    expect(() => lstatSync(join(target, '.strutvane-meta'))).toThrow()
   })
 
   it('refuses links or targets outside the app', () => {

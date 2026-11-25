@@ -31,7 +31,7 @@ export interface FrameworkProviderOptions {
   /** A ready connection, or configuration to open one at boot. */
   readonly database: Database | DatabaseConfig
   readonly models: readonly (AnyModel | ModelDefinition)[]
-  /** Disks; default one private `local` disk at `storage/app`. */
+  /** Disks; default one private `local` disk at `storage/app/private`. */
   readonly storage?: { readonly default: string; readonly disks: readonly StorageDisk[] }
 }
 
@@ -56,7 +56,7 @@ export function frameworkProvider(options: FrameworkProviderOptions): Provider {
         storage ??= createStorageManager(
           options.storage ?? {
             default: 'local',
-            disks: [createLocalDisk({ name: 'local', root: 'storage/app' })],
+            disks: [createLocalDisk({ name: 'local', root: 'storage/app/private' })],
           },
         )
         return storage

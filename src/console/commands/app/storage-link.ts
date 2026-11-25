@@ -11,12 +11,16 @@
  * - an existing link to the same folder is left alone (idempotent);
  * - an existing link elsewhere is only replaced with `--force`, and a real file or folder at the
  *   link's place is **never** replaced (it may hold the developer's files);
- * - on Windows a directory junction is made (no administrator rights or developer mode needed).
+ * - on Windows a directory junction is made (no administrator rights or developer mode needed);
+ * - a target holding files a disk stored as **private** is refused: once linked, a web server
+ *   would serve them to anyone (move them to the private disk, or make them public first).
  *
  * @module
  */
 import { existsSync, lstatSync, mkdirSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { readdir, readFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { localDiskSidecar, moveLocalDiskSidecars } from '../../../storage/local-disk.ts'
 import type { AnyCommand } from '../../framework/command.ts'
 import { EXIT } from '../../framework/exit-codes.ts'
 import {
@@ -66,6 +70,72 @@ function inside(base: string, path: string, what: string): string {
       EXIT.VALIDATION,
     )
   return full
+}
+
+/** How many private files the refusal names (the rest are counted). */
+const LISTED = 5
+
+/**
+ * Keys of files in `target` that a disk stored as private (its metadata says so). A file with no
+ * metadata was put there by hand and is the developer's call; symbolic links are not followed.
+ *
+ * @example
+ * await privateFilesIn('/srv/blog/storage/app/public') // ['invoices/7.pdf']
+ */
+export async function privateFilesIn(target: string): Promise<string[]> {
+  await moveLocalDiskSidecars(target)
+  const { meta } = localDiskSidecar(target)
+  const found: string[] = []
+  const walk = async (dir: string, parts: readonly string[]): Promise<void> => {
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    for (const entry of entries) {
+      const path = [...parts, entry.name]
+      if (entry.isDirectory()) await walk(join(dir, entry.name), path)
+      else if (entry.isFile() && (await visibilityOf(meta, path)) === 'private')
+        found.push(path.join('/'))
+    }
+  }
+  await walk(target, [])
+  return found.sort()
+}
+
+/** The visibility a disk recorded for a file, or `undefined` without (readable) metadata. */
+async function visibilityOf(meta: string, parts: readonly string[]): Promise<string | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(`${join(meta, ...parts)}.json`, 'utf8'))
+    const visibility = (parsed as { visibility?: unknown } | null)?.visibility
+    return visibility === 'public' ? 'public' : 'private'
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    // Unreadable or broken metadata: treat the file as private (fail closed).
+    return 'private'
+  }
+}
+
+/**
+ * Refuse to link `target` while it holds private files (a CLI error naming a few of them).
+ *
+ * @example
+ * await assertNothingPrivate('/srv/blog', 'storage/app/public')
+ */
+export async function assertNothingPrivate(base: string, target: string): Promise<void> {
+  const targetPath = inside(base, target, 'target')
+  const files = await privateFilesIn(targetPath)
+  if (files.length === 0) return
+  const named = files.slice(0, LISTED).join(', ')
+  const more = files.length > LISTED ? ` and ${files.length - LISTED} more` : ''
+  throw commandError(
+    'storage_link_private_files',
+    `${target} holds files stored as private (${named}${more}); a link would let a web server serve them to anyone.`,
+    'Keep private files on the private disk (storage/app/private), or store each one again with put(key, body, { visibility: "public" }) if it really is public, then run storage:link again.',
+    EXIT.VALIDATION,
+  )
 }
 
 /**
@@ -142,6 +212,7 @@ export function storageLinkCommand(deps: AppCommandDeps): AnyCommand {
         ),
       }))
       const root = realpathSync(base)
+      for (const target of Object.values(links)) await assertNothingPrivate(root, target)
       const results = Object.entries(links).map(([link, target]) =>
         linkStorage(root, link, target, ctx.flags.force === true),
       )

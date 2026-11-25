@@ -1061,7 +1061,7 @@ export class Application implements CoreApplication<object> {
       throw new BootError(
         'invalid_filesystems_config',
         'config/filesystems.ts must export an object such as { default, disks }.',
-        "Example: defineConfig((env) => ({ default: env.string('FILESYSTEM_DISK', 'local'), disks: { local: { driver: 'local', root: 'storage/app' } } }))",
+        "Example: defineConfig((env) => ({ default: env.string('FILESYSTEM_DISK', 'local'), disks: { local: { driver: 'local', root: 'storage/app/private' } } }))",
       )
     const settings = raw as AppFilesystemsConfig | undefined
     if (!container.has(StorageManagerToken)) {

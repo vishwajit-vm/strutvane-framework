@@ -255,6 +255,18 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
 }
 
 /**
+ * Move the sidecars an older version kept inside `root` out of it (what a disk does on first
+ * use), for tools that look at the folder without opening a disk (`storage:link`).
+ *
+ * @example
+ * await moveLocalDiskSidecars('/srv/app/storage/app/public')
+ */
+export function moveLocalDiskSidecars(root: string): Promise<void> {
+  const full = resolve(root)
+  return moveLegacySidecars(full, localDiskSidecar(full).meta)
+}
+
+/**
  * Move the sidecars an older version kept inside the root to {@link localDiskSidecar}: metadata
  * is moved (merged when both exist, the newer location winning), leftover partial uploads are
  * deleted. Idempotent; a missing legacy folder is the normal case.

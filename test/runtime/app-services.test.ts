@@ -124,7 +124,7 @@ describe('custom routes use the app (data, permissions, storage)', () => {
       expect(up.status).toBe(200)
       const { key, url } = (await up.json()) as { key: string; url: string }
       expect(key).toMatch(/^notes\/[0-9a-f-]{36}\.png$/)
-      expect(existsSync(join(root, 'storage/app', ...key.split('/')))).toBe(true)
+      expect(existsSync(join(root, 'storage/app/private', ...key.split('/')))).toBe(true)
       const file = await fetch(`${base}${url}`)
       expect(file.status).toBe(200)
       expect(file.headers.get('content-type')).toBe('image/png')
@@ -210,6 +210,38 @@ describe('config/filesystems.ts', () => {
     expect(() =>
       storageFromConfig({ default: 'nope', disks: { local: { driver: 'local' } } }, { root: '/' }),
     ).toThrow(/default disk "nope"/)
+  })
+
+  test('local disks never share a folder or nest (a private root around the public one)', () => {
+    const nested = (local: string, pub: string) => () =>
+      storageFromConfig(
+        {
+          disks: {
+            local: { driver: 'local', root: local },
+            public: { driver: 'local', root: pub },
+          },
+        },
+        { root: '/srv/app' },
+      )
+    expect(nested('storage/app', 'storage/app/public')).toThrow(
+      /share a folder or one sits inside the other/,
+    )
+    expect(nested('storage/app/public/private', 'storage/app/public')).toThrow(
+      'local: storage/app/private',
+    )
+    expect(nested('storage/files', 'storage/files')).toThrow(/"local".*"public"/)
+    if (process.platform !== 'linux')
+      expect(nested('Storage/App', 'storage/app/public')).toThrow(/share a folder/)
+    // Siblings, and a name that only starts like the other folder, are fine.
+    expect(nested('storage/app/private', 'storage/app/public')).not.toThrow()
+    expect(nested('storage/app/pub', 'storage/app/public')).not.toThrow()
+    // The defaults are siblings too.
+    expect(() =>
+      storageFromConfig(
+        { disks: { local: { driver: 'local' }, public: { driver: 'local' } } },
+        { root: '/srv/app' },
+      ),
+    ).not.toThrow()
   })
 })
 
