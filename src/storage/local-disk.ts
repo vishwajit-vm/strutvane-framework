@@ -286,8 +286,15 @@ async function moveLegacySidecars(root: string, meta: string): Promise<void> {
     return
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
+    // Another process (a second worker on the same root) moved it first: nothing left to do.
+    if (code === 'ENOENT') return
     if (code !== 'EEXIST' && code !== 'ENOTEMPTY' && code !== 'EPERM') throw error
   }
-  await cp(legacyMeta, meta, { recursive: true, force: false, errorOnExist: false })
+  try {
+    await cp(legacyMeta, meta, { recursive: true, force: false, errorOnExist: false })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
   await rm(legacyMeta, { recursive: true, force: true })
 }
