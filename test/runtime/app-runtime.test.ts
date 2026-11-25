@@ -158,6 +158,48 @@ describe('FW-3: node strut start serves the built UI next to the API (one port)'
     expect(await head.text()).toBe('')
   })
 
+  it('the demo layout: API under /api/v1, auth under /api/v1/auth, manifest and UI on one port', async () => {
+    const root = appFolder(BUILT_UI)
+    const load = async (): Promise<Application> => {
+      const app = Application.configure({
+        basePath: root,
+        env: { APP_ENV: 'testing', APP_KEY, APP_URL: 'http://localhost' },
+      })
+        .withConfig(config)
+        .withRouting({
+          api: defineRoutes([Route.get('/hello', (ctx) => ctx.json({ message: 'hi' }))]),
+          apiPrefix: '/api/v1',
+          health: '/up',
+        })
+        .create()
+      // What @strutvane/auth's provider does: its routes under the API base, in the api group.
+      app.addRoutes(defineRoutes([Route.get('/session', (ctx) => ctx.json({ user: null }))]), {
+        prefix: '/api/v1/auth',
+        group: 'api',
+      })
+      app.container.value(LoggerToken, new MemoryLogger())
+      return app
+    }
+    started = await startApplication({ root, port: 0, load })
+    const base = started.server.url
+    expect(await (await fetch(`${base}/api/v1/hello`)).json()).toEqual({ message: 'hi' })
+    expect(await (await fetch(`${base}/api/v1/auth/session`)).json()).toEqual({ user: null })
+    const manifest = await fetch(`${base}/.well-known/strutvane.json`)
+    expect(manifest.status).toBe(200)
+    expect(((await manifest.json()) as { app: { apiVersion: string } }).app.apiVersion).toBe('v1')
+    // Unknown API and auth paths stay problem+json 404s, even for a browser navigation.
+    for (const path of ['/api/v1/nope', '/api/v1/auth/nope']) {
+      const missing = await fetch(`${base}${path}`, { headers: html })
+      expect(missing.status, path).toBe(404)
+      expect(missing.headers.get('content-type'), path).toContain('problem+json')
+    }
+    // Everything else is the UI: assets, and index.html for client-side routes.
+    expect((await fetch(`${base}/assets/index-1a2b3c.js`)).status).toBe(200)
+    expect(await (await fetch(`${base}/customers/7`, { headers: html })).text()).toContain(
+      '<title>Northwind</title>',
+    )
+  })
+
   it('serves the API only when there is no build, or with web: false', async () => {
     const root = appFolder()
     started = await startApplication({ root, port: 0, load: async () => buildApp(root) })

@@ -1,52 +1,101 @@
 # v2/app-runtime: a generated app runs end to end (demo acceptance blockers)
 
 Branch `v2/app-runtime`, cut from `v2/gaps` b0de9ca, with `v2/logging` f3e28b8 **merged** (not
-rewritten). Not pushed by the agent; the coordinator pushes. Evidence: `strutvane-demo/ACCEPTANCE.md`.
+rewritten) and `main` 79d5b78 (0.2.0-next.2) merged in (1d43576), so the changesets already released
+sit in `.changeset/pre/`. Pushed to `origin/v2/app-runtime`. Evidence: `strutvane-demo/ACCEPTANCE.md`.
 
-## Done (each with tests that fail on 0.2.0-next.1)
+## Status (2026-11-25)
+- Every demo item below and the six hardening items are done, each with tests.
+- Gate: see "Gate (2026-11-25)" below (agent-reported until the coordinator re-runs it).
+
+## Done: demo blockers (each with tests that fail on 0.2.0-next.1)
 - **FW-1 / FW-2** `dev` and `build` boot `bootstrap/app.ts` (no `strutvane.config.ts` needed); `dev`
   mounts the project's Vite on the app port. `test/runtime/app-runtime.test.ts`.
 - **FW-3** `start` serves `dist/web` (static + SPA fallback, caching, page CSP) via the new
-  `Application.serveUi()`; routes and hooks win; API paths stay problem+json. Same file.
+  `Application.serveUi()`; routes and hooks win; API paths stay problem+json. Same file, including
+  the demo layout (`apiPrefix: '/api/v1'`, auth routes under `/api/v1/auth`, manifest, UI, one port).
 - **FW-6** `GET /.well-known/strutvane.json` from the application (`src/http/app/manifest.ts`):
   resources = `ResourceController` routes under the API base; fields from `.strutvane/resources.json`;
   per-actor capabilities from the API's own policies; nothing for an actor who may do nothing.
-  `test/app/manifest.test.ts`.
-- **FW-8** logs to `storage/logs`: merged `v2/logging` (its own NEXT section below still applies:
-  its gate never had a green run before the merge).
+  `test/app/manifest.test.ts` (also with `/api/v1`: `app.apiVersion` = `v1`, still at the origin).
+- **FW-8** logs to `storage/logs`: merged `v2/logging` (its suites run as their own Vitest project).
 - **FW-9** maintenance 503 not reported as an error. `test/exceptions/handler.test.ts`.
 - **FW-11** `doctor` (app boots, resources.json, unregistered add-on providers = AUTH-2 in v2 terms),
   `models`, `permissions`, `registry:build` on an application. `test/commands/app-inspect.test.ts`.
-- **FW-14** `node strut design:use <crisp|vivid>`. Same file.
+- **FW-14** `node strut design:use <crisp|vivid>`. Same file. Which printed commands still don't
+  exist: see "Commands the installer and skeleton print".
 - **DOCK-2** cause (verified): with no `publicUrl`, the Node adapter built request URLs from the bind
   address, so `0.0.0.0` became `ctx.state.host` and failed the trusted-host check. Request URLs now
   use loopback for a wildcard bind; the `Host` header is still checked against loopback, the
-  `APP_URL` host and `trustedHosts`. The bind comes from `--host`, `config('app.host')` or `APP_HOST`
-  (the installer's compose file already sets `APP_HOST=0.0.0.0`).
+  `APP_URL` host and `trustedHosts` (never any Host). The bind comes from `--host`,
+  `config('app.host')` or `APP_HOST` (the installer's compose file already sets `APP_HOST=0.0.0.0`).
 
-## URL contract (framework ↔ ui ↔ auth), and what the UI must change for UI-1
-- API base = the app's `apiPrefix`: **`/api`** by default (CONSISTENCY #33, which wins over the
-  `/api/v1` in docs/05 §1 and in this agent's brief: **conflict reported, not silently resolved**;
-  an app may opt into `/api/v1` with `withRouting({ apiPrefix: '/api/v1' })`).
+## Done: hardening (each reproduced red first, then green)
+- **Hand-written SQL and tenancy** (18763ef): with tenancy on, `connection.run(sql…)` and `whereRaw`
+  naming a tenant table need an active tenant even when none is set (`tenant_required`; an
+  unscopable table: `tenant_scope_missing`). Deliberate tenant-free work: `runWithoutTenant(reason,
+  fn)` (exported from `/database`, reported to `onUnsafeTenancy` as `kind: 'scope'`). Entered by:
+  the migration lock (all migrate commands, programmatic too), `runSeeders` without a tenant, the v2
+  schema commands, and every command in `app.commands`. `Application.handle` leaves it, so a server
+  started from `node strut serve`/`start` never passes it to requests (proved: the test fails
+  without that line). Tests: `test/database/orm/tenancy.test.ts` (SQLite, PGlite, plus MySQL,
+  MariaDB, PostgreSQL with Docker), `test/database/orm/app-database.test.ts` (over HTTP, every
+  engine), `test/foundation/foundation.test.ts` (commands). The test-only DDL helper
+  `test/database/orm/support/ddl.ts` runs in `runWithoutTenant('test setup')`.
+- **CSRF on groupless routes** (f3035dc): `app.addRoutes()` without a group (and the framework's own
+  groupless routes) get `csrf`; `.withoutMiddleware('csrf')` opts out and shows in
+  `route:list --security`. `test/app/protections.test.ts` (POST/PUT/PATCH/DELETE, with/without token).
+- **Storage**:
+  - inline-type allow-list and one-media-type stored types (e60f293, finishing the WIP 4ec741d):
+    `test/storage/served-type.test.ts`;
+  - no XSRF cookie on shared-cacheable responses (WIP 4ec741d): `test/app/protections.test.ts`;
+  - sidecars (metadata, partial uploads) beside the root in `<parent>/.strutvane-disks/<name>/`,
+    old in-root folders moved out on first use; an overwrite drops the old metadata before the new
+    bytes land; delete drops metadata first (d218ca1): `test/storage/local-sidecar.test.ts`;
+  - default `local` root `storage/app/private`; nested or shared local roots refused at boot;
+    `storage:link` refuses a folder with files stored as private, `--force` doesn't override
+    (feb5f83): `test/runtime/app-services.test.ts`, `test/commands/storage-link.test.ts`.
+- **Value-based log redaction** (26216a3): core's `serializeError` (fallback logger, `toLoggable`)
+  redacts error name/message/stack/code and the cause chain; the pipeline already did.
+  `test/core/logger-value-redaction.test.ts` (corpus + fast-check property).
+- Changeset `.changeset/app-runtime-hardening.md` (minor), next to `app-runtime.md` and `v2-logging.md`.
+
+## URL contract (framework ↔ ui ↔ auth)
+- Framework default API base stays **`/api`** (CONSISTENCY #33). The demo apps use **`/api/v1`**:
+  the skeleton's `fix/demo` sets `withRouting({ apiPrefix: '/api/v1' })`, auth answers under
+  `/api/v1/auth/*`, the UI's default `apiUrl` is `/api/v1` (ui `fix/demo`). Covered by the FW-3 demo
+  layout test. A decision record for "/api/v1 in generated apps" is still the hub's to write.
 - Manifest: the origin's `/.well-known/strutvane.json`, whatever the API base. `app.apiVersion` is
-  the base's version segment (`''` for `/api`, `v1` for `/api/v1`). Resource `path` is relative
-  to the API base (`customers` → `/api/customers`).
-- Auth: `{API base}/auth/*`, i.e. `/api/auth/*` by default (auth's AUTH-1 fix: drop the `v1` default).
-- **UI changes for UI-1:** none needed for the manifest URL (`fetchManifest` resolves the absolute
-  `MANIFEST_PATH` against the origin); keep `apiUrl="/api"` in the skeleton's `main.tsx`.
-  To check on the ui side: (1) filter operator `null` in resources.json is published as
-  `isNull` + `isNotNull`: the list-query URL the UI builds must match the v2 API's
-  `?filter[field][op]=` syntax (data-crud agent owns that side); (2) UI-2: only call
-  `/auth/tenants` when tenancy is on; (3) the manifest may list zero resources (no resource routes
-  until FW-4/FW-5 land): show the shell, not an error.
+  the base's version segment. Resource `path` is relative to the API base.
+- To check on the ui side: filter operator `null` in resources.json is published as `isNull` +
+  `isNotNull` (data-crud owns the query syntax); UI-2 (only call `/auth/tenants` with tenancy); the
+  manifest may list zero resources until FW-4/FW-5 land: show the shell, not an error.
+
+## Commands the installer and skeleton print (FW-14), checked 2026-11-25
+- Exist in the framework: `migrate*`, `db:seed`, `start`, `dev`, `build`, `sync`, `key:*`,
+  `make:migration`, `design:use`, `storage:link`, `security:check`, `config:cache`, `list`, `add`.
+- Handled by the skeleton's own `strut.js`: `setup`, `services:*`, `shell`, `db:shell`,
+  `npm`/`npx`/`node`.
+- From add-ons: `install:auth`, `auth:migration`, `tenant:create` (auth `fix/demo`). `install:redis`
+  and `install:files` must come from those packages (redis's package.json declares no
+  `strutvane.commands`); `install:teams`, `token:create` and `user:password` were not found in auth
+  `fix/demo`'s command names: auth to confirm.
+- **Exist nowhere; the installer must stop printing them or someone builds them:** `docker:prod`
+  (create-strutvane `src/templates/project.ts:372`, `src/templates/workflow-files.ts:146,173`) and
+  **`db:prepare`**, which the installer *runs* for "your own server" databases
+  (`src/steps/database.ts:188`): that path fails today. Belongs with #132 / the env-connections work
+  (roles, TLS), not this branch.
 
 ## Notes for other agents
-- **skeleton:** `routes/web.ts` registers `/` (welcome), which wins over the UI's `/`; with `--ui
-  admin` drop it (or redirect) so `/` is the admin home. Optional `host: env.string('APP_HOST', '')`
-  in `config/app.ts` (the framework reads `APP_HOST` without it).
-- **installer:** `design:use` now exists (INST-2 can stay). Still missing from the installer's text:
-  `install:<name>` (`add` exists), `services:*`, `docker:prod`, `db:prepare`, `shell`, `setup`
-  (check which are the installer's own `strut.js` commands before dropping them).
+- **skeleton:** `config/filesystems.ts` `local.root` must become `storage/app/private` (a local root
+  `storage/app` around `public` at `storage/app/public` now stops the boot with
+  `invalid_filesystems_config`). Git-ignore `storage/app/.strutvane-disks/`. `routes/web.ts`
+  registers `/` (welcome), which wins over the UI's `/`; with `--ui admin` drop it. Optional
+  `host: env.string('APP_HOST', '')` in `config/app.ts`.
+- **auth / add-ons:** a package route added with `addRoutes()` and no group is now CSRF-checked;
+  webhooks and token-only endpoints that take cross-site POSTs need `.withoutMiddleware('csrf')`.
+  Raw SQL on tenant tables outside a tenant now needs `runWithTenant` or `runWithoutTenant(reason)`
+  (console commands already run in one).
 - **FW-13** (`migrate`'s v1 description) left alone: `migrate` belongs to `v2/data-crud`.
 
 ## DOCK-1 options (decision for the lead; the ownership check is unchanged)
@@ -57,9 +106,23 @@ rewritten). Not pushed by the agent; the coordinator pushes. Evidence: `strutvan
 3. Keep the app on a named volume inside the container (also fixes DOCK-3 slowness); the bind mount
    only for source sync. Most work, safest.
 
+## Gate (2026-11-25)
+- GATE_RESULTS
+
 ## Next
-- Scope addition from the coordinator (6 items) is in progress below this list, see "Hardening".
-- Full gate 3x, then the coordinator re-runs and pushes.
+- Coordinator: re-run the gate 3x (`npm ci`, `npm run ci`, Docker on for the server engines), then
+  merge to `main` with the other demo branches (data-crud, env-connections) in release order.
+- Hub: integration-map row for `runWithoutTenant` (a tenancy scope packages may enter for CLI
+  work); CONSISTENCY entries for `storage/app/private` and the `/api/v1` demo prefix.
+
+## How to verify
+```bash
+npm ci
+npm run ci        # lint, typecheck, tests + coverage (Docker for MySQL/MariaDB/PostgreSQL), build, smoke
+npx vitest run test/database/orm/tenancy.test.ts test/database/orm/app-database.test.ts \
+  test/app/protections.test.ts test/storage test/commands/storage-link.test.ts \
+  test/runtime/app-runtime.test.ts test/runtime/app-services.test.ts test/core/logger-value-redaction.test.ts
+```
 
 # v2/gaps: what add-ons and the docs agent hit in 0.2.0-next.1
 
