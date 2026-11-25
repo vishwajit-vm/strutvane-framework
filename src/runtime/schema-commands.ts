@@ -318,7 +318,7 @@ async function seedWith(
         message:
           options.className === undefined
             ? `${SEEDERS_DIR}/database.seeder.ts was not found. Create it, or run node strut db:seed --class=PostSeeder.`
-            : `No seeder named $wantedin $SEEDERS_DIR. Seeders there: $[...byName.keys()].join(', ') || 'none'.`,
+            : `No seeder named ${wanted} in ${SEEDERS_DIR}. Seeders there: ${[...byName.keys()].join(', ') || 'none'}.`,
       },
     ])
   const ran = await runSeeders(root_, {

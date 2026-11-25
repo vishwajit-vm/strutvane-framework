@@ -24,8 +24,8 @@
  *
  * @module
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { humanize, singularize } from '../core/inflection.ts'
 import type { SchemaState, TableState } from '../schema/columns.ts'
 import type { AppModels } from '../schema/generate/model-options.ts'
@@ -123,6 +123,7 @@ export function generateResourceRoutes(
   const content = renderRoutesFile(resources, state)
   const written: string[] = []
   if (content !== previous) {
+    mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, content)
     written.push(RESOURCE_ROUTES_FILE)
   }
