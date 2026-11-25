@@ -205,6 +205,42 @@ export interface NewOrder {
   total?: string | number
 }
 
+/** A row of the `notes` table (the resource access suite). */
+export interface Note {
+  id: number
+  folder_id: number | null
+  owner_id: number
+  status: 'draft' | 'shared' | 'archived'
+  team: string
+  title: string
+  score: number | null
+}
+
+/** What creating a note needs. */
+export interface NewNote {
+  folder_id?: number | null
+  owner_id: number
+  status?: 'draft' | 'shared' | 'archived'
+  team: string
+  title: string
+  score?: number | null
+}
+
+/** A row of the `folders` table. */
+export interface Folder {
+  id: number
+  owner_id: number
+  team: string
+  name: string
+}
+
+/** What creating a folder needs. */
+export interface NewFolder {
+  owner_id: number
+  team: string
+  name: string
+}
+
 /** Every table, with its four shapes. */
 export interface Tables {
   users: { row: User; insert: NewUser; update: Partial<NewUser>; json: UserJson }
@@ -222,6 +258,8 @@ export interface Tables {
   tasks: { row: Task; insert: NewTask; update: Partial<NewTask>; json: object }
   customers: { row: Customer; insert: NewCustomer; update: Partial<NewCustomer>; json: object }
   orders: { row: Order; insert: NewOrder; update: Partial<NewOrder>; json: object }
+  notes: { row: Note; insert: NewNote; update: Partial<NewNote>; json: object }
+  folders: { row: Folder; insert: NewFolder; update: Partial<NewFolder>; json: object }
   team_projects: {
     row: TeamProject
     insert: NewTeamProject

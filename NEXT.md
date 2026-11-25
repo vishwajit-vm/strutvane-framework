@@ -1,3 +1,25 @@
+# v2/data-crud: the generated CRUD API, `migrate` generation, dev seeding, ORM errors as problems
+
+Branch `v2/data-crud` (from `main` b0de9ca; `main` 79d5b78 = 0.2.0-next.2 merged in). Acceptance
+items (hub demo `ACCEPTANCE.md`): FW-5, FW-4, FW-7 / SKEL-1, FW-10. Another branch,
+`v2/app-runtime`, owns dev/build/start, the manifest (FW-6), logs, commands and storage.
+
+## Status (2026-11-25, account A)
+- **Green baseline:** 4dcab9a (WIP of the earlier agent + two fixes): `npm run ci` exit 0,
+  3,238 passed / 17 skipped, coverage 95.96 / 90.11 / 97.13 / 97.03 (one run, Windows, Docker on).
+- **FW-5 done (code + tests):** ORM models serve `ResourceController`; the four authorization
+  controls (list scope, re-check after a write in the same transaction, foreign keys the caller
+  may view, field-level read rules) and include scoping.
+  - Tests: `test/database/orm/resource-access.test.ts` (fast-check property over random
+    policies, rows and actors: 25 runs on SQLite, 6 on each server engine; plus three boot
+    checks), `test/database/orm/resource-crud.test.ts` (the FW-5 repro on 4 engines).
+  - Each control was checked by removing it: the property fails each time (list scope in SQL
+    via `page[total]`, the post-write re-check, the foreign key check, readable fields).
+- **Half-done / next:** FW-4 (checksum so a hand-edited `resources.gen.ts` is never overwritten;
+  the `registered:` line with the app's real API prefix), FW-7 (tracked dev seeding), FW-10 (400
+  for `unknown_column` / `invalid_tenant_id`), the v2 `make:policy` and owner stub, then the
+  full gate 3x.
+
 # v2/gaps: what add-ons and the docs agent hit in 0.2.0-next.1
 
 Branch `v2/gaps` (from `main` 8b896f0, `main` e395315 merged in). Not pushed by the agent; the

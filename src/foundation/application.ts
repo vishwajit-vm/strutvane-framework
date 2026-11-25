@@ -91,7 +91,7 @@ import {
 } from '../http/app/middleware.ts'
 import { CORE_ALIASES } from '../http/app/protections.ts'
 import type { RequestState } from '../http/app/request-state.ts'
-import { ResourceController } from '../http/app/resource-controller.ts'
+import { checkResourceAccess, ResourceController } from '../http/app/resource-controller.ts'
 import { isInternalResource } from '../http/app/resource-model.ts'
 import {
   type ResolvedRouteMiddleware,
@@ -1108,14 +1108,17 @@ export class Application implements CoreApplication<object> {
           `${route.uri} needs the {${parameter.name}} parameter bound to a model.`,
           `Add it in bootstrap/app.ts: withRouting({ bindings: { ${parameter.name}: ${model.name} } }).`,
         )
-    if (controller.explicitPolicy() !== undefined) return
-    const policy = await this.make(PolicyRegistryToken).discover(model)
-    if (policy === undefined && controller.fallbackPolicy() === undefined)
+    const policy =
+      controller.explicitPolicy() ??
+      (await this.make(PolicyRegistryToken).discover(model)) ??
+      controller.fallbackPolicy()
+    if (policy === undefined)
       throw new BootError(
         'missing_policy',
         `${controllerClass.name} serves ${model.name} but no policy was found for it.`,
         `Create app/policies/${model.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()}.policy.ts (node strut make:policy ${model.name}), or set \`protected readonly policy\` on the controller.`,
       )
+    checkResourceAccess(controllerClass.name, model, resource, policy)
   }
 
   /** Adapt a provider class or core provider object to the core lifecycle. */

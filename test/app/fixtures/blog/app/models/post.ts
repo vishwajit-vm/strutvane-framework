@@ -9,7 +9,7 @@ import type {
   ResourceMetadata,
   ResourcePage,
 } from '../../../../../../src/http/app/resource-model.ts'
-import { db, listRows, matches, type Row } from './store.ts'
+import { db, inTransaction, listRows, matches, type Row } from './store.ts'
 
 const METADATA: ResourceMetadata = {
   table: 'posts',
@@ -176,6 +176,11 @@ export class Post {
         (candidate) => candidate['deleted_at'] === null && String(candidate[column]) === value,
       )
     return row === undefined ? null : new Post(row)
+  }
+
+  /** Writes and their re-check share one in-memory transaction (rolled back on a throw). */
+  static transaction<TResult>(work: () => Promise<TResult>): Promise<TResult> {
+    return inTransaction(work)
   }
 
   static async isTaken(

@@ -1,5 +1,6 @@
 import { hasAdminRole, type Policy } from '../../../../../../src/auth/gate.ts'
 import type { AuthUser } from '../../../../../../src/foundation/registry.ts'
+import type { Constraint } from '../../../../../../src/http/app/resource-model.ts'
 import type { Post } from '../models/post.ts'
 
 /**
@@ -17,6 +18,13 @@ export default class PostPolicy implements Policy<Post> {
 
   view(user: AuthUser | null, post: Post): boolean {
     return post.status === 'published' || user?.id === String(post.author_id)
+  }
+
+  /** `view` as list conditions: published posts, plus the user's own drafts. */
+  viewScope(user: AuthUser | null): Constraint[] {
+    const visible: Constraint[] = [{ column: 'status', equals: 'published' }]
+    if (user !== null) visible.push({ column: 'author_id', equals: Number(user.id) })
+    return [{ anyOf: visible }]
   }
 
   create(user: AuthUser | null): boolean {

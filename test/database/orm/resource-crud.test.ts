@@ -91,6 +91,7 @@ const CUSTOMER_POLICY = `export default class CustomerPolicy {
   before(user) { return user !== null && Array.isArray(user.roles) && user.roles.includes('admin') ? true : undefined }
   viewAny(user) { return user !== null }
   view(user, customer) { return user !== null && customer.status === 'active' }
+  viewScope(user) { return user !== null && [{ column: 'status', equals: 'active' }] }
 }
 `
 const ORDER_POLICY = `export default class OrderPolicy {

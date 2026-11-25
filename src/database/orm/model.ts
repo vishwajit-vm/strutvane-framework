@@ -26,6 +26,8 @@ import type {
   Constraint,
   ResourceModel,
   ResourcePage,
+  ResourceReadAccess,
+  ResourceReference,
   RouteBindingOptions,
 } from '../../http/app/resource-model.ts'
 import { isHiddenColumn, isPrivilegeColumn, isSecretColumn } from '../../schema/columns.ts'
@@ -73,6 +75,7 @@ import {
   listForRequest,
   type OrmResourceMetadata,
   presentRecord,
+  referenceOf,
   resourceMetadataOf,
   routeKeyOf,
 } from './resource.ts'
@@ -408,12 +411,14 @@ export class ModelBase {
   static paginate(
     queryOrPerPage?: URLSearchParams | number,
     constraintsOrPage?: readonly Constraint[] | number,
+    access?: ResourceReadAccess,
   ): Promise<ResourcePage<ModelBase> | Page<ModelBase>> {
     if (queryOrPerPage instanceof URLSearchParams)
       return listForRequest(
         this,
         queryOrPerPage,
         Array.isArray(constraintsOrPage) ? constraintsOrPage : [],
+        access,
       )
     return this.query().paginate(
       queryOrPerPage,
@@ -478,10 +483,36 @@ export class ModelBase {
    * @example
    * await Customer.present(customer, new URLSearchParams('include=orders'))
    */
-  static present(record: object, query: URLSearchParams): Promise<void> {
+  static present(
+    record: object,
+    query: URLSearchParams,
+    access?: ResourceReadAccess,
+  ): Promise<void> {
     if (!(record instanceof ModelBase))
       throw new OrmUsageError('not_a_model', 'present() needs a model instance.')
-    return presentRecord(this, record, query)
+    return presentRecord(this, record, query, access)
+  }
+
+  /**
+   * Run `work` in one transaction on this model's connection (Laravel's `DB::transaction`);
+   * nested calls become savepoints. `ResourceController` writes and re-checks the row inside one.
+   *
+   * @example
+   * await Customer.transaction(async () => { await customer.save(); await order.save() })
+   */
+  static transaction<TResult>(work: () => Promise<TResult>): Promise<TResult> {
+    return this.connection().transaction(work)
+  }
+
+  /**
+   * The model and key a foreign key column points at, through this model's `belongsTo` named
+   * like the column (`customer_id` → `customer()`); `undefined` when there is none.
+   *
+   * @example
+   * Order.reference('customer_id') // { model: Customer, key: 'id' }
+   */
+  static reference(column: string): ResourceReference | undefined {
+    return referenceOf(this, column)
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1243,6 +1274,7 @@ export interface ModelClass<TTable extends TableName, TOptions> {
   paginate(
     query: URLSearchParams,
     constraints?: readonly Constraint[],
+    access?: ResourceReadAccess,
   ): Promise<ResourcePage<ModelInstance<TTable, TOptions>>>
   paginate<TSelf extends AnyModelClass>(
     this: TSelf,
@@ -1259,7 +1291,9 @@ export interface ModelClass<TTable extends TableName, TOptions> {
   ): Promise<ModelInstance<TTable, TOptions> | null>
   isTaken(column: string, value: string | number, exceptKey?: string | number): Promise<boolean>
   includable(name: string): ResourceModel | undefined
-  present(record: object, query: URLSearchParams): Promise<void>
+  present(record: object, query: URLSearchParams, access?: ResourceReadAccess): Promise<void>
+  transaction<TResult>(work: () => Promise<TResult>): Promise<TResult>
+  reference(column: string): ResourceReference | undefined
 }
 
 /**

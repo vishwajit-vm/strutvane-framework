@@ -3,13 +3,19 @@
  * `ResourceController`, which gives a model the five API actions with:
  *
  * - **index:** the model's own list query (search, sort, filters, pagination, every name checked
- *   against its allow-lists), plus per-controller constraints (`indexConstraints`), behind the
- *   policy's `viewAny`;
+ *   against its allow-lists), behind the policy's `viewAny`, with the policy's **list scope**
+ *   (`viewScope`, the SQL form of `view`) and `indexConstraints` ANDed in, and every row checked
+ *   against `view` once more: a list never shows a row `view` refuses;
  * - **show / update / destroy:** the route-bound record, behind `view` / `update` / `delete`;
  *   a record the user may not `view` answers exactly like a missing one (404, `visible()`);
  * - **store / update:** form-request validation (yours, or derived from the metadata), unknown
- *   fields refused, mass assignment only through the model's `fillable`, unique checks with a
- *   friendly 422, and a 409 when a race still hits the unique index;
+ *   fields refused, mass assignment only through the model's `fillable`, every foreign key the
+ *   client sends must name a row the caller may `view`, unique checks with a friendly 422, and a
+ *   409 when a race still hits the unique index. The write and a re-read of the row through
+ *   `view` (and `update`, after an update) share one transaction: a row the write moved out of
+ *   the caller's reach is rolled back with a 403;
+ * - **field-level read rules:** the policy's `readableFields(user)` limits what lists, single
+ *   records and included relations return, and what may be filtered, sorted or searched;
  * - **deny by default:** the policy is the controller's `policy`, else the registered or
  *   discovered one (`app/policies/post.policy.ts`); a missing method denies.
  *
@@ -19,10 +25,26 @@
  * @module
  */
 
-import { allows, authorize, hasAdminRole, type Policy } from '../../auth/gate.ts'
+import {
+  allows,
+  authorize,
+  hasAdminRole,
+  listScope,
+  needsViewScope,
+  type Policy,
+  PolicyDenial,
+  readableFieldsFor,
+  unscopedViewMessage,
+} from '../../auth/gate.ts'
 import { PolicyRegistryToken } from '../../auth/policies.ts'
 import type { IssueInput } from '../../core/errors/errors.ts'
-import { ConflictError, NotFoundError, ValidationError } from '../../core/errors/errors.ts'
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../../core/errors/errors.ts'
+import { camelCase } from '../../core/inflection.ts'
 import { BootError } from '../../foundation/boot-error.ts'
 import { currentApplication } from '../../foundation/current.ts'
 import type { AuthUser } from '../../foundation/registry.ts'
@@ -32,8 +54,10 @@ import { MetadataRequest } from '../../validation/from-metadata.ts'
 import type { HttpContext } from './context.ts'
 import type {
   Constraint,
+  IncludeAccess,
   ResourceMetadata,
   ResourceModel,
+  ResourceReadAccess,
   ResourceRecord,
 } from './resource-model.ts'
 
@@ -58,6 +82,9 @@ export type RecordOf<TModel> = TModel extends ResourceModel<infer TRecord> ? TRe
 
 /** A policy that denies everything: what a resource without any policy gets. */
 const DENY_ALL: Policy<unknown> = Object.freeze({})
+
+/** "Any of nothing": a constraint no row meets (a list scope of `'none'`). */
+const NO_ROWS: Constraint = Object.freeze({ anyOf: Object.freeze([]) })
 
 /**
  * Admins may do everything, everyone else nothing: the policy of a generated resource until the
@@ -100,10 +127,19 @@ export abstract class ResourceController<
    * // GET /api/posts?search=hello&sort=-created_at&filter[status]=published
    */
   async index(ctx: HttpContext): Promise<Response> {
-    await authorize(await this.resolvedPolicy(), 'viewAny', ctx.user)
-    await this.authorizeIncludes(ctx)
-    const page = await this.model.paginate(ctx.query, await this.indexConstraints(ctx))
-    return ctx.json({ data: page.data, meta: page.meta })
+    const policy = await this.resolvedPolicy()
+    await authorize(policy, 'viewAny', ctx.user)
+    const access = await this.readAccess(ctx, policy)
+    const constraints = [
+      ...(await this.scopeConstraints(policy, ctx.user)),
+      ...(await this.indexConstraints(ctx)),
+    ]
+    const page = await this.model.paginate(ctx.query, constraints, access)
+    // The scope is `view` in SQL; `view` itself still has the last word on every row.
+    const data: RecordOf<TModel>[] = []
+    for (const record of page.data as readonly RecordOf<TModel>[])
+      if (await allows(policy, 'view', ctx.user, record)) data.push(record)
+    return ctx.json({ data, meta: page.meta })
   }
 
   /**
@@ -128,11 +164,18 @@ export abstract class ResourceController<
     await authorize(await this.resolvedPolicy(), 'create', ctx.user)
     const request = this.storeRequest ?? this.defaultRequest('create')
     const input = this.massAssignable(await request.validate(ctx))
+    await this.assertReferencesVisible(input, ctx)
     const values = await this.prepareForStore({ ...input }, ctx)
     await this.assertUnique(values, undefined)
-    const record = (await this.withConflictHandling(() =>
-      this.model.createFromValidated(values),
-    )) as RecordOf<TModel>
+    const record = await this.model.transaction(async () => {
+      const created = (await this.withConflictHandling(() =>
+        this.model.createFromValidated(values),
+      )) as RecordOf<TModel>
+      // `view` only: a policy may allow creating rows it never lets anyone change.
+      await this.assertStillReachable(ctx, created, ['view'])
+      return created
+    })
+    await this.present(ctx, record, false)
     return ctx.json({ data: record }, 201, this.locationHeader(ctx, record))
   }
 
@@ -147,9 +190,13 @@ export abstract class ResourceController<
     await authorize(await this.resolvedPolicy(), 'update', ctx.user, record)
     const request = this.updateRequest ?? this.defaultRequest('update')
     const input = this.massAssignable(await request.validate(ctx))
+    await this.assertReferencesVisible(input, ctx)
     const values = await this.prepareForUpdate({ ...input }, record, ctx)
     await this.assertUnique(values, record)
-    await this.withConflictHandling(() => record.updateFromValidated(values))
+    await this.model.transaction(async () => {
+      await this.withConflictHandling(() => record.updateFromValidated(values))
+      await this.assertStillReachable(ctx, record, ['view', 'update'])
+    })
     await this.present(ctx, record)
     return ctx.json({ data: record })
   }
@@ -188,36 +235,141 @@ export abstract class ResourceController<
   }
 
   /**
-   * Every `?include=` names a related model the user may list (`viewAny` on the related model's
-   * policy, deny by default), checked before any row is loaded: an include must never show rows
-   * the related resource's own API would refuse (security review F-02). Names the model refuses
-   * are left to the model, which reports them as 422 `include_not_allowed`.
+   * What this user may read, decided from the policies before any row is loaded: the policy's
+   * readable fields, and for every `?include=` the related model's own policy, deny by default.
+   * An include needs `viewAny` there (403 otherwise) and shows only the related rows that
+   * policy's list scope and `view` allow, with its readable fields: an include must never show
+   * rows or fields the related resource's own API would refuse (security review F-02). Names the
+   * model refuses are left to the model, which reports them as 422 `include_not_allowed`.
    *
    * @example
-   * await this.authorizeIncludes(ctx)
+   * const access = await this.readAccess(ctx, await this.resolvedPolicy())
    */
-  protected async authorizeIncludes(ctx: HttpContext): Promise<void> {
+  protected async readAccess(
+    ctx: HttpContext,
+    policy: Policy<RecordOf<TModel>>,
+  ): Promise<ResourceReadAccess> {
+    const includes = new Map<string, IncludeAccess>()
     const raw = ctx.query.get('include')
-    if (raw === null || raw === '' || this.model.includable === undefined) return
-    const registry = currentApplication(this.constructor.name).container.make(PolicyRegistryToken)
-    for (const name of new Set(raw.split(',').map((part) => part.trim()))) {
-      const related = this.model.includable(name)
-      if (related === undefined) continue
-      const policy = (await registry.discover(related)) ?? DENY_ALL
-      await authorize(policy, 'viewAny', ctx.user)
+    if (raw !== null && raw !== '' && this.model.includable !== undefined) {
+      const registry = currentApplication(this.constructor.name).container.make(PolicyRegistryToken)
+      for (const name of new Set(raw.split(',').map((part) => part.trim()))) {
+        const related = this.model.includable(name)
+        if (related === undefined) continue
+        const relatedPolicy = (await registry.discover(related)) ?? DENY_ALL
+        await authorize(relatedPolicy, 'viewAny', ctx.user)
+        includes.set(name, {
+          constraints: await this.scopeConstraints(relatedPolicy, ctx.user),
+          readable: await readableFieldsFor(relatedPolicy, ctx.user),
+          visible: (record) => allows(relatedPolicy, 'view', ctx.user, record),
+        })
+      }
     }
+    return { readable: await readableFieldsFor(policy, ctx.user), includes }
   }
 
   /**
-   * Apply `?include=` / `?fields=` to a single record, when the model supports them.
+   * A policy's list scope as constraints: none for `'all'`, one no row meets for `'none'`.
+   * Throws (a 500; boot refuses it first) when `view` reads the record without a `viewScope`.
+   *
+   * @example
+   * const constraints = await this.scopeConstraints(policy, ctx.user)
+   */
+  protected async scopeConstraints<TRecord>(
+    policy: Policy<TRecord>,
+    user: AuthUser | null,
+  ): Promise<readonly Constraint[]> {
+    const scope = await listScope(policy, user)
+    if (scope === 'all') return []
+    if (scope === 'none') return [NO_ROWS]
+    return scope
+  }
+
+  /**
+   * Apply `?include=` / `?fields=` and the read access to a single record, when the model
+   * supports them. `withQuery: false` (after a store) applies only the field-level read rules.
    *
    * @example
    * await this.present(ctx, record)
    */
-  protected async present(ctx: HttpContext, record: RecordOf<TModel>): Promise<void> {
+  protected async present(
+    ctx: HttpContext,
+    record: RecordOf<TModel>,
+    withQuery = true,
+  ): Promise<void> {
     if (this.model.present === undefined) return
-    await this.authorizeIncludes(ctx)
-    await this.model.present(record, ctx.query)
+    const policy = await this.resolvedPolicy()
+    if (!withQuery) {
+      const readable = await readableFieldsFor(policy, ctx.user)
+      await this.model.present(record, new URLSearchParams(), { readable, includes: new Map() })
+      return
+    }
+    await this.model.present(record, ctx.query, await this.readAccess(ctx, policy))
+  }
+
+  /**
+   * Every foreign key the client sent must name a row the caller may `view` under the related
+   * model's own policy (its discovered policy, else the generated admins-only default). Missing
+   * and not visible answer alike, 422 `not_found` on the field, so ids can't be probed. Values
+   * set by server code (`prepareForStore`) are trusted and not checked.
+   *
+   * @example
+   * await this.assertReferencesVisible(input, ctx)
+   */
+  protected async assertReferencesVisible(
+    input: Readonly<Record<string, unknown>>,
+    ctx: HttpContext,
+  ): Promise<void> {
+    const issues: IssueInput[] = []
+    for (const field of this.model.metadata().fields) {
+      if (field.references === undefined || !Object.hasOwn(input, field.name)) continue
+      const value = input[field.name]
+      if (value === null || value === undefined) continue
+      if (!(await this.referenceVisible(field.name, value, ctx.user)))
+        issues.push({ path: [field.name], code: 'not_found' })
+    }
+    if (issues.length > 0) throw new ValidationError(issues)
+  }
+
+  /** Does `value` in the foreign key `column` name a row `user` may view? Fails closed. */
+  private async referenceVisible(
+    column: string,
+    value: unknown,
+    user: AuthUser | null,
+  ): Promise<boolean> {
+    const target = this.model.reference?.(column)
+    if (target === undefined || (typeof value !== 'string' && typeof value !== 'number'))
+      return false
+    const found = await target.model.resolveRouteBinding(String(value), target.key)
+    if (found === null) return false
+    const registry = currentApplication(this.constructor.name).container.make(PolicyRegistryToken)
+    const policy = (await registry.discover(target.model)) ?? ADMIN_ONLY
+    return allows(policy, 'view', user, found)
+  }
+
+  /**
+   * Inside the write's transaction: read the row again and require `abilities` on what is now
+   * stored. A write that moved the row out of the caller's reach (another owner, status or
+   * tenant) throws 403, which rolls the transaction back, so it is never committed.
+   *
+   * @example
+   * await this.assertStillReachable(ctx, record, ['view', 'update'])
+   */
+  protected async assertStillReachable(
+    ctx: HttpContext,
+    record: RecordOf<TModel>,
+    abilities: readonly ('view' | 'update')[],
+  ): Promise<void> {
+    const key = this.model.metadata().primaryKey
+    const fresh = await this.model.resolveRouteBinding(String(record.routeKey(key)), key)
+    const policy = await this.resolvedPolicy()
+    for (const ability of abilities)
+      if (fresh === null || !(await allows(policy, ability, ctx.user, fresh)))
+        throw new ForbiddenError({
+          cause: new PolicyDenial(
+            `After this write ${policy.constructor.name}.${ability}() no longer allows this ${this.label()} for the user, so the write was rolled back.`,
+          ),
+        })
   }
 
   /**
@@ -466,6 +618,49 @@ export abstract class ResourceController<
     // A nested show route needs its parents from this request; a shallow one needs none.
     for (const name of parameters.slice(0, -1)) params[name] = ctx.param(name)
     return { location: urls.route(showName, params) }
+  }
+}
+
+/**
+ * Boot checks for a resource controller's access rules, so a misconfigured resource never
+ * serves a request:
+ *
+ * - `view_scope_missing`: the policy's `view` reads the record but there is no `viewScope`, so
+ *   `index` can't be limited to the rows `view` allows (a list would show rows `view` refuses).
+ * - `unresolved_reference`: a writable foreign key whose target model can't be found (no
+ *   `belongsTo` named like the column), so the "caller may view the row it points at" check
+ *   could never pass.
+ *
+ * @example
+ * checkResourceAccess('PostController', Post, Post.metadata(), new PostPolicy())
+ */
+export function checkResourceAccess(
+  controllerName: string,
+  model: ResourceModel<ResourceRecord>,
+  resource: ResourceMetadata,
+  policy: Policy<never>,
+): void {
+  if (needsViewScope(policy))
+    throw new BootError(
+      'view_scope_missing',
+      `${controllerName} lists ${model.name} records, but ${unscopedViewMessage(policy.constructor.name)}`,
+      'A list must never show a row view() refuses, so the resource is not served until the policy says which rows it may list.',
+    )
+  const fillable = model.fillable
+  for (const field of resource.fields) {
+    const writable =
+      !field.hidden &&
+      field.kind !== 'id' &&
+      (fillable === undefined ? field.fillable : fillable.includes(field.name))
+    if (field.references === undefined || !writable) continue
+    if (model.reference?.(field.name) === undefined) {
+      const relation = camelCase(field.name.replace(/_id$/, ''))
+      throw new BootError(
+        'unresolved_reference',
+        `${controllerName} lets clients write ${model.name}.${field.name}, a foreign key to "${field.references}", but ${model.name} has no relation that says which model that is.`,
+        `Add the relation to the model, named like the column: ${relation}() { return this.belongsTo(<Model of ${field.references}>, '${field.name}') }. Every id a client writes is checked against that model's view() policy.`,
+      )
+    }
   }
 }
 

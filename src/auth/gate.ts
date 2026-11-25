@@ -78,6 +78,10 @@ export type ViewScope = boolean | readonly Constraint[]
  * `viewScope` can't be turned into a query, so this throws (and boot refuses such a resource):
  * failing closed is the only answer that never lists a row `view` would refuse.
  *
+ * Why a probe record: `view.length` can't see a rest parameter (`view(user, ...rest)`), so the
+ * record-less call gets an object that throws on any read. A `view` that touches it reads the
+ * record after all, and is refused the same way.
+ *
  * @example
  * await listScope(new PostPolicy(), user) // [{ anyOf: [...] }]
  */
@@ -88,17 +92,47 @@ export async function listScope<TModel>(
   const early = policy.before?.(user, 'view')
   if (early !== undefined) return early === true ? 'all' : 'none'
   if (typeof policy.viewScope === 'function') {
-    const scope = await policy.viewScope(user)
+    const scope: unknown = await policy.viewScope(user)
     if (scope === true) return 'all'
     if (scope === false) return 'none'
-    if (Array.isArray(scope)) return scope
+    if (Array.isArray(scope) && scope.every(isConstraint)) return scope
     throw new TypeError(
-      `${policy.constructor.name}.viewScope() must return true, false or a list of constraints.`,
+      `${policy.constructor.name}.viewScope() must return true, false or a list of constraints ({ column, equals } or { anyOf: [...] }).`,
     )
   }
   if (typeof policy.view !== 'function') return 'none'
   if (viewReadsRecord(policy)) throw new TypeError(unscopedViewMessage(policy.constructor.name))
-  return (await allows(policy, 'view', user, {} as TModel)) ? 'all' : 'none'
+  let allowed: boolean
+  try {
+    allowed = await allows(policy, 'view', user, recordProbe<TModel>())
+  } catch (error) {
+    if (error instanceof RecordRead)
+      throw new TypeError(unscopedViewMessage(policy.constructor.name), { cause: error })
+    throw error
+  }
+  return allowed ? 'all' : 'none'
+}
+
+/**
+ * The fields `user` may read under `policy` (field-level read rules): `undefined` means every
+ * field. `before()` returning `true` (an admin) reads everything; otherwise `readableFields()`
+ * decides, and a policy without it restricts nothing.
+ *
+ * @example
+ * await readableFieldsFor(new CustomerPolicy(), member) // ['id', 'name', 'status']
+ */
+export async function readableFieldsFor<TModel>(
+  policy: Policy<TModel>,
+  user: AuthUser | null,
+): Promise<readonly string[] | undefined> {
+  if (policy.before?.(user, 'view') === true) return undefined
+  if (typeof policy.readableFields !== 'function') return undefined
+  const fields: unknown = await policy.readableFields(user)
+  if (fields === undefined) return undefined
+  if (Array.isArray(fields) && fields.every((field) => typeof field === 'string')) return fields
+  throw new TypeError(
+    `${policy.constructor.name}.readableFields() must return a list of field names, or undefined for every field.`,
+  )
 }
 
 /**
@@ -116,13 +150,55 @@ export function needsViewScope(policy: Policy<unknown>): boolean {
   )
 }
 
-/** The message (and boot hint) for a `view` that reads the record without a `viewScope`. */
+/**
+ * The message (and boot hint) for a `view` that reads the record without a `viewScope`.
+ *
+ * @example
+ * unscopedViewMessage('PostPolicy') // 'PostPolicy.view() looks at the record, …'
+ */
 export function unscopedViewMessage(name: string): string {
   return `${name}.view() looks at the record, but the policy has no viewScope(), so a list can't be limited to the rows view() allows. Add viewScope(user) returning the same rule as constraints (for example [{ column: 'owner_id', equals: Number(user.id) }]), or true / false.`
 }
 
 function viewReadsRecord(policy: Policy<unknown>): boolean {
   return typeof policy.view === 'function' && policy.view.length >= 2
+}
+
+/** Thrown by {@link recordProbe} when a record-less `view` reads the record anyway. */
+class RecordRead extends Error {
+  constructor(key: string | symbol) {
+    super(`view() read ${String(key)} from the record`)
+    this.name = 'RecordRead'
+  }
+}
+
+/** A stand-in record that refuses every read, so a record-less `view` can't depend on a row. */
+function recordProbe<TModel>(): TModel {
+  const refuse = (_target: object, key: string | symbol): never => {
+    throw new RecordRead(key)
+  }
+  return new Proxy(Object.create(null) as object, {
+    get: refuse,
+    has: refuse,
+    ownKeys: () => {
+      throw new RecordRead('ownKeys')
+    },
+    getOwnPropertyDescriptor: refuse,
+  }) as TModel
+}
+
+/** A well-formed constraint: `{ column, equals }` or `{ anyOf: [...] }` (nested the same way). */
+function isConstraint(value: unknown): value is Constraint {
+  if (typeof value !== 'object' || value === null) return false
+  if ('anyOf' in value) return Array.isArray(value.anyOf) && value.anyOf.every(isConstraint)
+  if (!('column' in value) || !('equals' in value) || typeof value.column !== 'string') return false
+  const equals = value.equals
+  return (
+    equals === null ||
+    typeof equals === 'string' ||
+    typeof equals === 'number' ||
+    typeof equals === 'boolean'
+  )
 }
 
 /** Abilities that act on one record (the others act on the collection). */

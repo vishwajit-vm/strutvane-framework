@@ -13,7 +13,13 @@
  * | `record.delete()` | soft delete when the table has `deleted_at` |
  * | `resolveRouteBinding(value, field?)` | `where(field ?? routeKey, value).first()`, tenant-scoped; `null` when missing (and for malformed ids, refused before SQL) |
  * | `isTaken(column, value, exceptKey?)` | an `exists()` including trashed rows, tenant-scoped |
+ * | `transaction(work)` | run `work` in one database transaction (rolled back when it throws) |
+ * | `reference(column)` | the model and key a foreign key column points at (its `belongsTo`) |
  * | `fillable` | the mass-assignment allow-list |
+ *
+ * Read access ({@link ResourceReadAccess}) is decided by the controller from the policies and
+ * applied by the model: the fields this user may read, and for each `?include=` the related
+ * policy's list scope, readable fields and per-row `view` check.
  *
  * @module
  */
@@ -123,6 +129,47 @@ export interface ResourcePage<TRecord> {
 }
 
 /**
+ * What an `?include=` may show of a related model, from that model's own policy: its list scope
+ * (`constraints`, ANDed into the eager load), its readable fields, and its `view` per row (a row
+ * `view` refuses is dropped even if the scope let it through).
+ *
+ * @example
+ * const orders: IncludeAccess = { constraints: [{ column: 'owner_id', equals: 7 }], readable: undefined, visible: async () => true }
+ */
+export interface IncludeAccess {
+  readonly constraints: readonly Constraint[]
+  /** The related fields this user may read; `undefined` means all. */
+  readonly readable: readonly string[] | undefined
+  /** The related policy's `view` for one loaded row. */
+  readonly visible: (record: unknown) => Promise<boolean>
+}
+
+/**
+ * What the current user may read, as the controller decided it from the policies: the fields of
+ * this resource (field-level read rules) and, per allowed `?include=` name, what the related
+ * model's policy allows. A name missing from `includes` may not be included.
+ *
+ * @example
+ * const access: ResourceReadAccess = { readable: ['id', 'name'], includes: new Map() }
+ */
+export interface ResourceReadAccess {
+  /** The fields this user may read; `undefined` means all (hidden ones never). */
+  readonly readable: readonly string[] | undefined
+  readonly includes: ReadonlyMap<string, IncludeAccess>
+}
+
+/**
+ * Where a foreign key column points: the related model and the column it matches there.
+ *
+ * @example
+ * Order.reference('customer_id') // { model: Customer, key: 'id' }
+ */
+export interface ResourceReference {
+  readonly model: ResourceModel
+  readonly key: string
+}
+
+/**
  * What `ResourceController` needs from a record.
  *
  * @example
@@ -151,9 +198,14 @@ export interface ResourceModel<TRecord extends ResourceRecord = ResourceRecord> 
   /** The mass-assignment allow-list. Without it, the metadata's rules apply. */
   readonly fillable?: readonly string[] | undefined
   metadata(): ResourceMetadata
+  /**
+   * One page for a list request: `constraints` ANDed in, and `access` (when given) limiting the
+   * fields that may be read, filtered, sorted, searched or selected, and what each include shows.
+   */
   paginate(
     query: URLSearchParams,
     constraints: readonly Constraint[],
+    access?: ResourceReadAccess,
   ): Promise<ResourcePage<TRecord>>
   createFromValidated(values: Readonly<Record<string, unknown>>): Promise<TRecord>
   resolveRouteBinding(
@@ -164,12 +216,24 @@ export interface ResourceModel<TRecord extends ResourceRecord = ResourceRecord> 
   /** `true` if any row (soft-deleted ones too) has `column = value`, ignoring the row `exceptKey`. */
   isTaken(column: string, value: string | number, exceptKey?: string | number): Promise<boolean>
   /**
+   * Run `work` in one transaction (nested calls join it). The controller writes and then re-reads
+   * the row through the policy inside it, so a write that moves a row out of the caller's reach
+   * is rolled back, never committed.
+   */
+  transaction<TResult>(work: () => Promise<TResult>): Promise<TResult>
+  /**
+   * The model a foreign key column points at, so the controller can check that the caller may
+   * `view` the row a written id names; `undefined` when the model can't say (boot then refuses
+   * a writable foreign key, and a write naming one is refused).
+   */
+  reference?(column: string): ResourceReference | undefined
+  /**
    * The model behind an `?include=` name, so the controller can check the related model's
    * policy (`viewAny`) before its rows are loaded; `undefined` when the name may not be included.
    */
   includable?(name: string): ResourceModel | undefined
-  /** Apply `?include=` and `?fields=` to one record (`show`, `update`, `restore`). */
-  present?(record: TRecord, query: URLSearchParams): Promise<void>
+  /** Apply `?include=`, `?fields=` and the read `access` to one record (show, store, update, restore). */
+  present?(record: TRecord, query: URLSearchParams, access?: ResourceReadAccess): Promise<void>
 }
 
 /**

@@ -8,7 +8,7 @@ import type {
   ResourceMetadata,
   ResourcePage,
 } from '../../../../../../src/http/app/resource-model.ts'
-import { db, listRows, matches, type Row } from './store.ts'
+import { db, inTransaction, listRows, matches, type Row } from './store.ts'
 
 const METADATA: ResourceMetadata = {
   table: 'authors',
@@ -144,6 +144,11 @@ export class Author {
       .table('authors')
       .rows.find((candidate) => String(candidate[field ?? 'id']) === value)
     return row === undefined ? null : new Author(row)
+  }
+
+  /** Writes and their re-check share one in-memory transaction (rolled back on a throw). */
+  static transaction<TResult>(work: () => Promise<TResult>): Promise<TResult> {
+    return inTransaction(work)
   }
 
   static async isTaken(

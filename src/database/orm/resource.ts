@@ -19,15 +19,24 @@
  * Costs are capped: at most 100 rows per page, 10,000 rows deep (`page_too_deep`), 5 sorts,
  * 5 includes, 100 `in` values, 200 search characters, and totals only on request.
  *
+ * **Read access** (`ResourceReadAccess`, decided by the controller from the policies): a field
+ * the user may not read can't be filtered, sorted, searched or selected either (each would reveal
+ * its values one request at a time), and is left out of every row; an include loads only the
+ * related rows the related policy's scope and `view` allow, with that policy's readable fields.
+ *
  * @module
  */
 
 import { type IssueInput, ValidationError } from '../../core/errors/errors.ts'
+import { camelCase } from '../../core/inflection.ts'
 import type {
   Constraint,
+  IncludeAccess,
   ResourceModel,
   ResourcePage,
+  ResourceReadAccess,
   ResourceRecord,
+  ResourceReference,
 } from '../../http/app/resource-model.ts'
 import {
   type FieldMetadata,
@@ -36,13 +45,13 @@ import {
   resourceMetadataForTable,
 } from '../../schema/generate/metadata.ts'
 import type { ModelOptions } from '../../schema/generate/model-options.ts'
-import { registeredSchema } from '../schema/registry.ts'
+import { registeredSchema, tableState } from '../schema/registry.ts'
 import type { SchemaSnapshot } from '../schema/snapshot.ts'
-import { Builder, loadRelations, parseRelationPaths } from './builder.ts'
+import { Builder, type EagerTree, loadRelations } from './builder.ts'
 import { ormConfig } from './config.ts'
 import { CastError, OrmUsageError } from './errors.ts'
 import type { ModelBase } from './model.ts'
-import { attribute, isModelRuntime, type ModelRuntime } from './runtime.ts'
+import { attribute, isModelRuntime, type ModelRuntime, setLoaded } from './runtime.ts'
 import type { AnyModelClass } from './types.ts'
 
 /** The model options the metadata reads (mass assignment and visibility). */
@@ -129,8 +138,9 @@ export async function listForRequest(
   model: ResourceSource,
   query: URLSearchParams,
   constraints: readonly Constraint[],
+  access?: ResourceReadAccess,
 ): Promise<ResourcePage<ModelBase>> {
-  const meta = resourceMetadataOf(model)
+  const meta = readableMeta(resourceMetadataOf(model), access?.readable)
   const issues: IssueInput[] = []
   const builder = new Builder<AnyModelClass, ModelBase>(model)
   const keys = [...new Set(query.keys())]
@@ -151,21 +161,23 @@ export async function listForRequest(
   }
   applySearch(builder, meta, query.get('search'), issues)
   applySort(builder, meta, query.get('sort'), issues)
-  const includes = parseIncludes(model, query.get('include'), issues)
+  const includes = parseIncludes(model, query.get('include'), issues, access)
   const fields = parseFields(meta, query.get('fields'), issues)
   const page = parsePage(meta, query, issues)
   if (issues.length > 0) throw new ValidationError(issues)
   for (const constraint of constraints) applyConstraint(builder, constraint, 'and', meta.primaryKey)
 
   const total = page.withTotal ? await builder.clone().count() : undefined
-  if (includes.length > 0) Reflect.apply(builder.with, builder, includes)
+  if (includes.length > 0) builder.with(includeConstraints(model, includes, access))
   const rows = await builder
     .limit(page.size + 1)
     .offset((page.number - 1) * page.size)
     .get()
   const hasMore = rows.length > page.size
   const data = hasMore ? rows.slice(0, page.size) : rows
-  if (fields !== undefined) for (const row of data) row.setVisible([...fields, ...includes])
+  await concealIncludes(model, data, includes, access)
+  const shown = fields ?? (access?.readable === undefined ? undefined : readableKeys(meta))
+  if (shown !== undefined) for (const row of data) row.setVisible([...shown, ...includes])
   return {
     data,
     meta: {
@@ -190,8 +202,9 @@ export async function presentRecord(
   model: ResourceSource,
   record: ModelBase,
   query: URLSearchParams,
+  access?: ResourceReadAccess,
 ): Promise<void> {
-  const meta = resourceMetadataOf(model)
+  const meta = readableMeta(resourceMetadataOf(model), access?.readable)
   const issues: IssueInput[] = []
   for (const key of new Set(query.keys())) {
     if (key !== 'include' && key !== 'fields')
@@ -199,12 +212,39 @@ export async function presentRecord(
     else if (query.getAll(key).length > 1)
       issues.push({ path: ['query', key], code: 'duplicate_parameter', params: { name: key } })
   }
-  const includes = parseIncludes(model, query.get('include'), issues)
+  const includes = parseIncludes(model, query.get('include'), issues, access)
   const fields = parseFields(meta, query.get('fields'), issues)
   if (issues.length > 0) throw new ValidationError(issues)
   // Not a lazy load in a loop: one record, its relations loaded in one query each.
-  if (includes.length > 0) await loadOnto(record, includes)
-  if (fields !== undefined) record.setVisible([...fields, ...includes])
+  if (includes.length > 0) await loadOnto(record, includeTree(model, includes, access))
+  await concealIncludes(model, [record], includes, access)
+  const shown = fields ?? (access?.readable === undefined ? undefined : readableKeys(meta))
+  if (shown !== undefined) record.setVisible([...shown, ...includes])
+}
+
+/**
+ * Where a foreign key column points, through the model's own `belongsTo`: the relation named
+ * like the column (`customer_id` → `customer()`), whose model must own the referenced table.
+ * `undefined` when the column isn't a foreign key, or the model has no such relation.
+ *
+ * @example
+ * referenceOf(Order, 'customer_id') // { model: Customer, key: 'id' }
+ */
+export function referenceOf(model: ResourceSource, column: string): ResourceReference | undefined {
+  const references = tableState(model.table).columns.find(
+    (candidate) => candidate.name === column,
+  )?.references
+  if (references === undefined) return undefined
+  let related: unknown
+  try {
+    related = model.relation(camelCase(column.replace(/_id$/, ''))).relatedModel()
+  } catch (error) {
+    if (error instanceof OrmUsageError) return undefined
+    throw error
+  }
+  if (!isModelRuntime(related) || related.table !== references.table || !isResourceModel(related))
+    return undefined
+  return { model: related, key: references.column }
 }
 
 /**
@@ -214,12 +254,12 @@ export async function presentRecord(
  * @example
  * includableModel(Customer, 'orders')?.name // 'Order'
  */
-export function includableModel(model: ResourceSource, name: string): ModelRuntime | undefined {
+export function includableModel(model: ResourceSource, name: string): ResourceSource | undefined {
   const meta = resourceMetadataOf(model)
   if (!meta.relations.some((relation) => relation.name === name)) return undefined
   try {
     const related = model.relation(name).relatedModel()
-    return isModelRuntime(related) ? related : undefined
+    return isResourceSource(related) ? related : undefined
   } catch (error) {
     if (error instanceof OrmUsageError) return undefined
     throw error
@@ -441,7 +481,8 @@ function applySort(
   raw: string | null,
   issues: IssueInput[],
 ): void {
-  const spec = raw === null || raw.trim() === '' ? meta.defaultSort : raw
+  const fromDefault = raw === null || raw.trim() === ''
+  const spec = fromDefault ? meta.defaultSort : raw
   const parts = spec.split(',').map((part) => part.trim())
   if (parts.length > MAX_SORTS) {
     issues.push({ path: ['query', 'sort'], code: 'too_many_sorts', params: { max: MAX_SORTS } })
@@ -451,7 +492,10 @@ function applySort(
   for (const part of parts) {
     const name = part.startsWith('-') ? part.slice(1) : part
     if (visibleField(meta, name)?.sortable !== true) {
-      issues.push({ path: ['query', 'sort'], code: 'sort_not_allowed', params: { field: name } })
+      // The default sort on a field this user may not read is dropped, not reported: the order
+      // would reveal its values, and the client never asked for it.
+      if (!fromDefault)
+        issues.push({ path: ['query', 'sort'], code: 'sort_not_allowed', params: { field: name } })
       continue
     }
     accepted.push(part)
@@ -463,7 +507,12 @@ function applySort(
   if (accepted.length > 0) builder.sort(accepted.join(','))
 }
 
-function parseIncludes(model: ResourceSource, raw: string | null, issues: IssueInput[]): string[] {
+function parseIncludes(
+  model: ResourceSource,
+  raw: string | null,
+  issues: IssueInput[],
+  access: ResourceReadAccess | undefined,
+): string[] {
   if (raw === null || raw === '') return []
   const names = [...new Set(raw.split(',').map((name) => name.trim()))]
   if (names.length > MAX_INCLUDES) {
@@ -476,7 +525,8 @@ function parseIncludes(model: ResourceSource, raw: string | null, issues: IssueI
   }
   const accepted: string[] = []
   for (const name of names) {
-    if (includableModel(model, name) === undefined)
+    // With access decided, an include the controller didn't clear is refused like an unknown one.
+    if (includableModel(model, name) === undefined || (access && !access.includes.has(name)))
       issues.push({
         path: ['query', 'include'],
         code: 'include_not_allowed',
@@ -577,9 +627,130 @@ function applyConstraint(
   else builder.orWhere((group) => add(group))
 }
 
+/** A model class with its `Model()` options: what the metadata is derived from. */
+function isResourceSource(value: unknown): value is ResourceSource {
+  return isModelRuntime(value) && typeof Reflect.get(value, 'options') === 'object'
+}
+
 /** Load relations onto one record without the lazy-loading guard (it is not a loop). */
-async function loadOnto(record: ModelBase, includes: readonly string[]): Promise<void> {
-  await loadRelations([record], parseRelationPaths(includes))
+async function loadOnto(record: ModelBase, tree: EagerTree): Promise<void> {
+  await loadRelations([record], tree)
+}
+
+/** The metadata as one user may use it: unreadable fields count as hidden (never named). */
+function readableMeta(
+  meta: OrmResourceMetadata,
+  readable: readonly string[] | undefined,
+): OrmResourceMetadata {
+  if (readable === undefined) return meta
+  const allowed = new Set([...readable, meta.primaryKey])
+  return {
+    ...meta,
+    fields: meta.fields.map((field) =>
+      allowed.has(field.name) ? field : { ...field, hidden: true },
+    ),
+  }
+}
+
+/** The fields of (readable) metadata a row may show. */
+function readableKeys(meta: OrmResourceMetadata): string[] {
+  return meta.fields.filter((field) => !field.hidden).map((field) => field.name)
+}
+
+/** `with({ orders: (query) => … })`: each include limited to the related policy's scope. */
+function includeConstraints(
+  model: ResourceSource,
+  includes: readonly string[],
+  access: ResourceReadAccess | undefined,
+): Record<string, (query: Builder<AnyModelClass, ModelBase>) => void> {
+  const constrained: Record<string, (query: Builder<AnyModelClass, ModelBase>) => void> = {}
+  for (const name of includes) constrained[name] = includeConstraint(model, name, access)
+  return constrained
+}
+
+/** The eager-loading tree for one record's includes, constrained like {@link includeConstraints}. */
+function includeTree(
+  model: ResourceSource,
+  includes: readonly string[],
+  access: ResourceReadAccess | undefined,
+): EagerTree {
+  const tree: EagerTree = new Map()
+  for (const name of includes) {
+    const constrain = includeConstraint(model, name, access)
+    tree.set(name, {
+      constrain: (query: never) => Reflect.apply(constrain, undefined, [query]),
+      children: new Map(),
+    })
+  }
+  return tree
+}
+
+function includeConstraint(
+  model: ResourceSource,
+  name: string,
+  access: ResourceReadAccess | undefined,
+): (query: Builder<AnyModelClass, ModelBase>) => void {
+  const rule = access?.includes.get(name)
+  const related = includableModel(model, name)
+  if (rule === undefined || related === undefined) return () => undefined
+  const key = related.info().primaryKey.name
+  return (query) => {
+    for (const constraint of rule.constraints) applyConstraint(query, constraint, 'and', key)
+  }
+}
+
+/**
+ * After loading: drop included rows the related policy's `view` refuses (the scope is its SQL
+ * form; `view` has the last word), and show only that policy's readable fields.
+ */
+async function concealIncludes(
+  model: ResourceSource,
+  rows: readonly ModelBase[],
+  includes: readonly string[],
+  access: ResourceReadAccess | undefined,
+): Promise<void> {
+  if (access === undefined) return
+  for (const name of includes) {
+    const rule = access.includes.get(name)
+    if (rule === undefined) continue
+    const related = includableModel(model, name)
+    const keys =
+      rule.readable === undefined || related === undefined
+        ? undefined
+        : readableKeys(readableMeta(resourceMetadataOf(related), rule.readable))
+    for (const row of rows) {
+      const loaded = attribute(row, name)
+      if (Array.isArray(loaded)) {
+        const kept = await visibleOnly(loaded, rule, keys)
+        setLoaded(row, name, kept)
+      } else if (loaded instanceof Object) {
+        const [kept] = await visibleOnly([loaded], rule, keys)
+        setLoaded(row, name, kept ?? null)
+      }
+    }
+  }
+}
+
+async function visibleOnly(
+  records: readonly unknown[],
+  rule: IncludeAccess,
+  keys: readonly string[] | undefined,
+): Promise<unknown[]> {
+  const kept: unknown[] = []
+  for (const record of records) {
+    if (!(await rule.visible(record))) continue
+    if (keys !== undefined && isModel(record)) record.setVisible(keys)
+    kept.push(record)
+  }
+  return kept
+}
+
+function isModel(value: unknown): value is ModelBase {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof Reflect.get(value, 'setVisible') === 'function'
+  )
 }
 
 function singularParam(table: string): string {

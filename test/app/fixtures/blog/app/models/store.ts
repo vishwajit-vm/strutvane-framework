@@ -46,6 +46,36 @@ export function db(): BlogDb {
   return currentApplication('the blog fixture').container.make(BlogDbToken)
 }
 
+/**
+ * Run `work` as one transaction over the in-memory tables: every row is copied first and put
+ * back when `work` throws, the way the ORM's database transaction rolls back.
+ */
+export async function inTransaction<TResult>(work: () => Promise<TResult>): Promise<TResult> {
+  const tables = db().tables
+  const saved = new Map(
+    [...tables].map(([name, table]) => [
+      name,
+      { rows: table.rows.map((row) => ({ ...row })), nextId: table.nextId, live: [...table.rows] },
+    ]),
+  )
+  try {
+    return await work()
+  } catch (error) {
+    for (const [name, copy] of saved) {
+      const table = tables.get(name)
+      if (table === undefined) continue
+      // Restore the row objects in place, so records already holding them see the old values.
+      table.rows = copy.live
+      for (const [index, row] of copy.live.entries()) {
+        for (const key of Object.keys(row)) delete row[key]
+        Object.assign(row, copy.rows[index])
+      }
+      table.nextId = copy.nextId
+    }
+    throw error
+  }
+}
+
 /** Does a row match the constraints (ANDed; anyOf ORed)? */
 export function matches(row: Row, constraints: readonly Constraint[]): boolean {
   return constraints.every((constraint) =>
