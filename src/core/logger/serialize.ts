@@ -229,15 +229,27 @@ function setOwn(target: Record<string, unknown>, key: string, value: unknown): v
   }
 }
 
-/** Serialise an Error (stack, code and cause chain) without ever throwing. */
+/**
+ * Serialise an Error (stack, code and cause chain) without ever throwing. Every text goes through
+ * the secret patterns (`redactString`): a message or stack often quotes a connection string, a
+ * header or a URL with a token, and no key name marks those as sensitive.
+ */
 export function serializeError(error: Error, depth = 0): LogError {
   const code = (error as { code?: unknown }).code
   const cause = (error as { cause?: unknown }).cause
+  const text = (value: unknown): string => {
+    const raw = String(value)
+    return redactString(
+      raw.length > MAX_STRING
+        ? `${raw.slice(0, MAX_STRING)}…[truncated ${raw.length - MAX_STRING} chars]`
+        : raw,
+    )
+  }
   return {
-    name: String(error.name),
-    message: String(error.message),
-    ...(error.stack ? { stack: String(error.stack) } : {}),
-    ...(typeof code === 'string' || typeof code === 'number' ? { code: String(code) } : {}),
+    name: text(error.name),
+    message: text(error.message),
+    ...(error.stack ? { stack: text(error.stack) } : {}),
+    ...(typeof code === 'string' || typeof code === 'number' ? { code: text(code) } : {}),
     ...(cause instanceof Error && depth < MAX_CAUSE_DEPTH
       ? { cause: serializeError(cause, depth + 1) }
       : {}),
