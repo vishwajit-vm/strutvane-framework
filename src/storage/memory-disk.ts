@@ -13,6 +13,7 @@ import type {
 } from '../contracts/index.ts'
 import { FileNotFoundError, measuring, toStream } from './body.ts'
 import { assertSafeKey, assertSafePrefix } from './keys.ts'
+import { assertStorableContentType } from './mime.ts'
 import { signUrl } from './signing.ts'
 
 /** Options for {@link createMemoryDisk}. */

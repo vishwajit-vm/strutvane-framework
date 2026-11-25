@@ -159,7 +159,10 @@ export interface ServedType {
  * servedType('image/png, text/html')      // attachment: two types in one header
  */
 export function servedType(stored: string): ServedType {
-  const download: ServedType = { contentType: 'application/octet-stream', disposition: 'attachment' }
+  const download: ServedType = {
+    contentType: 'application/octet-stream',
+    disposition: 'attachment',
+  }
   if (!isStorableContentType(stored)) return download
   const essence = stored.split(';')[0]?.trim().toLowerCase() ?? ''
   const inline =
@@ -182,20 +185,24 @@ export function servedType(stored: string): ServedType {
  */
 export function isStorableContentType(value: string): boolean {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
-  if (value.length > 255 || /[,"'\\u0000-\u001f\u007f]/.test(value)) return false
+  if (value.length > 255 || /[,"'\\\u0000-\u001f\u007f]/.test(value)) return false
   const [essence = '', ...parameters] = value.split(';')
   if (!TYPE_ESSENCE.test(essence.trim().toLowerCase())) return false
-  return parameters.every((parameter) => /^\s*[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+\s*$/i.test(parameter))
+  return parameters.every((parameter) =>
+    /^\s*[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+\s*$/i.test(parameter),
+  )
 }
 
 /**
  * Refuse a content type that {@link isStorableContentType} rejects, before anything is written.
+ * An empty string means "unknown" (as `undefined` does) and is allowed: {@link servedType}
+ * always sends such a file as an `application/octet-stream` download.
  *
  * @example
  * assertStorableContentType(put.contentType)
  */
 export function assertStorableContentType(value: string | undefined): void {
-  if (value === undefined || isStorableContentType(value)) return
+  if (value === undefined || value === '' || isStorableContentType(value)) return
   throw new TypeError(
     'contentType must be one media type such as "image/png" (no comma, quote or control character).',
   )
