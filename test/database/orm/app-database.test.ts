@@ -20,7 +20,7 @@ import { afterAll, describe, expect, test } from 'vitest'
 import { type CommandContextLike, commands } from '../../../src/commands.ts'
 import { HTTP_HOOKS, type HttpRequestHookPayload } from '../../../src/contracts/http-hooks.ts'
 import { EventBusToken, HooksToken } from '../../../src/core/tokens.ts'
-import { configureOrm, registerSchema, sql } from '../../../src/database/index.ts'
+import { configureOrm, registerSchema, runWithoutTenant, sql } from '../../../src/database/index.ts'
 import { Application } from '../../../src/foundation/application.ts'
 import { defineConfig } from '../../../src/foundation/config.ts'
 import { DatabaseConnectionToken } from '../../../src/foundation/database.ts'
@@ -126,7 +126,7 @@ const tenantFromHeader = {
 
 /** An app whose routes use the fixture models. */
 function application(root: string, env: Readonly<Record<string, string>>): Application {
-  return Application.configure({
+  const app: Application = Application.configure({
     basePath: root,
     env: { APP_ENV: 'testing', APP_DEBUG: 'true', APP_KEY, ...env },
   })
@@ -152,9 +152,17 @@ function application(root: string, env: Readonly<Record<string, string>>): Appli
           )
           return ctx.json({ id: task.id }, 201)
         }),
+        // Hand-written SQL over a tenant table: only the statement guard stands in its way.
+        Route.get('/tasks/raw-count', async (ctx) => {
+          const { rows } = await app
+            .make(DatabaseConnectionToken)
+            .run(sql`SELECT COUNT(*) AS n FROM ${sql.id('tasks')}`)
+          return ctx.json({ n: Number(rows[0]?.['n']) })
+        }),
       ]),
     })
     .create()
+  return app
 }
 
 interface EngineCase {
@@ -221,6 +229,22 @@ describe.each(ENGINES)('an application reads and writes rows over HTTP on $name'
         expect((await asB.getJson('/api/tasks')).json).toEqual(['B1'])
         // No tenant: tenant tables refuse to be read (fail closed), never answer unscoped.
         expect((await client.getJson('/api/tasks')).status).toBeGreaterThanOrEqual(400)
+        // Hand-written SQL too (F-M1): a tenant-less request gets no count of every tenant's rows,
+        // even when the server runs inside a console command's tenant-free scope (node strut
+        // serve), and a tenant's request is refused because raw SQL can't be checked.
+        const rawCount = await client.getJson('/api/tasks/raw-count')
+        expect(rawCount.status).toBeGreaterThanOrEqual(400)
+        expect(rawCount.text).not.toContain('"n":3')
+        const fromServe = await runWithoutTenant('node strut serve', () =>
+          client.getJson('/api/tasks/raw-count'),
+        )
+        expect(fromServe.status).toBeGreaterThanOrEqual(400)
+        expect((await asA.getJson('/api/tasks/raw-count')).status).toBeGreaterThanOrEqual(400)
+        // The operator's own tenant-free work sees every row, on purpose.
+        const operator = await runWithoutTenant('usage report', () =>
+          app.make(DatabaseConnectionToken).run(sql`SELECT COUNT(*) AS n FROM ${sql.id('tasks')}`),
+        )
+        expect(Number(operator.rows[0]?.['n'])).toBe(3)
 
         const connection = app.make(DatabaseConnectionToken)
         await app.shutdown()

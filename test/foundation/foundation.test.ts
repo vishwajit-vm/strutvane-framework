@@ -11,6 +11,7 @@ import { PolicyRegistry, policyFile } from '../../src/auth/policies.ts'
 import { createTestClock } from '../../src/core/clock.ts'
 import { token } from '../../src/core/container.ts'
 import { ClockToken, EventBusToken, LoggerToken } from '../../src/core/tokens.ts'
+import { tenantFreeReason } from '../../src/database/orm/tenancy.ts'
 import { Application } from '../../src/foundation/application.ts'
 import { isBootError } from '../../src/foundation/boot-error.ts'
 import {
@@ -239,7 +240,9 @@ describe('the application lifecycle', () => {
     const app = Application.configure({ basePath: scratch(), env: testEnv })
       .withConfig(blogConfig)
       .withProviders([BillingProvider])
-      .withCommands([{ name: 'inspire', description: 'Quote', run: () => 0 } as never])
+      .withCommands([
+        { name: 'inspire', description: 'Quote', run: () => tenantFreeReason() } as never,
+      ])
       .create()
     app.container.value(LoggerToken, new MemoryLogger())
     const response = await app.handle(new Request('http://localhost/api/billing/plans'))
@@ -248,6 +251,11 @@ describe('the application lifecycle', () => {
       pong: true,
     })
     expect(app.commands.map((command) => command.name)).toEqual(['inspire', 'billing:sync'])
+    // A console command runs in a declared tenant-free scope (its raw SQL may name tenant tables);
+    // a request never does.
+    const inspire = app.commands.find((command) => command.name === 'inspire')
+    expect(await inspire?.run({} as never)).toBe('node strut inspire')
+    expect(tenantFreeReason()).toBeUndefined()
     expect(app.navigation.items).toEqual([
       expect.objectContaining({ name: 'billing', path: '/api/billing/plans' }),
     ])

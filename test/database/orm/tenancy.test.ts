@@ -17,7 +17,11 @@ import {
   TenantRequiredError,
 } from '../../../src/database/index.ts'
 import type { UnsafeTenancyEvent } from '../../../src/database/orm/config.ts'
-import { TenantScopeMissingError, unsafeRaw } from '../../../src/database/orm/tenant-scope.ts'
+import {
+  runWithoutTenant,
+  TenantScopeMissingError,
+  unsafeRaw,
+} from '../../../src/database/orm/tenant-scope.ts'
 import { Label } from './fixtures/app/models/label.ts'
 import { Post } from './fixtures/app/models/post.ts'
 import { Project } from './fixtures/app/models/project.ts'
@@ -238,9 +242,54 @@ function suite(engine: Engine): void {
     )
     expect(Number(rows[0]?.['n'])).toBe(2)
     expect(events).toEqual([{ kind: 'raw', tables: ['projects'], reason: 'usage report' }])
-    // Global tables are fine; and outside a request (migrations, jobs) raw SQL is allowed.
+    // Global tables are fine in a tenant context.
     await asA(() => db.run(sql`SELECT COUNT(*) AS n FROM ${sql.id('users')}`))
-    await db.run(sql`SELECT COUNT(*) AS n FROM ${sql.id('projects')}`)
+  })
+
+  test('with no tenant active, raw SQL on a tenant table is refused unless the scope says why (F-M1)', async () => {
+    await seedTwoTenants()
+    const db: Connection = connection()
+    const all = sql`SELECT COUNT(*) AS n FROM ${sql.id('projects')}`
+    // A tenant-less request (or a job) has nothing limiting it to one tenant: no rows, never all.
+    const refused = await db.run(all).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(refused).toBeInstanceOf(TenantRequiredError)
+    expect(String((refused as Error).message)).toMatch(/runWithoutTenant\(reason/)
+    await expect(db.run(sql`SELECT COUNT(*) AS n FROM PROJECTS`)).rejects.toBeInstanceOf(
+      TenantRequiredError,
+    )
+    // An unscopable table (no tenant column, not global) is refused too.
+    await expect(
+      db.run(sql`SELECT COUNT(*) AS n FROM ${sql.id('team_projects')}`),
+    ).rejects.toBeInstanceOf(TenantScopeMissingError)
+    // whereRaw on a global root table cannot reach tenant rows either.
+    await expect(
+      Post.query()
+        .whereRaw(
+          sql`EXISTS (SELECT 1 FROM ${sql.id('projects')} WHERE ${sql.id('name')} = ${'Borealis secret'})`,
+        )
+        .count(),
+    ).rejects.toBeInstanceOf(TenantRequiredError)
+    // Global tables stay readable with no tenant.
+    await db.run(sql`SELECT COUNT(*) AS n FROM ${sql.id('users')}`)
+
+    // Deliberate tenant-free work: a declared, audited scope (console commands, migrations and
+    // seeders enter one for you).
+    const events: UnsafeTenancyEvent[] = []
+    configureOrm({ onUnsafeTenancy: (event) => events.push(event) })
+    const { rows } = await runWithoutTenant('usage report', () => db.run(all))
+    expect(Number(rows[0]?.['n'])).toBe(2)
+    expect(events).toEqual([{ kind: 'scope', tables: [], reason: 'usage report' }])
+    // Builder queries still need a tenant inside the scope, and a tenant inside it is a tenant.
+    await expect(
+      runWithoutTenant('usage report', () => Project.query().count()),
+    ).rejects.toBeInstanceOf(TenantRequiredError)
+    await expect(
+      runWithoutTenant('usage report', () => asA(() => db.run(all))),
+    ).rejects.toBeInstanceOf(TenantScopeMissingError)
+    expect(() => runWithoutTenant(' ', () => undefined)).toThrow(/short reason/)
   })
 
   test('raw conditions inside a builder query are guarded like hand-written SQL (no tenant oracle through whereRaw)', async () => {

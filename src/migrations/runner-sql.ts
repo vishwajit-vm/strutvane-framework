@@ -4,6 +4,7 @@
  * @module
  */
 import type { Connection } from '../database/db/connection.ts'
+import { runWithoutTenant } from '../database/orm/tenant-scope.ts'
 import { sql, trustedSql } from '../database/sql/fragment.ts'
 import type { Dialect } from '../schema/ddl/dialect.ts'
 import { MigrationError } from './migration-error.ts'
@@ -66,8 +67,11 @@ export async function migrationLock<T>(
   work: () => Promise<T>,
 ): Promise<LockOutcome<T>> {
   const dialect = connection.grammar.dialect
+  // Migrations have no tenant by design: their DDL and data steps name tenant tables, and the
+  // raw-SQL tenant guard lets them through only inside this declared scope.
+  const unscoped = (): Promise<T> => runWithoutTenant('migrations', work)
   return connection.session(async () => {
-    if (dialect === 'sqlite') return { locked: false, value: await work() }
+    if (dialect === 'sqlite') return { locked: false, value: await unscoped() }
     const acquired =
       dialect === 'postgres'
         ? await pgLock(connection, options)
@@ -77,7 +81,7 @@ export async function migrationLock<T>(
       throw lockedError(options.timeoutMs)
     }
     try {
-      return { locked: false, value: await work() }
+      return { locked: false, value: await unscoped() }
     } finally {
       if (dialect === 'postgres')
         await connection.run(

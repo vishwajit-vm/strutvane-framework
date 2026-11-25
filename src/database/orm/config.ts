@@ -40,7 +40,11 @@ export interface OrmConfig {
  * configureOrm({ onUnsafeTenancy: (event) => audit.write('tenancy.bypass', event) })
  */
 export interface UnsafeTenancyEvent {
-  readonly kind: 'query' | 'raw'
+  /**
+   * `query`: a builder's `unsafeWithoutTenancy`; `raw`: one `unsafeRaw` statement; `scope`: a
+   * `runWithoutTenant` scope (console commands, migrations and seeders enter one).
+   */
+  readonly kind: 'query' | 'raw' | 'scope'
   readonly tables: readonly string[]
   readonly reason: string
 }

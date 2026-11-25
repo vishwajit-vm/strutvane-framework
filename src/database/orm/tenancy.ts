@@ -9,6 +9,11 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { OrmUsageError } from './errors.ts'
 
 const storage = new AsyncLocalStorage<string>()
+/**
+ * The reason work runs with no tenant on purpose (a console command, migrations, seeders), or
+ * `undefined`. Kept apart from the tenant id: a tenant inside such a scope is still a tenant.
+ */
+const tenantFree = new AsyncLocalStorage<string | undefined>()
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -26,6 +31,40 @@ export function runWithTenant<T>(tenantId: string, fn: () => T): T {
     )
   }
   return storage.run(tenantId.toLowerCase(), fn)
+}
+
+/**
+ * Internal: run `fn` in a scope where hand-written SQL may name tenant tables with no tenant
+ * active. Apps call `runWithoutTenant(reason, fn)` (tenant-scope.ts), which checks the reason
+ * and reports it; this is only the storage.
+ *
+ * @example
+ * enterTenantFreeScope('migrations', () => runner())
+ */
+export function enterTenantFreeScope<T>(reason: string, fn: () => T): T {
+  return tenantFree.run(reason, fn)
+}
+
+/**
+ * Internal: run `fn` with no tenant-free scope, whatever the caller had. Every HTTP request
+ * starts here, so a server started by a console command (`node strut serve`) never hands that
+ * command's scope to the requests it serves.
+ *
+ * @example
+ * leaveTenantFreeScope(() => handle(request))
+ */
+export function leaveTenantFreeScope<T>(fn: () => T): T {
+  return tenantFree.run(undefined, fn)
+}
+
+/**
+ * The reason of the enclosing tenant-free scope, or `undefined` when there is none.
+ *
+ * @example
+ * tenantFreeReason() // 'node strut migrate' inside a migration run
+ */
+export function tenantFreeReason(): string | undefined {
+  return tenantFree.getStore()
 }
 
 /**

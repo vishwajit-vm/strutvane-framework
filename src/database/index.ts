@@ -48,7 +48,7 @@ export { loadMany, Model, ModelBase, type ModelClass, type ModelInstance } from 
 export type { CursorPage, Page } from './orm/pagination.ts'
 export type { BelongsTo, BelongsToMany, HasMany } from './orm/relations.ts'
 export { currentTenant, runWithTenant } from './orm/tenancy.ts'
-export { TenantScopeMissingError, unsafeRaw } from './orm/tenant-scope.ts'
+export { runWithoutTenant, TenantScopeMissingError, unsafeRaw } from './orm/tenant-scope.ts'
 export type {
   JsonOf,
   QueryBuilder,

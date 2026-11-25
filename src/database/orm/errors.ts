@@ -95,11 +95,14 @@ function massAssignmentMessage(
 export class TenantRequiredError extends OrmError {
   override readonly name = 'TenantRequiredError'
 
-  constructor(table: string) {
+  constructor(table: string, source: 'query' | 'raw' = 'query') {
     super(
       'tenant_required',
       `"${table}" is tenant-scoped, but no tenant is active. Wrap the work in runWithTenant(tenantId, () => …) ` +
-        '(the HTTP layer does this for you per request). Deliberate cross-tenant jobs use .unsafeWithoutTenancy(reason), which is audited.',
+        '(the HTTP layer does this for you per request). ' +
+        (source === 'raw'
+          ? 'Hand-written SQL that must see every tenant (a report, a maintenance job) uses unsafeRaw(reason, sql`…`) or runs inside runWithoutTenant(reason, () => …); both are audited, and console commands, migrations and seeders already run that way.'
+          : 'Deliberate cross-tenant jobs use .unsafeWithoutTenancy(reason), which is audited.'),
     )
   }
 }

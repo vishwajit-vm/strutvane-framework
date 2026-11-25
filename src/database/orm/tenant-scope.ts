@@ -14,8 +14,11 @@
  *   touches (FROM, JOIN, subqueries, EXISTS, UPDATE, DELETE, INSERT) must carry
  *   `<alias>.<tenant column> = <the active tenant>` as a top-level AND condition. A missing scope
  *   is a bug in the ORM or in app code, and it throws instead of leaking.
- * - **Raw SQL is guarded too.** In a tenant context, any statement that did not come out of this
- *   check and mentions a tenant table is refused, unless wrapped in `unsafeRaw(reason, …)`.
+ * - **Raw SQL is guarded too.** When tenancy is on, any statement that did not come out of this
+ *   check and mentions a tenant table is refused, unless wrapped in `unsafeRaw(reason, …)`. With
+ *   no tenant active (a tenant-less HTTP request, a job) it is refused as well, because nothing
+ *   limits it to one tenant; work that has no tenant on purpose runs in
+ *   `runWithoutTenant(reason, …)`, which console commands, migrations and seeders enter.
  * - **Bypasses are explicit, named `unsafe…`, need a reason, and are reported** to
  *   `onUnsafeTenancy` for the audit log.
  */
@@ -26,7 +29,7 @@ import type { ColumnRef, SelectAst, WhereNode } from '../sql/ast.ts'
 import type { SqlFragment } from '../sql/fragment.ts'
 import { ormConfig } from './config.ts'
 import { OrmError, OrmUsageError, TenantRequiredError } from './errors.ts'
-import { currentTenant } from './tenancy.ts'
+import { currentTenant, enterTenantFreeScope, tenantFreeReason } from './tenancy.ts'
 
 /**
  * A statement would touch tenant data without being limited to the active tenant.
@@ -152,18 +155,56 @@ export function assertSelectScoped(ast: SelectAst, bypass: ReadonlySet<string>):
  * oracle over every tenant's rows.
  */
 function assertRawConditionsScoped(nodes: readonly WhereNode[]): void {
-  if (tenantColumn() === undefined || currentTenant() === undefined) return
+  if (!rawGuardApplies()) return
   for (const node of nodes) {
     if (node.kind === 'group') assertRawConditionsScoped(node.nodes)
     if (node.kind !== 'raw' || checked.has(node.fragment)) continue
-    const [first] = tenantTablesIn(node.fragment)
-    if (first !== undefined) {
-      throw new TenantScopeMissingError(
-        first,
-        'a raw condition (whereRaw) names a tenant table, and raw SQL cannot be checked for a tenant condition; use whereHas, or wrap the fragment in unsafeRaw(reason, …)',
-      )
-    }
+    refuseRawOnTenantTables(
+      tenantTablesIn(node.fragment),
+      'a raw condition (whereRaw) names a tenant table, and raw SQL cannot be checked for a tenant condition; use whereHas, or wrap the fragment in unsafeRaw(reason, …)',
+    )
   }
+}
+
+/**
+ * Whether hand-written SQL must be checked now: tenancy is on, and either a tenant is active or
+ * no `runWithoutTenant` scope says that having none is deliberate.
+ */
+function rawGuardApplies(): boolean {
+  if (tenantColumn() === undefined) return false
+  return currentTenant() !== undefined || tenantFreeReason() === undefined
+}
+
+/**
+ * Throw for raw SQL that names tenant (or unscopable) tables: `TenantRequiredError` when no
+ * tenant is active (fail closed: no tenant means no rows, never all rows), otherwise
+ * `TenantScopeMissingError` with `detail`.
+ */
+function refuseRawOnTenantTables(tables: readonly string[], detail: string): void {
+  const [first] = tables
+  if (first === undefined) return
+  if (currentTenant() !== undefined) throw new TenantScopeMissingError(first, detail)
+  const scoped = tables.find((table) => tenantMode(table) === 'scoped')
+  throw scoped === undefined ? unscopable(first) : new TenantRequiredError(scoped, 'raw')
+}
+
+/**
+ * Run work that has no tenant on purpose (a maintenance script, a report over every tenant): inside
+ * it, hand-written SQL may name tenant tables with no tenant active. The reason goes to
+ * `onUnsafeTenancy` (kind `scope`) for the audit log. Builder queries on tenant tables still need
+ * a tenant or `.unsafeWithoutTenancy(reason)`, and `runWithTenant` inside the scope makes the
+ * normal tenant checks apply again. Console commands, migrations and seeders enter one for you;
+ * HTTP requests never inherit one.
+ *
+ * @example
+ * await runWithoutTenant('nightly usage report', () =>
+ *   db.run(sql`SELECT tenant_id, COUNT(*) FROM projects GROUP BY tenant_id`),
+ * )
+ */
+export function runWithoutTenant<T>(reason: string, fn: () => T): T {
+  assertReason(reason)
+  ormConfig().onUnsafeTenancy({ kind: 'scope', tables: [], reason })
+  return enterTenantFreeScope(reason, fn)
 }
 
 /**
@@ -234,14 +275,11 @@ export function assertReason(reason: string): void {
 
 // The guard every statement passes (installed once, when this module loads).
 setStatementGuard((fragment) => {
-  if (checked.has(fragment) || tenantColumn() === undefined || currentTenant() === undefined) return
-  const tables = tenantTablesIn(fragment)
-  const [first] = tables
-  if (first !== undefined)
-    throw new TenantScopeMissingError(
-      first,
-      'hand-written SQL that names a tenant table cannot be checked for a tenant condition',
-    )
+  if (checked.has(fragment) || !rawGuardApplies()) return
+  refuseRawOnTenantTables(
+    tenantTablesIn(fragment),
+    'hand-written SQL that names a tenant table cannot be checked for a tenant condition',
+  )
 })
 
 /** Tenant (or unscopable) tables a fragment mentions, as an identifier or as a word in its text. */

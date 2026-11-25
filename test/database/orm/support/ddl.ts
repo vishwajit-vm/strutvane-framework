@@ -5,7 +5,7 @@
  * copy so it stays standalone. Types follow spike 10's choices (DATETIME(3) on MySQL, JSONB on
  * PostgreSQL, TEXT for decimals and timestamps on SQLite, TINYINT(1) booleans on MySQL).
  */
-import type { Connection } from '../../../../src/database/index.ts'
+import { type Connection, runWithoutTenant } from '../../../../src/database/index.ts'
 import type {
   ColumnDef,
   SchemaSnapshot,
@@ -102,13 +102,14 @@ export async function clearTables(connection: Connection): Promise<void> {
 }
 
 /**
- * Run trusted test SQL (DDL written by this file, never input).
+ * Run trusted test SQL (DDL written by this file, never input). Test setup has no tenant on
+ * purpose, like a migration, so it runs in a declared tenant-free scope.
  *
  * @example
  * await execute(connection, 'SELECT 1')
  */
 export async function execute(connection: Connection, text: string): Promise<void> {
-  await connection.run(trustedSql([{ kind: 'text', text }]))
+  await runWithoutTenant('test setup', () => connection.run(trustedSql([{ kind: 'text', text }])))
 }
 
 function createTableSql(state: TableState, dialect: Dialect): string {

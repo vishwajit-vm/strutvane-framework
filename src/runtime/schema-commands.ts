@@ -27,6 +27,7 @@ import { ValidationError } from '../core/index.ts'
 import { databaseSettings, describeDatabase, openDatabase } from '../database/config.ts'
 import type { Connection } from '../database/db/connection.ts'
 import { configureOrm } from '../database/orm/config.ts'
+import { runWithoutTenant } from '../database/orm/tenant-scope.ts'
 import { registerSchema } from '../database/schema/registry.ts'
 import { runSeeders, seederNameForFile } from '../database/seeding/run.ts'
 import type { SeederLike } from '../database/seeding/seeder.ts'
@@ -545,6 +546,9 @@ export function dispatchByProject(
   return {
     ...v1,
     flags: { ...v1.flags, ...flags },
-    run: (ctx) => (isMigrationFirst(ctx.requireProject().root) ? v2(ctx) : v1.run(ctx)),
+    run: (ctx) =>
+      isMigrationFirst(ctx.requireProject().root)
+        ? runWithoutTenant(`node strut ${v1.name}`, () => v2(ctx))
+        : v1.run(ctx),
   }
 }

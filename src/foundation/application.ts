@@ -66,7 +66,8 @@ import type { Connection } from '../database/db/connection.ts'
 import { runWithConnection } from '../database/db/manager.ts'
 import { OrmUsageError } from '../database/orm/errors.ts'
 import { type ModelEventDispatcher, runWithModelEvents } from '../database/orm/events.ts'
-import { runWithTenant } from '../database/orm/tenancy.ts'
+import { leaveTenantFreeScope, runWithTenant } from '../database/orm/tenancy.ts'
+import { runWithoutTenant } from '../database/orm/tenant-scope.ts'
 import { ExceptionHandler, ExceptionsConfig } from '../exceptions/handler.ts'
 import { ExceptionHandlerToken } from '../exceptions/report.ts'
 import { type HttpContext as Ctx, HttpContext, runWithHttpContext } from '../http/app/context.ts'
@@ -644,9 +645,19 @@ export class Application implements CoreApplication<object> {
     return this.#booted('app.showsDebugDetails').showDetails
   }
 
-  /** Every console command the app and its packages added. */
+  /**
+   * Every console command the app and its packages added. Each runs inside
+   * `runWithoutTenant('node strut <name>')`: a console command is an operator's tool with no
+   * tenant, so its hand-written SQL may name tenant tables (builder queries still need a tenant,
+   * `runWithTenant`, or `.unsafeWithoutTenancy(reason)`).
+   */
   get commands(): readonly AnyCommand[] {
-    return [...this.#commands.values()]
+    return [...this.#commands.values()].map(
+      (command): AnyCommand => ({
+        ...command,
+        run: (ctx) => runWithoutTenant(`node strut ${command.name}`, () => command.run(ctx)),
+      }),
+    )
   }
 
   /**
@@ -1287,8 +1298,12 @@ export class Application implements CoreApplication<object> {
     // routing (a maintenance stage, a hook, the error report of an early failure) carries it; the
     // router later adds the actor and the tenant.
     const ids = { requestId: state.requestId, traceId: state.requestId }
-    return runWithLogContext({}, () =>
-      runWithContext(ids, () => this.#handleIn(ctx, request, info, run, booted)),
+    // A request never inherits a console command's tenant-free scope (`node strut serve` starts
+    // the server inside one): a tenant-less request's raw SQL on tenant tables is refused.
+    return leaveTenantFreeScope(() =>
+      runWithLogContext({}, () =>
+        runWithContext(ids, () => this.#handleIn(ctx, request, info, run, booted)),
+      ),
     )
   }
 

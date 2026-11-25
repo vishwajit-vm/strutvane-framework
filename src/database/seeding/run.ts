@@ -13,6 +13,7 @@ import type { Seeder } from '../../runtime/seeders.ts'
 import type { Connection } from '../db/connection.ts'
 import { useConnection } from '../db/manager.ts'
 import { runWithTenant } from '../orm/tenancy.ts'
+import { runWithoutTenant } from '../orm/tenant-scope.ts'
 import { createFaker } from './faker.ts'
 import type { SeedContext, SeederLike } from './seeder.ts'
 
@@ -75,7 +76,9 @@ export async function runSeeders(root: Seeder, options: RunSeedersOptions): Prom
   }
   useConnection(options.connection)
   const work = (): Promise<void> => options.connection.transaction(() => context.call(root))
-  if (options.tenantId === undefined) await work()
+  // Seeders without --tenant run with no tenant on purpose (they create the tenants, global data
+  // and the first rows of every tenant), so their hand-written SQL may name tenant tables.
+  if (options.tenantId === undefined) await runWithoutTenant('seeders', work)
   else await runWithTenant(options.tenantId, work)
   return ran
 }
