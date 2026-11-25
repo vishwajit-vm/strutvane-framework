@@ -497,16 +497,42 @@ describe('the security profile (route:list --security)', () => {
       if (route === undefined) throw new Error(uri)
       return app.securityProfile(route)
     }
-    expect(profile('/_tools/reset').warnings).toEqual([
-      'unsafe method with no CSRF check',
-      'developer tool route without auth',
-    ])
+    // A groupless package route is CSRF-checked by default; only the auth warning is left.
+    expect(profile('/_tools/reset').protections).toContain('csrf')
+    expect(profile('/_tools/reset').warnings).toEqual(['developer tool route without auth'])
     expect(profile('/_tools/ok').warnings).toEqual([])
     expect(profile('/up').warnings).toEqual([])
   })
 })
 
 describe('CSRF bypass attempts (attack-style)', () => {
+  it('a package route added with no middleware group is still CSRF-checked, for every unsafe method', async () => {
+    const prepared = await customApp({}, undefined, {}, (app) => {
+      app.addRoutes(
+        defineRoutes([
+          Route.post('/pkg/thing', ok),
+          Route.put('/pkg/thing', ok),
+          Route.patch('/pkg/thing', ok),
+          Route.delete('/pkg/thing', ok),
+          Route.get('/pkg/thing', ok),
+          Route.post('/pkg/hook', ok).withoutMiddleware('csrf'),
+        ]),
+      )
+    })
+    const forged = prepared.client.withHeaders(cookie)
+    const signed = prepared.client.withHeaders({ ...cookie, 'x-csrf-token': tokenFor(prepared) })
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      expect((await forged.send(method, '/pkg/thing', {})).status, method).toBe(419)
+      expect((await signed.send(method, '/pkg/thing', {})).status, `${method} + token`).toBe(200)
+    }
+    expect((await forged.get('/pkg/thing')).status).toBe(200)
+    // The opt-out still works, and route:list --security names it.
+    expect(await forgedPost(prepared, '/pkg/hook')).toBe(200)
+    const hook = prepared.app.routes.find((route) => route.uri === '/pkg/hook')
+    if (hook === undefined) throw new Error('no /pkg/hook')
+    expect(prepared.app.securityProfile(hook).optOuts).toEqual([{ alias: 'csrf', source: 'route' }])
+  })
+
   it('missing Sec-Fetch-Site and Origin needs the token; Referer is never trusted', async () => {
     const prepared = await blogApp()
     expect(await forgedPost(prepared, '/api/posts')).toBe(419)

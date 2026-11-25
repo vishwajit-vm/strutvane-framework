@@ -100,6 +100,11 @@ export interface RoutingFiles {
     readonly entries: readonly RouteEntry[]
     readonly prefix: string
     readonly group: string | undefined
+    /**
+     * Middleware for routes in no group (the application passes `['csrf']`, so a package's
+     * groupless POST is still checked). Ignored when `group` is set: the group decides.
+     */
+    readonly ungrouped?: readonly string[]
   }[]
 }
 
@@ -171,7 +176,7 @@ export function compileRoutes(files: RoutingFiles): RouteTable {
       scope: {
         prefix: extra.prefix,
         namePrefix: '',
-        middleware: extra.group === undefined ? [] : [extra.group],
+        middleware: extra.group === undefined ? [...(extra.ungrouped ?? [])] : [extra.group],
         excluded: [],
       },
       excludes: [FRAMEWORK_PREFIX],

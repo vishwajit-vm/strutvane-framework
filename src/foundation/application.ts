@@ -651,7 +651,9 @@ export class Application implements CoreApplication<object> {
 
   /**
    * Add routes from a package's provider (call it in `register()`). They get their own prefix and
-   * middleware group.
+   * middleware group. Without a group they still get the `csrf` middleware (unsafe methods with
+   * the session cookie need a same-origin request or the token); a route that must take
+   * cross-site posts (a webhook) opts out with `.withoutMiddleware('csrf')`.
    *
    * @example
    * app.addRoutes(billingRoutes, { prefix: '/api/billing', group: 'api' })
@@ -1094,14 +1096,25 @@ export class Application implements CoreApplication<object> {
 
   #compileRoutes(apiPrefix: string): ReturnType<typeof compileRoutes> {
     const { web, api, health } = this.#blueprint.routing
-    const extra: { entries: readonly RouteEntry[]; prefix: string; group: string | undefined }[] =
-      this.#extraRoutes.map((route) => ({
-        entries: routeEntries(route.source),
-        prefix: route.prefix,
-        group: route.group,
-      }))
-    extra.push({ entries: cspReportRoutes().entries, prefix: '', group: undefined })
+    // A route in no middleware group (a package's `addRoutes(routes)` without `group`, and the
+    // framework's own routes) still gets the CSRF check: a POST a package forgot to group must not
+    // be forgeable from another site. It opts out the usual way, `.withoutMiddleware('csrf')`,
+    // which `route:list --security` shows.
+    const ungrouped = ['csrf'] as const
+    const extra: {
+      entries: readonly RouteEntry[]
+      prefix: string
+      group: string | undefined
+      ungrouped: readonly string[]
+    }[] = this.#extraRoutes.map((route) => ({
+      entries: routeEntries(route.source),
+      prefix: route.prefix,
+      group: route.group,
+      ungrouped,
+    }))
+    extra.push({ entries: cspReportRoutes().entries, prefix: '', group: undefined, ungrouped })
     extra.push({
+      ungrouped,
       entries: defineRoutes([
         Route.get(health ?? DEFAULT_HEALTH, (ctx) => ctx.json({ status: 'ok' })),
         // The UI's resource manifest (ADR-0014), at the origin's well-known path whatever the

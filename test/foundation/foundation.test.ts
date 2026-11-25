@@ -327,6 +327,7 @@ describe('the application lifecycle', () => {
       '/hello',
       '/_strutvane/csp-report',
       '/up',
+      '/.well-known/strutvane.json',
     ])
     expect(app.fallbacks).toEqual([])
     expect(app.security.hosts.patterns).toContain('localhost')

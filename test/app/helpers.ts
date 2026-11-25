@@ -176,6 +176,7 @@ export async function customApp(
   routing: RoutingOptions,
   configure: (middleware: MiddlewareConfig) => void = () => {},
   env: Readonly<Record<string, string>> = {},
+  setup: (app: Application) => void = () => {},
 ): Promise<TestApp> {
   const app = Application.configure({ basePath: BLOG_BASE, env: { ...testEnv, ...env } })
     .withConfig(blogConfig)
@@ -183,6 +184,7 @@ export async function customApp(
     .withRouting({ bindings: { post: Post, author: Author }, ...routing })
     .withMiddleware(configure)
     .create()
+  setup(app)
   const prepared = prepare(app)
   await app.boot()
   return prepared
