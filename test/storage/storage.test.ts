@@ -12,7 +12,7 @@ import {
   sanitizeFileName,
   UnsafeKeyError,
 } from '../../src/storage/keys.ts'
-import { createLocalDisk } from '../../src/storage/local-disk.ts'
+import { createLocalDisk, localDiskSidecar } from '../../src/storage/local-disk.ts'
 import { createStorageManager } from '../../src/storage/manager.ts'
 import { createMemoryDisk } from '../../src/storage/memory-disk.ts'
 import { detectMime, mimeMatches } from '../../src/storage/mime.ts'
@@ -177,15 +177,19 @@ describe('signed URLs', () => {
 describe.each(['memory', 'local'] as const)('%s disk', (kind) => {
   let disk: StorageDisk
   let root: string | undefined
+  let base: string | undefined
   beforeEach(async () => {
     if (kind === 'local') {
-      root = await mkdtemp(join(tmpdir(), 'sv-disk-'))
+      // The root is a child folder: the disk keeps its sidecars beside it, inside `base`.
+      base = await mkdtemp(join(tmpdir(), 'sv-disk-'))
+      root = join(base, 'root')
       disk = createLocalDisk({ root, url: '/storage', signingSecret: SECRET, now })
     } else disk = createMemoryDisk({ url: '/storage', signingSecret: SECRET, now })
   })
   afterEach(async () => {
-    if (root) await rm(root, { recursive: true, force: true })
+    if (base) await rm(base, { recursive: true, force: true })
     root = undefined
+    base = undefined
   })
 
   it('puts, stats, reads, lists and deletes with size and sha256', async () => {
@@ -253,7 +257,7 @@ describe.each(['memory', 'local'] as const)('%s disk', (kind) => {
       })
       await expect(disk.put('x/partial.bin', failing)).rejects.toThrow('client went away')
       expect(await disk.exists('x/partial.bin')).toBe(false)
-      expect(await readdir(join(root as string, '.strutvane-tmp'))).toEqual([])
+      expect(await readdir(localDiskSidecar(root as string).tmp)).toEqual([])
       await expect(disk.get('.strutvane-meta/x.json')).rejects.toBeInstanceOf(UnsafeKeyError)
       await disk.put('dir/file.txt', 'a')
       await expect(disk.get('dir')).rejects.toBeInstanceOf(FileNotFoundError)

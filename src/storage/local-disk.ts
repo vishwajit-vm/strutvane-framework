@@ -5,14 +5,20 @@
  *   checked to stay inside the root, so no key can reach `../` or an absolute path on any OS.
  * - **Atomic writes:** a file is written to a temp name and renamed into place, so readers never
  *   see half a file and a failed write leaves nothing behind.
- * - **Metadata** (type, sha256, visibility, time) lives in a sidecar under `.strutvane-meta/`,
- *   which no valid key can address (segments cannot start with a dot).
+ * - **Metadata** (type, sha256, visibility, time) and in-progress uploads live **next to** the
+ *   root, never inside it ({@link localDiskSidecar}: `<parent>/.strutvane-disks/<root name>/`).
+ *   A web server that serves the root (`storage:link` → `public/storage`) can then never hand
+ *   out a metadata file or half an upload. Sidecars an older version kept inside the root
+ *   (`.strutvane-meta/`, `.strutvane-tmp/`) are moved out on first use.
+ * - **Overwrites** never serve the new bytes under the old metadata: the old metadata is removed
+ *   before the new bytes take its place, and the new metadata is written atomically.
  *
  * @module
  */
 import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import {
+  cp,
   stat as fsStat,
   mkdir,
   open,
@@ -22,7 +28,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import type {
   FileBody,
@@ -36,8 +42,31 @@ import { assertSafeKey, assertSafePrefix, UnsafeKeyError } from './keys.ts'
 import { assertStorableContentType } from './mime.ts'
 import { signUrl } from './signing.ts'
 
-const META_DIR = '.strutvane-meta'
-const TMP_DIR = '.strutvane-tmp'
+/** Where versions before 0.2.0-next.3 kept the sidecars: inside the root (moved out on first use). */
+const LEGACY_META_DIR = '.strutvane-meta'
+const LEGACY_TMP_DIR = '.strutvane-tmp'
+/** The folder, next to a disk's root, that holds the sidecars of every root in that parent. */
+export const SIDECAR_DIR = '.strutvane-disks'
+
+/**
+ * Where a local disk keeps its metadata and in-progress uploads: beside the root, in
+ * `<parent>/.strutvane-disks/<root name>/{meta,tmp}`, on the same file system (so the final
+ * rename is atomic) and outside every served folder. Throws for a root with no parent (`/`).
+ *
+ * @example
+ * localDiskSidecar('/srv/app/storage/app/public')
+ * // { meta: '/srv/app/storage/app/.strutvane-disks/public/meta', tmp: '…/public/tmp' }
+ */
+export function localDiskSidecar(root: string): { readonly meta: string; readonly tmp: string } {
+  const full = resolve(root)
+  const parent = dirname(full)
+  if (parent === full)
+    throw new Error(
+      `A local disk can't use the file system root (${full}) as its root: its metadata would sit inside it. Use a folder such as storage/app/private.`,
+    )
+  const base = join(parent, SIDECAR_DIR, basename(full))
+  return { meta: join(base, 'meta'), tmp: join(base, 'tmp') }
+}
 
 /** Options for {@link createLocalDisk}. */
 export interface LocalDiskOptions {
@@ -58,6 +87,13 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
   const name = options.name ?? 'local'
   const root = resolve(options.root)
   const now = options.now ?? (() => new Date())
+  const sidecar = localDiskSidecar(root)
+  // Once per disk: move sidecars an older version kept inside the root out of it.
+  let moved: Promise<void> | undefined
+  const ready = (): Promise<void> => {
+    moved ??= moveLegacySidecars(root, sidecar.meta)
+    return moved
+  }
 
   const pathOf = (key: string, base = root): string => {
     assertSafeKey(key)
@@ -73,9 +109,10 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
     }
     return full
   }
-  const metaOf = (key: string): string => `${pathOf(key, join(root, META_DIR))}.json`
+  const metaOf = (key: string): string => `${pathOf(key, sidecar.meta)}.json`
 
   const readMeta = async (key: string): Promise<StoredFile | undefined> => {
+    await ready()
     try {
       return JSON.parse(await readFile(metaOf(key), 'utf8')) as StoredFile
     } catch (error) {
@@ -89,9 +126,10 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
     async put(key: string, body: FileBody, put: PutOptions = {}): Promise<StoredFile> {
       const target = pathOf(key)
       assertStorableContentType(put.contentType)
-      const tmpDir = join(root, TMP_DIR)
-      await mkdir(tmpDir, { recursive: true })
-      const tmp = join(tmpDir, `${randomUUID()}.part`)
+      await ready()
+      await mkdir(sidecar.tmp, { recursive: true })
+      const tmp = join(sidecar.tmp, `${randomUUID()}.part`)
+      const meta = metaOf(key)
       const m = measuring()
       // Open eagerly: a lazily-opened stream could create the file *after* a failed write was
       // cleaned up. Wait for 'close' before renaming or deleting (Windows locks open files).
@@ -102,6 +140,9 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
         await toStream(body).pipeThrough(m.stream).pipeTo(Writable.toWeb(out))
         await closed
         await mkdir(dirname(target), { recursive: true })
+        // Overwrite: drop the old metadata first, so the new bytes are never served under the
+        // old file's visibility or type (a public file replaced by a private one, for example).
+        await rm(meta, { force: true })
         await rename(tmp, target)
       } catch (error) {
         out.destroy()
@@ -119,9 +160,11 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
         visibility: put.visibility ?? options.visibility ?? 'private',
         createdAt: now().toISOString(),
       }
-      const meta = metaOf(key)
       await mkdir(dirname(meta), { recursive: true })
-      await writeFile(meta, JSON.stringify(info), 'utf8')
+      // Atomic, like the bytes: a reader sees the old metadata, none, or the new, never half.
+      const metaTmp = join(sidecar.tmp, `${randomUUID()}.json`)
+      await writeFile(metaTmp, JSON.stringify(info), 'utf8')
+      await rename(metaTmp, meta)
       return info
     },
     async get(key) {
@@ -153,11 +196,14 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
       return readMeta(key)
     },
     async delete(key) {
-      await rm(pathOf(key), { force: true })
+      await ready()
+      // Metadata first: a file without metadata is never served publicly.
       await rm(metaOf(key), { force: true })
+      await rm(pathOf(key), { force: true })
     },
     async list(prefix, opts = {}): Promise<FileListPage> {
       assertSafePrefix(prefix)
+      await ready()
       const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000)
       const keys: string[] = []
       const walk = async (dir: string, parts: string[]): Promise<void> => {
@@ -169,7 +215,7 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
           throw error
         }
         for (const e of entries) {
-          if (e.name === META_DIR || e.name === TMP_DIR) continue
+          if (e.name === LEGACY_META_DIR || e.name === LEGACY_TMP_DIR) continue
           if (e.isDirectory()) await walk(join(dir, e.name), [...parts, e.name])
           else if (e.isFile()) keys.push([...parts, e.name].join('/'))
         }
@@ -206,4 +252,30 @@ export function createLocalDisk(options: LocalDiskOptions): StorageDisk {
       })
     },
   }
+}
+
+/**
+ * Move the sidecars an older version kept inside the root to {@link localDiskSidecar}: metadata
+ * is moved (merged when both exist, the newer location winning), leftover partial uploads are
+ * deleted. Idempotent; a missing legacy folder is the normal case.
+ */
+async function moveLegacySidecars(root: string, meta: string): Promise<void> {
+  const legacyMeta = join(root, LEGACY_META_DIR)
+  await rm(join(root, LEGACY_TMP_DIR), { recursive: true, force: true })
+  try {
+    await fsStat(legacyMeta)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  await mkdir(dirname(meta), { recursive: true })
+  try {
+    await rename(legacyMeta, meta)
+    return
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'EEXIST' && code !== 'ENOTEMPTY' && code !== 'EPERM') throw error
+  }
+  await cp(legacyMeta, meta, { recursive: true, force: false, errorOnExist: false })
+  await rm(legacyMeta, { recursive: true, force: true })
 }
