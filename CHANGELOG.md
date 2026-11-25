@@ -1,5 +1,26 @@
 # @strutvane/framework
 
+## 0.2.0-next.2
+
+### Minor Changes
+
+- 54d23c0: Extension points for add-on packages: `app.env(name)` (the merged environment, readable in `register()`), `app.addMessages(...catalogs)` (package message catalogs at boot), `CacheDriverRegistryToken` (packages add cache drivers that `config/cache.ts` stores can use), and root exports of `allows`, `authorize`, `hasAdminRole`, `Policy`, `PolicyRegistry`/`PolicyRegistryToken` (with `registry.allows()`/`authorize()`, deny without a policy), `RateLimitStoreToken`, `UsedSignatureStoreToken`, `MemoryUsedSignatureStore` and `MemoryCacheStore`. `@strutvane/framework/testing` now exports `testClient` (classes as `AppTestClient`/`AppTestResponse`).
+- 54d23c0: Storage in the v2 Application: `config/filesystems.ts` is read at boot (disks and default disk; a private `local` disk without it), so the `Storage` facade works, and every public disk is served under its `url` path (the skeleton's `/storage/...`): GET/HEAD only, safe keys (no traversal, no listing, no metadata files), only files stored as public, `nosniff`, a sandboxing CSP, active content as an attachment, ETag/304. New `node strut storage:link [--force]` links `public/storage` to the public disk.
+  
+  Security fix: active content stored with a parametrised or differently cased type (`text/html; charset=utf-8`, `Text/HTML`, any `+xml`) was served inline by signed links; `isActiveContent()` now normalises the type for both file servers.
+- 54d23c0: Devkit: `createAppPatcher()` and `context.app` in installers add or remove a provider in `bootstrap/providers.ts` and a config file in `config/index.ts` (parsed, minimal edits, idempotent, reversible byte for byte). A file in an unfamiliar shape is never touched: the installer prints the lines to add by hand instead of failing.
+- 54d23c0: Model lifecycle events and after-commit work (`@strutvane/framework/database`): `save()`, `delete()`, `forceDelete()` and `restore()` emit `<model>.created`, `.updated` (with the changed columns), `.deleted` (soft or not) and `.restored` on the app's event bus after the transaction commits (never for rolled-back work), with the tenant and actor; the payload is the model's `toJSON()`. `modelEventName()` gives the names. `afterCommit(fn)` / `Connection.afterCommit(fn)` run work after the outermost commit (at once outside a transaction, dropped on rollback).
+
+### Patch Changes
+
+- 54d23c0: Fixes found while writing the 0.2 docs:
+  - `node strut start` and `dev` accept `--force-debug`, the flag the `debug_in_production` hint names.
+  - A 415 for a JSON body or a CSP report said "Send the request body as {expected}."; it now names the media type.
+  - `route:list` printed `throttle:60:1`; it now writes `throttle:60,1` like routes and `--security`.
+  - Schema, migration and sandbox errors reached the CLI as "Unexpected error"; they keep their code, location and hint.
+  - `make:model`, `make:factory` and `make:seeder` wrote 0.1 files in migration-first apps; they now write the skeleton's shapes (`Model('posts')`, the `create_posts_table` migration, `defineFactory`, `defineSeeder` registered between the markers, a deny-by-default policy). Field specs are refused there: columns belong in the migration.
+  - `app.previous_keys: env.optional('APP_PREVIOUS_KEYS')` (or an optional `APP_KEY`) left unset was read as the text "undefined" and refused boot.
+
 ## 0.2.0-next.1
 
 ### Patch Changes
